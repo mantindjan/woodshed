@@ -178,6 +178,13 @@
   }
   .play:active{transform:scale(.99);}
   .play.running{background:transparent;color:var(--brass);border:1px solid var(--brass);}
+  .taptempo{
+    width:100%;margin-top:14px;padding:18px;border:1px solid var(--felt);border-radius:12px;cursor:pointer;
+    background:#0b111a;color:var(--ink);
+    font-family:'Courier New',monospace;font-weight:700;font-size:14px;letter-spacing:.22em;text-transform:uppercase;
+    transition:background .08s,transform .04s,border-color .08s;user-select:none;
+  }
+  .taptempo:active,.taptempo.flash{background:var(--felt);border-color:var(--brass);transform:scale(.99);}
   @media (min-height:760px){ .chord{font-size:clamp(90px,28vw,220px);} }
 </style>
 </head>
@@ -283,6 +290,7 @@
           <button data-n="5">+5</button>
         </div>
       </div>
+      <button class="taptempo" id="mTap">tap tempo</button>
       <button class="play" id="mPlay">Start</button>
     </div>
   </div><!-- /view-metro -->
@@ -694,6 +702,24 @@ $("#mPlay").addEventListener("click",()=>mRunning?mStop():mStart());
 $("#metroTap").addEventListener("click",()=>mRunning?mStop():mStart());
 $("#mTempo").addEventListener("input",e=>setMBpm(+e.target.value));
 $("#mNudge").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;setMBpm(mBpm+ +b.dataset.n);});
+
+// tap tempo: average the gaps between recent taps -> BPM
+let tapTimes=[];
+function doTap(){
+  const now=performance.now();
+  // if it's been too long since the last tap, start a fresh measurement
+  if(tapTimes.length && now-tapTimes[tapTimes.length-1]>2000) tapTimes=[];
+  tapTimes.push(now);
+  if(tapTimes.length>6) tapTimes.shift();      // keep only the last handful
+  if(tapTimes.length>=2){
+    let sum=0; for(let i=1;i<tapTimes.length;i++) sum+=tapTimes[i]-tapTimes[i-1];
+    const avgMs=sum/(tapTimes.length-1);
+    setMBpm(Math.round(60000/avgMs));
+  }
+  const btn=$("#mTap");
+  btn.classList.add("flash"); setTimeout(()=>btn.classList.remove("flash"),80);
+}
+$("#mTap").addEventListener("click",doTap);
 
 // ---- 2-chord progression trainer ----
 // Second chord is always a perfect 4th above the first (+5 semitones).
