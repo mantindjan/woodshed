@@ -373,6 +373,13 @@
           <button data-r="on">play root</button>
         </div>
       </div>
+      <div class="row" id="mTransposeRow" style="display:none;">
+        <div class="seg" id="mTranspose">
+          <button data-t="0" class="sel">C · concert</button>
+          <button data-t="2">B♭ inst.</button>
+          <button data-t="9">E♭ inst.</button>
+        </div>
+      </div>
 
       <button class="play" id="mPlay">Start</button>
     </div>
@@ -839,7 +846,7 @@ $("#barDn").addEventListener("click",()=>{cfg.bars=Math.max(1,cfg.bars-1);$("#ba
 // ---- metronome ----
 let mBpm=120, mRunning=false, mTimer=null, mBeat=0, mNextTime=0;
 // display extras
-let mMode="plain", mChromDir="up", mRootOn=false, mBarsPerKey=2;
+let mMode="plain", mChromDir="up", mRootOn=false, mBarsPerKey=2, mTranspose=0;
 let mKeyPos=0;                      // index into the active sequence
 // cycle of fifths from C:  C G D A E B F# Db Ab Eb Bb F  (pitch classes)
 const FIFTHS=[0,7,2,9,4,11,6,1,8,3,10,5];
@@ -852,7 +859,7 @@ function mSeq(){
   if(mMode==="chrom") return mChromDir==="up"?CHROM_UP:CHROM_DN;
   return FOURTHS;
 }
-function mKeyChipHTML(pc){const [ltr,acc]=NOTES[pc];return ltr+(acc?`<span class="acc">${ACC[acc]}</span>`:"");}
+function mKeyChipHTML(pc){const [ltr,acc]=NOTES[((pc+mTranspose)%12+12)%12];return ltr+(acc?`<span class="acc">${ACC[acc]}</span>`:"");}
 const mBeatsEl=$("#mBeats");
 function buildMBeats(){
   mBeatsEl.innerHTML="";
@@ -995,6 +1002,15 @@ $("#mChromDir").addEventListener("click",e=>{const b=e.target.closest("button");
 $("#mRoot").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
   [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");
   mRootOn=(b.dataset.r==="on");
+  $("#mTransposeRow").style.display = mRootOn?"flex":"none";
+});
+$("#mTranspose").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");
+  mTranspose=+b.dataset.t;
+  // relabel the visible display immediately
+  if(mMode==="circle") buildCircle();
+  if(mMode==="line5"||mMode==="chrom") buildLine();
+  mResyncIfRunning();
 });
 $("#mBarUp").addEventListener("click",()=>{mBarsPerKey=Math.min(8,mBarsPerKey+1);$("#mBarVal").textContent=mBarsPerKey;mResyncIfRunning();});
 $("#mBarDn").addEventListener("click",()=>{mBarsPerKey=Math.max(1,mBarsPerKey-1);$("#mBarVal").textContent=mBarsPerKey;mResyncIfRunning();});
