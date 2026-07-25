@@ -60,6 +60,48 @@
   .metro-bpm small{display:block;font-family:'Courier New',monospace;font-size:15px;color:var(--dim);letter-spacing:.3em;font-weight:400;margin-top:6px;}
   .metro-bpm > span{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;}
   #metroTap{cursor:pointer;}
+  .metro-center{position:relative;display:flex;align-items:center;justify-content:center;}
+  /* circle-of-fifths ring: a real square arena so chips can spread out */
+  body.mode-circle .metro-center{width:min(78vw,340px);height:min(78vw,340px);}
+  .metro-circle{position:absolute;inset:0;pointer-events:none;display:none;}
+  body.mode-circle .metro-circle{display:block;}
+  .metro-circle .ckey{
+    position:absolute;transform:translate(-50%,-50%);
+    font-family:'RealBook',Georgia,serif;font-size:clamp(22px,6vw,34px);color:var(--dim);
+    padding:2px 4px;border-radius:8px;white-space:nowrap;line-height:1;
+    transition:color .1s,background .1s;
+  }
+  .metro-circle .ckey.on{color:#1a1206;background:var(--brass);}
+  .metro-circle .ckey .acc{font-family:Georgia,serif;font-size:.55em;vertical-align:.4em;}
+  body.mode-circle .metro-bpm{font-size:clamp(34px,11vw,72px);}   /* shrink number to sit inside the ring */
+
+  /* scrolling line: keys move right-to-left through a FIXED centre marker */
+  .metro-line{display:none;position:relative;width:100%;height:120px;overflow:hidden;margin-bottom:6px;}
+  body.mode-line .metro-line{display:block;}
+  body.mode-line .metro-circle{display:none;}
+  body.mode-line .metro-bpm{font-size:clamp(50px,17vw,120px);}
+  .metro-line .lane{
+    position:absolute;top:50%;left:50%;
+    display:flex;align-items:center;gap:0;
+    transition:transform .18s cubic-bezier(.2,.7,.3,1);
+    will-change:transform;
+  }
+  .metro-line .lkey{
+    flex:0 0 auto;width:22vw;max-width:120px;text-align:center;
+    font-family:'RealBook',Georgia,serif;font-size:clamp(30px,9vw,60px);
+    color:var(--dim);opacity:.5;line-height:1;
+    transform:translateY(-50%);
+    transition:color .15s,opacity .15s,font-size .15s;
+  }
+  .metro-line .lkey.on{color:var(--brass);opacity:1;}
+  .metro-line .lkey .acc{font-family:Georgia,serif;font-size:.5em;vertical-align:.4em;}
+  /* centre marker: a soft vertical glow where the eye rests */
+  .metro-line::before{
+    content:"";position:absolute;top:8px;bottom:8px;left:50%;width:2px;
+    transform:translateX(-50%);
+    background:linear-gradient(var(--brass),transparent 12%,transparent 88%,var(--brass));
+    opacity:.35;
+  }
 
   /* STAGE */
   .stage{
@@ -278,7 +320,11 @@
   <div class="viewwrap" id="view-metro" style="display:none;">
     <div class="stage">
       <div class="stagemain" id="metroTap">
-        <div class="metro-bpm"><span id="mBpmVal">120</span><small>bpm</small></div>
+        <div class="metro-line" id="mLine"></div>
+        <div class="metro-center">
+          <div class="metro-circle" id="mCircle"></div>
+          <div class="metro-bpm"><span id="mBpmVal">120</span><small>bpm</small></div>
+        </div>
         <div class="beats" id="mBeats"></div>
         <div class="next" id="mHint">tap to start</div>
       </div>
@@ -299,6 +345,35 @@
         </div>
       </div>
       <button class="taptempo" id="mTap">tap tempo</button>
+
+      <div class="label">display</div>
+      <div class="row">
+        <div class="seg" id="mMode">
+          <button data-m="plain" class="sel">plain</button>
+          <button data-m="circle">circle 4ths</button>
+          <button data-m="line5">line 4ths</button>
+          <button data-m="chrom">chromatic</button>
+        </div>
+      </div>
+      <div class="row" id="mChromDirRow" style="display:none;">
+        <div class="seg" id="mChromDir">
+          <button data-d="up" class="sel">ascending</button>
+          <button data-d="dn">descending</button>
+        </div>
+      </div>
+      <div class="row" id="mAdvRow" style="gap:12px;align-items:stretch;display:none;">
+        <div class="tempo barsel" style="flex:1;justify-content:center;">
+          <span>bars / key</span>
+          <div class="stepper">
+            <button id="mBarDn">–</button><span id="mBarVal">2</span><button id="mBarUp">+</button>
+          </div>
+        </div>
+        <div class="seg" id="mRoot" style="flex:1;">
+          <button data-r="off" class="sel">no root</button>
+          <button data-r="on">play root</button>
+        </div>
+      </div>
+
       <button class="play" id="mPlay">Start</button>
     </div>
   </div><!-- /view-metro -->
@@ -534,8 +609,11 @@ function initAudio(){
   tone.connect(revGain);revGain.connect(reverb);reverb.connect(ctx.destination);
 
   // clicks go straight out, bypassing the master lowpass, so they stay sharp
-  clickBus=ctx.createGain();clickBus.gain.value=1;
-  clickBus.connect(ctx.destination);
+  clickBus=ctx.createGain();clickBus.gain.value=2.6;   // clicks are very short, so they need headroom to read as loud
+  const clickComp=ctx.createDynamicsCompressor();      // catches peaks so hard accents don't clip
+  clickComp.threshold.value=-6;clickComp.knee.value=6;
+  clickComp.ratio.value=4;clickComp.attack.value=0.001;clickComp.release.value=0.05;
+  clickBus.connect(clickComp);clickComp.connect(ctx.destination);
 
   noiseBuf=makeNoise(0.2);            // cached once; reused for every click
 }
@@ -575,8 +653,8 @@ function click(time,accent){
   src.connect(bp);bp.connect(hp);hp.connect(g);g.connect(clickBus);
 
   // near-instant attack, very fast decay = a stick hit, not a tone
-  const peak=accent?0.85:0.42;
-  const dur =accent?0.030:0.022;
+  const peak=accent?1.0:0.62;
+  const dur =accent?0.038:0.028;
   g.gain.setValueAtTime(0,time);
   g.gain.linearRampToValueAtTime(peak,time+0.0008);
   g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
@@ -760,6 +838,21 @@ $("#barDn").addEventListener("click",()=>{cfg.bars=Math.max(1,cfg.bars-1);$("#ba
 
 // ---- metronome ----
 let mBpm=120, mRunning=false, mTimer=null, mBeat=0, mNextTime=0;
+// display extras
+let mMode="plain", mChromDir="up", mRootOn=false, mBarsPerKey=2;
+let mKeyPos=0;                      // index into the active sequence
+// cycle of fifths from C:  C G D A E B F# Db Ab Eb Bb F  (pitch classes)
+const FIFTHS=[0,7,2,9,4,11,6,1,8,3,10,5];
+// cycle of fourths = fifths reversed, rotated to start on C:  C F Bb Eb Ab Db Gb B E A D G
+const FOURTHS=[0,5,10,3,8,1,6,11,4,9,2,7];
+const CHROM_UP=[0,1,2,3,4,5,6,7,8,9,10,11];
+const CHROM_DN=[0,11,10,9,8,7,6,5,4,3,2,1];
+function mSeq(){
+  if(mMode==="circle"||mMode==="line5") return FOURTHS;
+  if(mMode==="chrom") return mChromDir==="up"?CHROM_UP:CHROM_DN;
+  return FOURTHS;
+}
+function mKeyChipHTML(pc){const [ltr,acc]=NOTES[pc];return ltr+(acc?`<span class="acc">${ACC[acc]}</span>`:"");}
 const mBeatsEl=$("#mBeats");
 function buildMBeats(){
   mBeatsEl.innerHTML="";
@@ -771,6 +864,72 @@ function mFlash(i){
   mDots().forEach(d=>d.classList.remove("on"));
   const d=mDots()[i]; if(d) d.classList.add("on");
 }
+
+// build the static circle-of-fifths ring around the centre
+const mCircleEl=$("#mCircle"), mLineEl=$("#mLine");
+function buildCircle(){
+  mCircleEl.innerHTML="";
+  const R=46;   // percent radius
+  FIFTHS.forEach((pc,i)=>{
+    const ang=(i/12)*2*Math.PI - Math.PI/2;   // start at top, clockwise (C at 12, G at 1...)
+    const x=50+R*Math.cos(ang), y=50+R*Math.sin(ang);
+    const el=document.createElement("div");
+    el.className="ckey"; el.dataset.i=i;
+    el.style.left=x+"%"; el.style.top=y+"%";
+    el.innerHTML=mKeyChipHTML(pc);
+    mCircleEl.appendChild(el);
+  });
+}
+function circleHighlight(pos){
+  [...mCircleEl.children].forEach((el,i)=>el.classList.toggle("on", i===pos));
+}
+// build the scrolling lane: repeat the sequence so keys flow in from the right
+let mLane=null, mKeyW=0;
+function buildLine(){
+  mLineEl.innerHTML="";
+  mLaneBase=0;
+  mLane=document.createElement("div"); mLane.className="lane";
+  const seq=mSeq();
+  const REPEATS=8;                       // enough copies to scroll a long time
+  for(let r=0;r<REPEATS;r++){
+    seq.forEach(pc=>{
+      const el=document.createElement("div");
+      el.className="lkey"; el.innerHTML=mKeyChipHTML(pc);
+      mLane.appendChild(el);
+    });
+  }
+  mLineEl.appendChild(mLane);
+  // measure one key's width after layout
+  requestAnimationFrame(()=>{ const first=mLane.querySelector(".lkey"); mKeyW=first?first.getBoundingClientRect().width:100; scrollLaneTo(0,false); });
+}
+// slide the lane so sequence index `seqIdx` sits centred under the marker.
+// The lane repeats the sequence; we keep the live position in a middle copy and
+// jump back a whole cycle without animation when nearing the end, so motion is endless.
+let mLaneBase=0;   // how many full cycles we've invisibly rewound
+function scrollLaneTo(seqIdx,animate){
+  if(!mLane) return;
+  const seq=mSeq(), L=seq.length, REPEATS=8;
+  let laneIdx=seqIdx - mLaneBase*L;
+  // if we're getting near the end of the built copies, rewind by 3 cycles invisibly
+  if(laneIdx > (REPEATS-2)*L){
+    mLaneBase+=3;
+    laneIdx=seqIdx - mLaneBase*L;
+    animate=false;   // the rewind itself must not animate
+  }
+  const w=mKeyW||100;
+  if(!animate) mLane.style.transition="none";
+  mLane.style.transform=`translate(${-laneIdx*w - w/2}px, -50%)`;
+  [...mLane.children].forEach((el,i)=>el.classList.toggle("on", i===laneIdx));
+  if(!animate) requestAnimationFrame(()=>{ mLane.style.transition=""; });
+}
+function applyMode(){
+  document.body.classList.toggle("mode-circle", mMode==="circle");
+  document.body.classList.toggle("mode-line", mMode==="line5"||mMode==="chrom");
+  if(mMode==="circle"){ buildCircle(); circleHighlight(-1); }
+  if(mMode==="line5"||mMode==="chrom"){ buildLine(); }
+  $("#mAdvRow").style.display   = (mMode==="line5"||mMode==="chrom"||mMode==="circle")?"flex":"none";
+  $("#mChromDirRow").style.display = (mMode==="chrom")?"flex":"none";
+}
 function mStart(){
   if(!ctx)initAudio();
   if(ctx.state==="suspended")ctx.resume();
@@ -778,11 +937,28 @@ function mStart(){
   $("#mHint").textContent="";
   const spb=()=>60/mBpm;
   mNextTime=ctx.currentTime+0.1; mBeat=0;
+  const isLine=(mMode==="line5"||mMode==="chrom");
+  const isCircle=(mMode==="circle");
+  mKeyPos=0;
+  if(isLine) scrollLaneTo(0,false);
+  if(isCircle) circleHighlight(0);
   function tick(){
     if(!mRunning)return;
+    const barsPer=mBarsPerKey;
+    const beatsPerKey=barsPer*4;
     while(mNextTime<ctx.currentTime+0.12){
       const b=mBeat%4;
       click(mNextTime, b===0);   // all four click; beat 1 accented
+      // advance the key every N bars, on the downbeat
+      if(b===0 && mBeat % beatsPerKey === 0){
+        const seqIdx=Math.floor(mBeat/beatsPerKey);        // global forward index
+        const seq=mSeq(), pc=seq[seqIdx%seq.length];
+        const when=mNextTime;
+        if(isLine)   setTimeout(()=>{ mKeyPos=seqIdx; scrollLaneTo(seqIdx,true); }, Math.max(0,(when-ctx.currentTime)*1000));
+        // circle ring is drawn in fifths (C,G,D...clockwise); fourths motion = step counterclockwise
+        if(isCircle){ const cpos=((-seqIdx)%12+12)%12; setTimeout(()=>{ circleHighlight(cpos); }, Math.max(0,(when-ctx.currentTime)*1000)); }
+        if(mRootOn && (isLine||isCircle)) playChord(pc, mNextTime, "", beatsPerKey, mBpm);
+      }
       const bb=b, when=mNextTime;
       setTimeout(()=>mFlash(bb),Math.max(0,(when-ctx.currentTime)*1000));
       mNextTime+=spb(); mBeat++;
@@ -793,9 +969,10 @@ function mStart(){
   wakeOn();
 }
 function mStop(){
-  mRunning=false;clearTimeout(mTimer);
+  mRunning=false;clearTimeout(mTimer);killAllVoices();
   $("#mPlay").textContent="Start";$("#mPlay").classList.remove("running");
   mDots().forEach(d=>d.classList.remove("on"));
+  if(mMode==="circle") circleHighlight(-1);
   $("#mHint").textContent="tap to start";
   wakeOff();
 }
@@ -804,6 +981,24 @@ $("#mPlay").addEventListener("click",()=>mRunning?mStop():mStart());
 $("#metroTap").addEventListener("click",()=>mRunning?mStop():mStart());
 $("#mTempo").addEventListener("input",e=>setMBpm(+e.target.value));
 $("#mNudge").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;setMBpm(mBpm+ +b.dataset.n);});
+// switching the sequence mid-run: restart cleanly so the display begins fresh
+// at C and advances smoothly, instead of showing C then jumping to the live index
+function mResyncIfRunning(){ if(mRunning){ mStop(); mStart(); } }
+$("#mMode").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");
+  mMode=b.dataset.m; applyMode(); mResyncIfRunning();
+});
+$("#mChromDir").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");
+  mChromDir=b.dataset.d; applyMode(); mResyncIfRunning();
+});
+$("#mRoot").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");
+  mRootOn=(b.dataset.r==="on");
+});
+$("#mBarUp").addEventListener("click",()=>{mBarsPerKey=Math.min(8,mBarsPerKey+1);$("#mBarVal").textContent=mBarsPerKey;mResyncIfRunning();});
+$("#mBarDn").addEventListener("click",()=>{mBarsPerKey=Math.max(1,mBarsPerKey-1);$("#mBarVal").textContent=mBarsPerKey;mResyncIfRunning();});
+applyMode();   // set initial visibility
 
 // tap tempo: average the gaps between recent taps -> BPM
 let tapTimes=[];
