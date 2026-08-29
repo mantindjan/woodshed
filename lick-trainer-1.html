@@ -262,23 +262,38 @@
     font-family:Georgia,serif;font-weight:700;font-size:clamp(24px,7vw,38px);line-height:1;
   }
   .earanswer .enote .acc{font-size:.62em;vertical-align:.3em;margin-left:1px;}
-  #view-ear .stagemain{justify-content:center;padding:8px 12px;}
+  #view-ear .stagemain{justify-content:center;padding:4px 12px;min-height:150px;max-height:180px;}
   #view-ear .stage{flex:0 0 auto;}
-  #view-ear .controls{flex:1;overflow-y:auto;}
+  #view-ear .controls{flex:1;overflow-y:auto;padding:10px 14px calc(10px + env(safe-area-inset-bottom));}
+  /* compress the ear tab so the whole control stack fits on screen */
+  #view-ear .singchord{font-size:clamp(30px,9vw,54px);margin-bottom:0;}
+  #view-ear .degask{margin-bottom:4px;font-size:11px;}
+  #view-ear .earanswer{margin-top:6px;min-height:44px;}
+  #view-ear .earanswer .edeg.big{font-size:clamp(38px,12vw,68px);}
+  #view-ear .next{min-height:1.1em;margin-top:2px;font-size:11px;}
+  #view-ear .row{margin-bottom:8px;}
+  #view-ear .label{margin-bottom:4px;}
+  #view-ear .seg button{padding:8px 3px;font-size:11px;}
+  #view-ear .segwrap button{padding:7px 3px;}
+  #view-ear .taptempo{padding:12px;font-size:12px;}
+  #view-ear .play{padding:13px;font-size:14px;}
+  #view-ear .tempo{padding:7px 12px;}
   .earchord-hidden{visibility:hidden;}
   /* pinned multiple-choice answer bar */
   .answerbar{
-    flex:0 0 auto;padding:10px 12px 12px;
+    flex:0 0 auto;padding:7px 12px 9px;
     background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line);
   }
   .scoreline{
-    font-family:'Courier New',monospace;font-size:10.5px;letter-spacing:.18em;
-    color:var(--dim);text-transform:uppercase;text-align:center;margin-bottom:9px;
+    font-family:'Courier New',monospace;font-size:10px;letter-spacing:.16em;
+    color:var(--dim);text-transform:uppercase;text-align:center;margin-bottom:7px;
   }
+  #view-ear .keysel{padding:7px 12px 6px;gap:5px;}
+  #view-ear .keysel button{padding:5px 3px;font-size:11px;min-width:32px;}
   .scoreline b{color:var(--brass);font-weight:700;}
   .choices{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;}
   .choices button{
-    flex:0 1 auto;min-width:60px;padding:13px 10px;border-radius:10px;cursor:pointer;
+    flex:0 1 auto;min-width:56px;padding:11px 10px;border-radius:10px;cursor:pointer;
     background:#0b111a;border:1px solid var(--line);color:var(--ink);
     font-family:'Courier New',monospace;font-weight:700;font-size:16px;letter-spacing:.04em;
     transition:background .15s,border-color .15s,color .15s,transform .06s,opacity .15s;
@@ -845,6 +860,18 @@
           <button data-q="7" class="sel">C7</button>
           <button data-q="m7">C−</button>
           <button data-q="m7b5">Cø</button>
+        </div>
+      </div>
+      <div class="row" style="gap:8px;">
+        <div class="seg" id="earOct" style="flex:1;">
+          <button data-o="fixed" class="sel">fixed octave</button>
+          <button data-o="vary">vary octave</button>
+        </div>
+      </div>
+      <div class="row" style="gap:8px;">
+        <div class="seg" id="earSep" style="flex:1;">
+          <button data-s="sep" class="sel">note separately</button>
+          <button data-s="with">chord behind note</button>
         </div>
       </div>
       <div class="row" style="gap:12px;align-items:stretch;">
@@ -1967,11 +1994,12 @@ $("#singSound").addEventListener("click",e=>{const b=e.target.closest("button");
 // Playback is SEQUENTIAL: chord rings, short silence, then the tone alone.
 let cfgE={degs:new Set(["3","7"]),quals:new Set(["7"]),showChord:true,
           auto:false, autoSecs:10, chordSecs:2.0, gapSecs:0.5, toneSecs:2.0,
-          nQuestions:20,
+          nQuestions:20, separate:true, varyOct:false,
           keys:new Set([0,1,2,3,4,5,6,7,8,9,10,11])};
 let eRunning=false, eTimers=[], eKey=0, eQual="7", eDeg="3", eRevealed=false;
 // quiz session state
 let eQnum=0, eScore=0, eAnswered=false, eWrongThisQ=false;
+let eOct=12;                 // semitone offset for the tone: 12 or 24 above the voicing
 const nextEEl=$("#nextE");
 
 const keyselEEl=$("#keyselE");
@@ -2018,20 +2046,26 @@ function playTogetherE(){
   const bpmForChord=60/(dur/4);              // make 4 beats last `dur`
   playChord(eKey, t0, eQual, 4, bpmForChord);
   const semis=DEG_SEMI[eQual][eDeg];
-  playNote(48+eKey+semis+12, t0, 0.26, dur, 0.02);   // tone rides on top, clearly audible
+  playNote(48+eKey+semis+eOct, t0, 0.26, dur, 0.02);   // tone rides on top, clearly audible
 }
 // play the pair: chord ... gap ... tone
+// timing is identical either way; when `separate` is off the chord also
+// sounds underneath the tone so you hear it in harmonic context.
 function playPairE(){
   if(!ctx) initAudio();
   if(ctx.state==="suspended") ctx.resume();
   killAllVoices();
   const t0=ctx.currentTime+0.05;
-  const beatsForChord=4;                        // voicing length is expressed in beats
   const bpmForChord=60/(cfgE.chordSecs/4);      // make 4 beats last chordSecs
-  playChord(eKey, t0, eQual, beatsForChord, bpmForChord);
+  playChord(eKey, t0, eQual, 4, bpmForChord);
   const semis=DEG_SEMI[eQual][eDeg];
   const toneAt=t0+cfgE.chordSecs+cfgE.gapSecs;  // silence between the two
-  playNote(48+eKey+semis+12, toneAt, 0.24, cfgE.toneSecs, 0.02);
+  if(!cfgE.separate){
+    // chord again, behind the note, for the tone's full length
+    const bpmForBed=60/(cfgE.toneSecs/4);
+    playChord(eKey, toneAt, eQual, 4, bpmForBed);
+  }
+  playNote(48+eKey+semis+eOct, toneAt, 0.24, cfgE.toneSecs, 0.02);
   nextEEl.textContent="";
 }
 function pickE(){
@@ -2039,6 +2073,8 @@ function pickE(){
   eKey=k;
   const qp=[...cfgE.quals]; eQual=qp[Math.floor(Math.random()*qp.length)];
   const dp=[...cfgE.degs];  eDeg =dp[Math.floor(Math.random()*dp.length)];
+  // one octave above the voicing, or two when variation is on
+  eOct = cfgE.varyOct ? (Math.random()<0.5?12:24) : 12;
 }
 
 // --- multiple choice ---
@@ -2161,6 +2197,12 @@ $("#revealE").addEventListener("click",()=>{
   eTimers.push(setTimeout(()=>{ if(eRunning) nextE(); }, 2800));
 });
 $("#resetE").addEventListener("click",eReset);
+$("#earSep").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");
+  cfgE.separate=(b.dataset.s==="sep");});
+$("#earOct").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");
+  cfgE.varyOct=(b.dataset.o==="vary");});
 $("#qUpE").addEventListener("click",()=>{cfgE.nQuestions=Math.min(100,cfgE.nQuestions+5);$("#qValE").textContent=cfgE.nQuestions;updateScoreE();});
 $("#qDnE").addEventListener("click",()=>{cfgE.nQuestions=Math.max(5,cfgE.nQuestions-5);$("#qValE").textContent=cfgE.nQuestions;updateScoreE();});
 $("#earDegs").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
