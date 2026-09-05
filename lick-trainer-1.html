@@ -384,8 +384,8 @@
   .label{font-size:9.5px;color:var(--dim);letter-spacing:.24em;text-transform:uppercase;margin:0 0 6px 2px;}
 
   .tempo{
-    display:flex;align-items:center;gap:14px;
-    background:#0b111a;border:1px solid var(--line);border-radius:10px;padding:10px 14px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:#0b111a;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
   }
   .tempo .bpm{font-family:Georgia,serif;font-size:30px;font-weight:700;min-width:74px;color:var(--brass);}
   /* reserve room for 3 digits always, and use tabular figures so each digit is equal width */
@@ -401,6 +401,31 @@
   .stepper button{background:#0b111a;border:0;color:var(--brass);font-family:inherit;font-size:17px;width:30px;padding:6px 0;cursor:pointer;}
   .stepper span{min-width:24px;text-align:center;padding:6px 0;color:var(--ink);font-weight:700;border-left:1px solid var(--line);border-right:1px solid var(--line);}
   .tempo{min-width:0;}
+  /* tempo scrub: drag anywhere, relative — never runs out of travel */
+  .scrub{
+    position:relative;flex:1;height:38px;min-width:70px;border-radius:9px;
+    background:#0b111a;border:1px solid var(--line);overflow:hidden;
+    cursor:ew-resize;touch-action:none;user-select:none;
+  }
+  .scrub::after{  /* centre marker */
+    content:"";position:absolute;left:50%;top:6px;bottom:6px;width:2px;
+    transform:translateX(-50%);background:var(--brass);opacity:.75;border-radius:2px;
+  }
+  .scrubticks{
+    position:absolute;inset:0;
+    background-image:repeating-linear-gradient(to right,
+      var(--line) 0 1px, transparent 1px 14px);
+    opacity:.9;
+  }
+  .scrub.dragging{border-color:var(--brass);background:rgba(224,164,88,.07);}
+  .nudge{display:flex;gap:4px;flex:0 0 auto;}
+  .nudge button{
+    min-width:38px;padding:9px 4px;border-radius:8px;cursor:pointer;
+    background:#0b111a;border:1px solid var(--line);color:var(--brass);
+    font-family:'Courier New',monospace;font-size:13px;font-weight:700;
+    transition:background .1s,transform .05s;
+  }
+  .nudge button:active{background:var(--felt);transform:scale(.94);}
   .row{min-width:0;}
   .seg{min-width:0;}
 
@@ -491,7 +516,8 @@
     <div class="row" style="gap:12px;align-items:stretch;">
       <div class="tempo" style="flex:2;">
         <div class="bpm"><span id="bpmVal">120</span><small> bpm</small></div>
-        <input type="range" id="tempo" min="40" max="300" value="120">
+        <div class="scrub" data-for="tempo"><div class="scrubticks"></div></div>
+          <div class="nudge" data-for="tempo"><button data-n="-5">−5</button><button data-n="-1">−1</button><button data-n="1">+1</button><button data-n="5">+5</button></div>
       </div>
       <div class="tempo barsel" style="flex:1;justify-content:center;">
         <span>bars</span>
@@ -616,7 +642,8 @@
       <div class="row" style="gap:12px;align-items:stretch;">
         <div class="tempo" style="flex:2;">
           <div class="bpm"><span id="bpmVal2">120</span><small> bpm</small></div>
-          <input type="range" id="tempo2" min="40" max="300" value="120">
+          <div class="scrub" data-for="tempo2"><div class="scrubticks"></div></div>
+          <div class="nudge" data-for="tempo2"><button data-n="-5">−5</button><button data-n="-1">−1</button><button data-n="1">+1</button><button data-n="5">+5</button></div>
         </div>
         <div class="tempo barsel" style="flex:1;justify-content:center;">
           <span>bars ea.</span>
@@ -679,7 +706,8 @@
       <div class="row" style="gap:12px;align-items:stretch;">
         <div class="tempo" style="flex:2;">
           <div class="bpm"><span id="bpmValR">120</span><small> bpm</small></div>
-          <input type="range" id="tempoR" min="40" max="300" value="120">
+          <div class="scrub" data-for="tempoR"><div class="scrubticks"></div></div>
+          <div class="nudge" data-for="tempoR"><button data-n="-5">−5</button><button data-n="-1">−1</button><button data-n="1">+1</button><button data-n="5">+5</button></div>
         </div>
         <div class="tempo barsel" style="flex:1;justify-content:center;">
           <span>bars</span>
@@ -739,7 +767,8 @@
       <div class="row" style="gap:12px;align-items:stretch;">
         <div class="tempo" style="flex:2;">
           <div class="bpm"><span id="bpmValD">80</span><small> bpm</small></div>
-          <input type="range" id="tempoD" min="30" max="200" value="80">
+          <div class="scrub" data-for="tempoD"><div class="scrubticks"></div></div>
+          <div class="nudge" data-for="tempoD"><button data-n="-5">−5</button><button data-n="-1">−1</button><button data-n="1">+1</button><button data-n="5">+5</button></div>
         </div>
         <div class="tempo barsel" style="flex:1;justify-content:center;">
           <span>bars</span>
@@ -941,6 +970,46 @@ let cfg={q:"",order:"random",bpm:120,bars:1,transpose:0,preview:false,keys:new S
 let cur=0, prevIdx=-1, beat=0, totalBeats=4;
 
 const $=s=>document.querySelector(s);
+
+// ---- tempo control: relative drag strip + nudge buttons ----
+// Dragging is relative to where you grabbed, so you can keep dragging in one
+// direction forever — no fixed travel to run out of, unlike a range slider.
+function makeTempo(id, valId, min, max, apply){
+  const strip=document.querySelector(`.scrub[data-for="${id}"]`);
+  const nudge=document.querySelector(`.nudge[data-for="${id}"]`);
+  const ticks=strip?strip.querySelector(".scrubticks"):null;
+  let cur=+document.getElementById(valId).textContent||min;
+  const PX_PER_BPM=5;                 // drag sensitivity
+  function set(v){
+    cur=Math.max(min,Math.min(max,Math.round(v)));
+    document.getElementById(valId).textContent=cur;
+    apply(cur);
+  }
+  if(strip){
+    let startX=0,startBpm=0,dragging=false,offset=0;
+    strip.addEventListener("pointerdown",e=>{
+      dragging=true;startX=e.clientX;startBpm=cur;
+      strip.classList.add("dragging");strip.setPointerCapture(e.pointerId);
+    });
+    strip.addEventListener("pointermove",e=>{
+      if(!dragging)return;
+      const dx=e.clientX-startX;
+      set(startBpm + dx/PX_PER_BPM);
+      if(ticks){ offset=dx%14; ticks.style.transform=`translateX(${offset}px)`; }
+    });
+    const end=e=>{ if(!dragging)return; dragging=false;
+      strip.classList.remove("dragging");
+      try{strip.releasePointerCapture(e.pointerId);}catch(_){}
+    };
+    strip.addEventListener("pointerup",end);
+    strip.addEventListener("pointercancel",end);
+  }
+  if(nudge){
+    nudge.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+      set(cur + (+b.dataset.n));});
+  }
+  return {set:v=>set(v), get:()=>cur};
+}
 const chordEl=$("#chord"), chordGhostEl=$("#chordghost"), nextEl=$("#next"), beatsEl=$("#beats");
 
 // ---- screen wake lock: keep the display awake while anything is playing ----
@@ -1246,7 +1315,7 @@ $("#preview").addEventListener("click",e=>{const b=e.target.closest("button");if
 });
 $("#order").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
   [...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfg.order=b.dataset.o;});
-$("#tempo").addEventListener("input",e=>{cfg.bpm=+e.target.value;$("#bpmVal").textContent=cfg.bpm;});
+makeTempo("tempo","bpmVal",40,300,v=>{cfg.bpm=v;});
 $("#barUp").addEventListener("click",()=>{cfg.bars=Math.min(8,cfg.bars+1);$("#barVal").textContent=cfg.bars;if(running){stop();start();}});
 $("#barDn").addEventListener("click",()=>{cfg.bars=Math.max(1,cfg.bars-1);$("#barVal").textContent=cfg.bars;if(running){stop();start();}});
 
@@ -1553,7 +1622,7 @@ $("#twoTap").addEventListener("click",()=>t2Running?t2Stop():t2Start());
 $("#prog").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfg2.prog=b.dataset.p;render2(t2Running?t2Cur:0, t2Running?1:0);});
 $("#order2").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfg2.order=b.dataset.o;});
 $("#transpose2").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfg2.transpose=+b.dataset.t;render2(t2Running?t2Cur:0, t2Running?1:0);buildKeys2();});
-$("#tempo2").addEventListener("input",e=>{cfg2.bpm=+e.target.value;$("#bpmVal2").textContent=cfg2.bpm;});
+makeTempo("tempo2","bpmVal2",40,300,v=>{cfg2.bpm=v;});
 $("#barUp2").addEventListener("click",()=>{cfg2.bars=Math.min(8,cfg2.bars+1);$("#barVal2").textContent=cfg2.bars;if(t2Running){t2Stop();t2Start();}});
 $("#barDn2").addEventListener("click",()=>{cfg2.bars=Math.max(1,cfg2.bars-1);$("#barVal2").textContent=cfg2.bars;if(t2Running){t2Stop();t2Start();}});
 
@@ -1672,7 +1741,7 @@ $("#previewR").addEventListener("click",e=>{const b=e.target.closest("button");i
 });
 $("#orderR").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfgR.order=b.dataset.o;});
 $("#transposeR").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfgR.transpose=+b.dataset.t;renderR(rCur,rQual, rRunning?rNextKey:null, rRunning?rNextQual:null);buildKeysR();});
-$("#tempoR").addEventListener("input",e=>{cfgR.bpm=+e.target.value;$("#bpmValR").textContent=cfgR.bpm;});
+makeTempo("tempoR","bpmValR",40,300,v=>{cfgR.bpm=v;});
 $("#barUpR").addEventListener("click",()=>{cfgR.bars=Math.min(8,cfgR.bars+1);$("#barValR").textContent=cfgR.bars;if(rRunning){rStop();rStart();}});
 $("#barDnR").addEventListener("click",()=>{cfgR.bars=Math.max(1,cfgR.bars-1);$("#barValR").textContent=cfgR.bars;if(rRunning){rStop();rStart();}});
 
@@ -1847,7 +1916,7 @@ $("#degQuals").addEventListener("click",e=>{const b=e.target.closest("button");i
   const q=b.dataset.q; if(cfgD.quals.has(q))cfgD.quals.delete(q); else cfgD.quals.add(q); b.classList.toggle("sel"); dResync();});
 $("#transposeD").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfgD.transpose=+b.dataset.t;buildKeysD();dResync();});
 $("#degSound").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...e.currentTarget.children].forEach(x=>x.classList.remove("sel"));b.classList.add("sel");cfgD.sound=(b.dataset.s==="on");});
-$("#tempoD").addEventListener("input",e=>{cfgD.bpm=+e.target.value;$("#bpmValD").textContent=cfgD.bpm;});
+makeTempo("tempoD","bpmValD",30,200,v=>{cfgD.bpm=v;});
 $("#barUpD").addEventListener("click",()=>{cfgD.bars=Math.min(8,cfgD.bars+1);$("#barValD").textContent=cfgD.bars;if(cfgD.lag>cfgD.bars){cfgD.lag=cfgD.bars;$("#lagValD").textContent=cfgD.lag;}dResync();});
 $("#barDnD").addEventListener("click",()=>{cfgD.bars=Math.max(1,cfgD.bars-1);$("#barValD").textContent=cfgD.bars;if(cfgD.lag>cfgD.bars){cfgD.lag=cfgD.bars;$("#lagValD").textContent=cfgD.lag;}dResync();});
 $("#lagUpD").addEventListener("click",()=>{cfgD.lag=Math.min(cfgD.bars,cfgD.lag+1);$("#lagValD").textContent=cfgD.lag;});
