@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Form study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --slate:#22252a;
+  --slate-2:#2c3037;
+  --ink:#e9e5dc;
+  --ink-dim:#a6a49d;
+  --sanguine:#a24b2b;
+  --line:#3a3e45;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--slate);
+  font-family:"Barlow Semi Condensed",system-ui,-apple-system,sans-serif;color:var(--ink)}
+#stage{position:fixed;inset:0;touch-action:none}
+#gl,#hud{position:absolute;inset:0;width:100%;height:100%;display:block}
+#hud{pointer-events:none}
+
+#hint{position:absolute;top:calc(env(safe-area-inset-top) + 14px);left:0;right:0;text-align:center;
+  font-size:14px;color:#3c3a35;letter-spacing:.02em;transition:opacity .6s;pointer-events:none}
+
+#panel{position:fixed;left:0;right:0;bottom:0;background:rgba(34,37,42,.94);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-top:1px solid var(--line);padding:6px 14px calc(env(safe-area-inset-bottom) + 14px);
+  transition:transform .28s cubic-bezier(.32,.72,0,1);max-height:64vh;overflow-y:auto}
+#panel.down{transform:translateY(calc(100% - 42px))}
+#grip{display:flex;align-items:center;justify-content:space-between;height:36px;cursor:pointer}
+#grip span{font-size:15px;color:var(--ink-dim);letter-spacing:.04em}
+#grip::before{content:"";position:absolute;left:50%;top:12px;width:34px;height:3px;margin-left:-17px;
+  border-radius:2px;background:#565b64}
+#reset{background:none;border:none;color:var(--ink-dim);font:inherit;font-size:14px;padding:6px 0}
+
+.row{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;border:1px solid var(--line);background:var(--slate-2);color:var(--ink-dim);
+  font:inherit;font-size:15px;padding:8px 13px;border-radius:3px}
+.chip.on{color:var(--ink);border-color:var(--sanguine);background:#33261f}
+
+.sl{display:grid;grid-template-columns:66px 1fr;align-items:center;gap:10px;padding:3px 0}
+.sl label{font-size:14px;color:var(--ink-dim)}
+.sl .val{font-size:13px;color:var(--ink-dim);grid-column:2;margin-top:-4px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:26px;background:none}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--line)}
+input[type=range]::-moz-range-track{height:2px;background:var(--line)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;margin-top:-10px;
+  border-radius:50%;background:var(--ink);border:4px solid var(--slate)}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--ink);border:4px solid var(--slate)}
+.sub{font-size:14px;color:var(--ink-dim);padding:2px 0 6px}
+@media (prefers-reduced-motion:reduce){#panel{transition:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl"></canvas>
+  <canvas id="hud"></canvas>
+  <div id="hint">One finger turns it. Two fingers pan, pinch and twist.</div>
+</div>
+
+<div id="panel">
+  <div id="grip"><span id="gripLabel">Controls</span><button id="reset">Reset view</button></div>
+
+  <div class="row" id="shapes"></div>
+
+  <div class="sl">
+    <label for="fov">Lens</label>
+    <input type="range" id="fov" min="8" max="120" value="35">
+    <div class="val" id="fovVal"></div>
+  </div>
+  <div class="sl">
+    <label for="shade">Shading</label>
+    <input type="range" id="shade" min="0" max="100" value="100">
+    <div class="val" id="shadeVal"></div>
+  </div>
+  <div class="sub">One finger turns</div>
+  <div class="row" id="modes"></div>
+
+  <div class="sl">
+    <label for="tilt">Lean</label>
+    <input type="range" id="tilt" min="-90" max="90" value="20">
+    <div class="val" id="tiltVal"></div>
+  </div>
+  <div class="sl">
+    <label for="spin">Turn</label>
+    <input type="range" id="spin" min="-180" max="180" value="30">
+    <div class="val" id="spinVal"></div>
+  </div>
+  <div class="sl">
+    <label for="roll">Roll</label>
+    <input type="range" id="roll" min="-180" max="180" value="0">
+    <div class="val" id="rollVal"></div>
+  </div>
+
+  <div class="sub">Overlays</div>
+  <div class="row" id="toggles"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+const V = THREE.Vector3;
+const DEG = Math.PI/180;
+const GROUND_Y = -1.45;
+
+const glCanvas  = document.getElementById('gl');
+const hudCanvas = document.getElementById('hud');
+const hud = hudCanvas.getContext('2d');
+
+let renderer, scene, camera, pivot, spinGroup, form, ground, grid, dirLight;
+let W = 0, H = 0, dpr = 1;
+
+const view = { az: 0.7, el: 0.22, fov: 35, zoom: 1, roll: 0, target: new V(0,0,0) };
+const state = { tilt: 20, spin: 30, roll: 0, shape: 'cube', drag: 'model', shade: 100 };
+const objQ = new THREE.Quaternion();
+const _e = new THREE.Euler();
+const show = { vp:true, contours:true, ground:true, bbox:false, diag:false, hidden:true };
+
+/* ---------- geometry helpers ---------- */
+function ringY(r, y, seg){ const p=[]; seg=seg||64;
+  for(let i=0;i<=seg;i++){ const t=i/seg*Math.PI*2; p.push(new V(Math.cos(t)*r, y, Math.sin(t)*r)); }
+  return p; }
+function meridian(R, a, seg){ const p=[]; seg=seg||64;
+  for(let i=0;i<=seg;i++){ const t=i/seg*Math.PI*2;
+    p.push(new V(Math.sin(t)*Math.cos(a)*R, Math.cos(t)*R, Math.sin(t)*Math.sin(a)*R)); }
+  return p; }
+function loopsToGeom(loops){
+  const pts=[];
+  loops.forEach(function(l){ for(let i=0;i<l.length-1;i++){ pts.push(l[i], l[i+1]); } });
+  return new THREE.BufferGeometry().setFromPoints(pts);
+}
+
+const surfaceMat = new THREE.MeshLambertMaterial({
+  color:0xf0ebe0, transparent:true, opacity:1, side:THREE.DoubleSide,
+  polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1 });
+const contourMat = new THREE.LineBasicMaterial({ color:0x35322c, transparent:true, opacity:.68 });
+const edgeMat    = new THREE.LineBasicMaterial({ color:0x2b2823, transparent:true, opacity:1 });
+/* drawn only where a line sits behind the surface: depth test reversed */
+const hiddenMat  = new THREE.LineBasicMaterial({ color:0xa24b2b, transparent:true, opacity:.55,
+  depthFunc:THREE.GreaterDepth, depthWrite:false });
+
+/* ---------- shape helpers ---------- */
+function fixWinding(geo){
+  geo.computeVertexNormals();
+  const p=geo.attributes.position, n=geo.attributes.normal;
+  let s=0; for(let i=0;i<p.count;i+=7){ s += p.getX(i)*n.getX(i)+p.getY(i)*n.getY(i)+p.getZ(i)*n.getZ(i); }
+  if(s<0){ /* inside out: flip index order */
+    const idx=geo.index; if(idx){ for(let i=0;i<idx.count;i+=3){ const a=idx.getX(i); idx.setX(i, idx.getX(i+2)); idx.setX(i+2, a); } idx.needsUpdate=true; }
+    geo.computeVertexNormals(); }
+  return geo;
+}
+function latheFn(rf, y0, y1, n, rings){
+  const prof=[]; for(let i=0;i<=n;i++){ const y=y0+(y1-y0)*i/n; prof.push([Math.max(0, rf(y)), y]); }
+  const geo=fixWinding(new THREE.LatheGeometry(prof.map(function(p){ return new THREE.Vector2(p[0],p[1]); }), 56));
+  const loops=[];
+  for(let k=1;k<rings;k++){ const y=y0+(y1-y0)*k/rings, r=rf(y); if(r>.03) loops.push(ringY(r,y,56)); }
+  for(let j=0;j<8;j++){ const t=j/8*Math.PI*2;
+    loops.push(prof.map(function(p){ return new V(Math.cos(t)*p[0], p[1], Math.sin(t)*p[0]); })); }
+  return { geo:geo, loops:loops };
+}
+function latheProfile(prof, rings){
+  const geo=fixWinding(new THREE.LatheGeometry(prof.map(function(p){ return new THREE.Vector2(p[0],p[1]); }), 56));
+  const loops=[];
+  (rings||[]).forEach(function(p){ loops.push(ringY(p[0],p[1],56)); });
+  for(let j=0;j<8;j++){ const t=j/8*Math.PI*2;
+    loops.push(prof.map(function(p){ return new V(Math.cos(t)*p[0], p[1], Math.sin(t)*p[0]); })); }
+  return { geo:geo, loops:loops };
+}
+function frustum(rt, rb, h, rings){
+  const loops=[];
+  for(let k=0;k<=rings;k++){ const t=k/rings, y=h/2-h*t; loops.push(ringY(rt+(rb-rt)*t, y, 56)); }
+  for(let j=0;j<8;j++){ const t=j/8*Math.PI*2;
+    loops.push([new V(Math.cos(t)*rt,h/2,Math.sin(t)*rt), new V(Math.cos(t)*rb,-h/2,Math.sin(t)*rb)]); }
+  return { geo:new THREE.CylinderGeometry(rt,rb,h,56), loops:loops };
+}
+function sphereLoops(R, lat, lon){
+  const loops=[];
+  for(let k=1;k<=lat;k++){ const phi=k*Math.PI/(lat+1); loops.push(ringY(Math.sin(phi)*R, Math.cos(phi)*R)); }
+  for(let j=0;j<lon;j++){ loops.push(meridian(R, j*Math.PI/lon)); }
+  return loops;
+}
+function capsuleR(r, half){ return function(y){ const a=Math.abs(y); return a<half ? r : Math.sqrt(Math.max(0, r*r-(a-half)*(a-half))); }; }
+
+/* Each shape: geometry + contour loops. Half-extents are computed from the geometry. */
+const SHAPES = {
+  cube: { name:'Cube', build:function(){ return { geo:new THREE.BoxGeometry(1.3,1.3,1.3), loops:null }; } },
+  brick: { name:'Brick', build:function(){ return { geo:new THREE.BoxGeometry(1.84,1.0,.72), loops:null }; } },
+  sphere: { name:'Sphere', build:function(){
+      return { geo:new THREE.SphereGeometry(.95,56,36), loops:sphereLoops(.95,7,6) }; } },
+  ellipsoid: { name:'Ellipsoid', build:function(){
+      const s=new V(1.25,.8,.8), loops=sphereLoops(1,7,6);
+      loops.forEach(function(l){ l.forEach(function(p){ p.multiply(s); }); });
+      const geo=new THREE.SphereGeometry(1,56,36); geo.scale(s.x,s.y,s.z);
+      return { geo:geo, loops:loops }; } },
+  cone: { name:'Cone', build:function(){ return frustum(0.0001,.8,1.8,5); } },
+  cylinder: { name:'Cylinder', build:function(){ return frustum(.7,.7,1.7,5); } },
+  disc: { name:'Disc', build:function(){
+      const r=.95, h=.08, loops=[ringY(r,h/2,72), ringY(r,-h/2,72), ringY(r*.55,h/2,72)];
+      for(let j=0;j<8;j++){ const t=j/8*Math.PI*2;
+        loops.push([new V(Math.cos(t)*r,h/2,Math.sin(t)*r), new V(Math.cos(t)*r,-h/2,Math.sin(t)*r)]);
+        loops.push([new V(0,h/2,0), new V(Math.cos(t)*r,h/2,Math.sin(t)*r)]); }
+      return { geo:new THREE.CylinderGeometry(r,r,h,72), loops:loops }; } },
+  torus: { name:'Torus', build:function(){
+      const R=.82, t=.3, loops=[];
+      for(let j=0;j<10;j++){ const a=j/10*Math.PI*2, cx=Math.cos(a)*R, cz=Math.sin(a)*R, p=[];
+        for(let i=0;i<=32;i++){ const u=i/32*Math.PI*2;
+          p.push(new V(cx + Math.cos(u)*t*Math.cos(a), Math.sin(u)*t, cz + Math.cos(u)*t*Math.sin(a))); }
+        loops.push(p); }
+      loops.push(ringY(R+t,0,72)); loops.push(ringY(R-t,0,72)); loops.push(ringY(R,t,72)); loops.push(ringY(R,-t,72));
+      const geo=new THREE.TorusGeometry(R,t,20,64); geo.rotateX(-Math.PI/2);
+      return { geo:geo, loops:loops }; } },
+
+  /* ---- body forms ---- */
+  egg: { name:'Egg', build:function(){
+      return latheFn(function(y){ const u=y/.98; return .72*Math.sqrt(Math.max(0,1-u*u))*(1-.22*u); }, -.98, .98, 40, 7); } },
+  bean: { name:'Bean', build:function(){
+      return latheFn(function(y){ const u=y/1.02; return Math.sqrt(Math.max(0,1-u*u))*(.64-.14*Math.exp(-u*u/.05))*(1+.10*u); }, -1.02, 1.02, 48, 8); } },
+  bucket: { name:'Bucket', build:function(){ return frustum(.85,.62,.9,3); } },
+  limb: { name:'Limb', build:function(){ return frustum(.42,.30,1.9,6); } },
+  finger: { name:'Finger', build:function(){ return latheFn(capsuleR(.24,.56), -.8, .8, 48, 6); } },
+  pear: { name:'Pear', build:function(){
+      return latheFn(function(y){ const u=y/.92; return .58*Math.sqrt(Math.max(0,1-u*u))*(1-.32*u); }, -.92, .92, 40, 7); } },
+  neck: { name:'Neck', build:function(){ return frustum(.48,.56,.8,3); } },
+  dome: { name:'Dome', build:function(){
+      const prof=[[0,0],[.95,0]]; for(let i=1;i<=20;i++){ const a=i/20*Math.PI/2; prof.push([Math.cos(a)*.95, Math.sin(a)*.95]); }
+      const rings=[[.95,0]]; for(let k=1;k<=3;k++){ const a=k/4*Math.PI/2; rings.push([Math.cos(a)*.95, Math.sin(a)*.95]); }
+      return latheProfile(prof, rings); } },
+  skull: { name:'Skull', build:function(){
+      const R=.92, cut=.74, geo=new THREE.SphereGeometry(R,56,36), p=geo.attributes.position;
+      for(let i=0;i<p.count;i++){ const x=p.getX(i); if(x>cut) p.setX(i,cut); else if(x<-cut) p.setX(i,-cut); }
+      geo.computeVertexNormals();
+      const loops=sphereLoops(R,6,6);
+      loops.forEach(function(l){ l.forEach(function(q){ q.x=Math.max(-cut,Math.min(cut,q.x)); }); });
+      const rr=Math.sqrt(R*R-cut*cut); const side=ringY(rr,0,48);
+      side.forEach(function(q){ const x=q.x, z=q.z; q.set(cut,x,z); }); loops.push(side);
+      const side2=side.map(function(q){ return new V(-cut,q.y,q.z); }); loops.push(side2);
+      return { geo:geo, loops:loops }; } },
+  wedge: { name:'Wedge', build:function(){
+      const w=.45, h=.7, L=1.8, y0=-h/2, y1=h/2, z0=-L/2, z1=L/2;
+      const v=[ -w,y0,z0,  w,y0,z0,  w,y0,z1,  -w,y0,z1,  -w,y1,z0,  w,y1,z0 ];
+      const idx=[ 0,2,1, 0,3,2,  0,1,5, 0,5,4,  3,4,5, 3,5,2,  0,4,3,  1,2,5 ];
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(v,3)); geo.setIndex(idx);
+      return { geo:fixWinding(geo), loops:null }; } }
+};
+
+/* ---------- scene ---------- */
+function init(){
+  renderer = new THREE.WebGLRenderer({ canvas:glCanvas, antialias:true });
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x86847d);
+
+  camera = new THREE.PerspectiveCamera(view.fov, 1, .05, 400);
+
+  scene.add(new THREE.HemisphereLight(0xf6f2e8, 0x55534d, .62));
+  dirLight = new THREE.DirectionalLight(0xfff6e6, .82);
+  dirLight.position.set(-3.2, 5.2, 2.6);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(1024,1024);
+  const c = dirLight.shadow.camera;
+  c.left=-4; c.right=4; c.top=4; c.bottom=-4; c.near=.5; c.far=18;
+  scene.add(dirLight);
+
+  ground = new THREE.Mesh(new THREE.PlaneGeometry(80,80),
+    new THREE.ShadowMaterial({ opacity:.3 }));
+  ground.rotation.x = -Math.PI/2; ground.position.y = GROUND_Y; ground.receiveShadow = true;
+  scene.add(ground);
+
+  grid = new THREE.GridHelper(30, 30, 0x6d6b65, 0x77756e);
+  grid.position.y = GROUND_Y + .002;
+  grid.material.transparent = true; grid.material.opacity = .5;
+  scene.add(grid);
+
+  pivot = new THREE.Group();
+  spinGroup = new THREE.Group();
+  pivot.add(spinGroup);
+  scene.add(pivot);
+
+  setShape('cube');
+  resize();
+  window.addEventListener('resize', resize);
+  requestAnimationFrame(loop);
+}
+
+function setShape(key){
+  state.shape = key;
+  if(form){ spinGroup.remove(form); form.traverse(function(o){ if(o.geometry) o.geometry.dispose(); }); }
+  const def = SHAPES[key], built = def.build();
+  /* centre the geometry and take its half-extents for the overlays */
+  built.geo.computeBoundingBox();
+  const bb = built.geo.boundingBox, c = new V(); bb.getCenter(c);
+  built.geo.translate(-c.x,-c.y,-c.z);
+  if(built.loops) built.loops.forEach(function(l){ l.forEach(function(p){ p.sub(c); }); });
+  def.he = new V(); bb.getSize(def.he).multiplyScalar(.5);
+
+  form = new THREE.Group();
+  const mesh = new THREE.Mesh(built.geo, surfaceMat);
+  mesh.castShadow = true; mesh.name = 'surface'; mesh.renderOrder = 0;
+  form.add(mesh);
+
+  const lgeo = built.loops ? loopsToGeom(built.loops) : new THREE.EdgesGeometry(built.geo);
+  const vis = new THREE.LineSegments(lgeo, built.loops ? contourMat : edgeMat);
+  vis.name = 'contour'; vis.renderOrder = 1; form.add(vis);
+  const hid = new THREE.LineSegments(lgeo, hiddenMat);
+  hid.name = 'hidden'; hid.renderOrder = 2; form.add(hid);
+
+  spinGroup.add(form);
+  applyVisibility();
+  document.querySelectorAll('#shapes .chip').forEach(function(b){
+    b.classList.toggle('on', b.dataset.k === key); });
+}
+
+function applyVisibility(){
+  const box = (state.shape==='cube' || state.shape==='brick' || state.shape==='wedge');
+  form.traverse(function(o){
+    if(o.name === 'contour') o.visible = box ? true : show.contours;
+    if(o.name === 'hidden')  o.visible = show.hidden && (box ? true : show.contours);
+  });
+  surfaceMat.opacity = state.shade/100;
+  ground.visible = show.ground;
+  grid.visible = show.ground;
+}
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  renderer.setPixelRatio(dpr); renderer.setSize(W, H, false);
+  hudCanvas.width = W*dpr; hudCanvas.height = H*dpr;
+  hudCanvas.style.width = W+'px'; hudCanvas.style.height = H+'px';
+  hud.setTransform(dpr,0,0,dpr,0,0);
+  camera.aspect = W/H; camera.updateProjectionMatrix();
+}
+
+function updateCamera(){
+  camera.fov = view.fov;
+  const frame = 1.75;
+  const d = Math.max(1.45, frame / Math.tan(view.fov*DEG/2) * view.zoom);
+  const ce = Math.cos(view.el), se = Math.sin(view.el);
+  camera.position.set(
+    view.target.x + d*ce*Math.sin(view.az),
+    view.target.y + d*se,
+    view.target.z + d*ce*Math.cos(view.az));
+  camera.lookAt(view.target);
+  if(view.roll) camera.rotateZ(view.roll);
+  camera.updateProjectionMatrix();
+  dirLight.target.position.copy(pivot.position);
+  scene.add(dirLight.target);
+}
+
+function qFromSliders(){
+  _e.set(state.tilt*DEG, state.spin*DEG, state.roll*DEG, 'YXZ');
+  objQ.setFromEuler(_e);
+}
+function slidersFromQ(){
+  _e.setFromQuaternion(objQ, 'YXZ');
+  state.tilt = Math.round(_e.x/DEG);
+  state.spin = Math.round(_e.y/DEG);
+  state.roll = Math.round(_e.z/DEG);
+  syncSliderUI();
+}
+function loop(){
+  pivot.quaternion.copy(objQ);
+  updateCamera();
+  renderer.render(scene, camera);
+  drawHud();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 2D overlay: vanishing points, horizon, bounding box ---------- */
+const _m = new THREE.Matrix4(), _v4 = new THREE.Vector4();
+
+function project(p){
+  const q = p.clone().project(camera);
+  return { x:(q.x*.5+.5)*W, y:(-q.y*.5+.5)*H };
+}
+function vanish(dir){
+  _m.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  _v4.set(dir.x, dir.y, dir.z, 0).applyMatrix4(_m);
+  if(Math.abs(_v4.w) < 1e-7) return null;
+  const x = _v4.x/_v4.w, y = _v4.y/_v4.w;
+  if(!isFinite(x) || !isFinite(y)) return null;
+  const s = { x:(x*.5+.5)*W, y:(-y*.5+.5)*H };
+  if(Math.abs(s.x) > 40000 || Math.abs(s.y) > 40000) return null;
+  return s;
+}
+
+function cross2(a,b,c,d){
+  const r1 = b.x-a.x, r2 = b.y-a.y, s1 = d.x-c.x, s2 = d.y-c.y;
+  const den = r1*s2 - r2*s1;
+  if(Math.abs(den) < 1e-9) return null;
+  const t = ((c.x-a.x)*s2 - (c.y-a.y)*s1)/den;
+  return { x:a.x + r1*t, y:a.y + r2*t };
+}
+
+const AXIS_COLORS = ['#a24b2b','#4c5b78','#5e6640'];
+
+function drawHud(){
+  hud.clearRect(0,0,W,H);
+  if(!show.vp && !show.bbox && !show.diag) return;
+
+  spinGroup.updateMatrixWorld(true);
+  const m = spinGroup.matrixWorld.elements;
+  const axes = [ new V(m[0],m[1],m[2]).normalize(),
+                 new V(m[4],m[5],m[6]).normalize(),
+                 new V(m[8],m[9],m[10]).normalize() ];
+  const he = SHAPES[state.shape].he;
+  const corners = [];
+  for(let i=0;i<8;i++){
+    const sx = (i&1)?1:-1, sy = (i&2)?1:-1, sz = (i&4)?1:-1;
+    corners.push(new V(he.x*sx, he.y*sy, he.z*sz).applyMatrix4(spinGroup.matrixWorld));
+  }
+  const scr = corners.map(project);
+
+  if(show.bbox){
+    hud.save(); hud.setLineDash([]); hud.lineWidth = 1; hud.strokeStyle = 'rgba(28,26,22,.45)';
+    for(let i=0;i<8;i++){
+      [1,2,4].forEach(function(bit){
+        const j = i ^ bit;
+        if(j > i){ hud.beginPath(); hud.moveTo(scr[i].x,scr[i].y); hud.lineTo(scr[j].x,scr[j].y); hud.stroke(); }
+      });
+    }
+    hud.restore();
+  }
+
+  if(show.diag){
+    const bits2 = [1,2,4], camPos = camera.position;
+    hud.save(); hud.setLineDash([]); hud.lineWidth = 1.2; hud.globalAlpha = .9;
+    hud.strokeStyle = '#1D9E75'; hud.fillStyle = '#1D9E75';
+    for(let a=0;a<3;a++){
+      const bit = bits2[a], o1 = bits2[(a+1)%3], o2 = bits2[(a+2)%3];
+      for(let s=0;s<2;s++){
+        const sign = s ? 1 : -1;
+        const fc = new V(0,0,0);
+        fc.setComponent(a, sign*he.getComponent(a));
+        fc.applyMatrix4(spinGroup.matrixWorld);
+        const n = axes[a].clone().multiplyScalar(sign);
+        if(n.dot(camPos.clone().sub(fc)) <= 0) continue;
+        const base = s ? bit : 0;
+        const p0 = scr[base], p1 = scr[base|o1|o2], p2 = scr[base|o1], p3 = scr[base|o2];
+        hud.beginPath();
+        hud.moveTo(p0.x,p0.y); hud.lineTo(p1.x,p1.y);
+        hud.moveTo(p2.x,p2.y); hud.lineTo(p3.x,p3.y);
+        hud.stroke();
+        const x = cross2(p0,p1,p2,p3);
+        if(x){ hud.beginPath(); hud.arc(x.x, x.y, 4, 0, Math.PI*2); hud.fill(); }
+      }
+    }
+    hud.restore();
+  }
+
+  if(!show.vp) return;
+
+  /* horizon: the line joining the vanishing points of two ground directions */
+  const hx = vanish(new V(1,0,0)), hz = vanish(new V(0,0,1));
+  if(hx && hz){
+    const dx = hz.x-hx.x, dy = hz.y-hx.y, L = Math.hypot(dx,dy) || 1;
+    const k = 6000/L;
+    hud.save();
+    hud.setLineDash([]); hud.lineWidth = 1.25; hud.strokeStyle = 'rgba(40,52,62,.55)';
+    hud.beginPath();
+    hud.moveTo(hx.x-dx*k, hx.y-dy*k); hud.lineTo(hx.x+dx*k, hx.y+dy*k); hud.stroke();
+    hud.restore();
+  }
+
+  const bits = [1,2,4];
+  for(let a=0;a<3;a++){
+    const vp = vanish(axes[a]);
+    if(!vp) continue;
+    const col = AXIS_COLORS[a];
+    hud.save();
+    hud.strokeStyle = col; hud.lineWidth = 1; hud.setLineDash([7,7]);
+    hud.globalAlpha = .8;
+    for(let i=0;i<8;i++){
+      const j = i ^ bits[a];
+      if(j <= i) continue;
+      const p0 = scr[i], p1 = scr[j];
+      const d0 = Math.hypot(p0.x-vp.x, p0.y-vp.y), d1 = Math.hypot(p1.x-vp.x, p1.y-vp.y);
+      const far = d0 > d1 ? p0 : p1;
+      hud.beginPath(); hud.moveTo(far.x, far.y); hud.lineTo(vp.x, vp.y); hud.stroke();
+    }
+    hud.setLineDash([]);
+    const on = vp.x > -60 && vp.x < W+60 && vp.y > -60 && vp.y < H+60;
+    if(on){
+      hud.globalAlpha = 1; hud.fillStyle = col; hud.strokeStyle = col; hud.lineWidth = 1.4;
+      hud.beginPath(); hud.arc(vp.x, vp.y, 4.5, 0, Math.PI*2); hud.fill();
+      hud.beginPath();
+      hud.moveTo(vp.x-13, vp.y); hud.lineTo(vp.x+13, vp.y);
+      hud.moveTo(vp.x, vp.y-13); hud.lineTo(vp.x, vp.y+13);
+      hud.stroke();
+    }
+    hud.restore();
+  }
+}
+
+/* ---------- input ---------- */
+const stage = document.getElementById('stage');
+let drag = null, hintGone = false;
+
+function killHint(){
+  if(hintGone) return; hintGone = true;
+  const el = document.getElementById('hint'); el.style.opacity = 0;
+  setTimeout(function(){ el.remove(); }, 700);
+}
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+function turnModel(dx, dy){
+  const right = new V().setFromMatrixColumn(camera.matrixWorld, 0);
+  const up    = new V().setFromMatrixColumn(camera.matrixWorld, 1);
+  _qa.setFromAxisAngle(up, dx*.008);
+  _qb.setFromAxisAngle(right, dy*.008);
+  objQ.premultiply(_qb).premultiply(_qa);
+  slidersFromQ();
+}
+function orbit(dx, dy){
+  view.az -= dx*.007;
+  view.el = Math.max(-1.45, Math.min(1.45, view.el + dy*.007));
+}
+function oneFinger(dx, dy){
+  if(state.drag === 'model') turnModel(dx, dy); else orbit(dx, dy);
+}
+function pan(dx, dy){
+  const d = camera.position.distanceTo(view.target);
+  const k = 2*Math.tan(view.fov*DEG/2)*d/H;
+  const right = new V().setFromMatrixColumn(camera.matrixWorld, 0);
+  const up    = new V().setFromMatrixColumn(camera.matrixWorld, 1);
+  view.target.addScaledVector(right, -dx*k).addScaledVector(up, dy*k);
+}
+function touchInfo(t){
+  const a = t[0], b = t[1];
+  return { x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2,
+           d:Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY),
+           a:Math.atan2(b.clientY-a.clientY, b.clientX-a.clientX) };
+}
+function twist(da){
+  if(state.drag === 'model'){
+    const fwd = new V().setFromMatrixColumn(camera.matrixWorld, 2).negate();
+    _qa.setFromAxisAngle(fwd, da);
+    objQ.premultiply(_qa);
+    slidersFromQ();
+  } else {
+    view.roll += da;
+  }
+}
+
+stage.addEventListener('touchstart', function(e){
+  killHint();
+  if(e.touches.length === 1){ drag = { mode:1, x:e.touches[0].clientX, y:e.touches[0].clientY }; }
+  else if(e.touches.length >= 2){ const i = touchInfo(e.touches); drag = { mode:2, x:i.x, y:i.y, d:i.d, a:i.a }; }
+}, {passive:false});
+
+stage.addEventListener('touchmove', function(e){
+  e.preventDefault();
+  if(!drag) return;
+  if(drag.mode === 1 && e.touches.length === 1){
+    const t = e.touches[0];
+    oneFinger(t.clientX - drag.x, t.clientY - drag.y);
+    drag.x = t.clientX; drag.y = t.clientY;
+  } else if(drag.mode === 2 && e.touches.length >= 2){
+    const i = touchInfo(e.touches);
+    if(drag.d > 0) view.zoom = Math.max(.3, Math.min(3.5, view.zoom * (drag.d/i.d)));
+    let da = i.a - drag.a;
+    while(da >  Math.PI) da -= Math.PI*2;
+    while(da < -Math.PI) da += Math.PI*2;
+    twist(da);
+    pan(i.x - drag.x, i.y - drag.y);
+    drag.x = i.x; drag.y = i.y; drag.d = i.d; drag.a = i.a;
+  }
+}, {passive:false});
+
+stage.addEventListener('touchend', function(e){
+  if(!e.touches.length){ drag = null; return; }
+  if(e.touches.length === 1){
+    drag = { mode:1, x:e.touches[0].clientX, y:e.touches[0].clientY };
+  } else {
+    const i = touchInfo(e.touches);
+    drag = { mode:2, x:i.x, y:i.y, d:i.d, a:i.a };
+  }
+});
+
+stage.addEventListener('mousedown', function(e){
+  killHint(); drag = { mode:e.shiftKey?2:1, x:e.clientX, y:e.clientY };
+});
+window.addEventListener('mousemove', function(e){
+  if(!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if(drag.mode === 1){ oneFinger(dx, dy); } else { pan(dx, dy); }
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+window.addEventListener('mouseup', function(){ drag = null; });
+stage.addEventListener('wheel', function(e){
+  e.preventDefault(); killHint();
+  view.zoom = Math.max(.3, Math.min(3.5, view.zoom * (1 + e.deltaY*.0012)));
+}, {passive:false});
+
+/* ---------- controls ---------- */
+const shapesRow = document.getElementById('shapes');
+Object.keys(SHAPES).forEach(function(k){
+  const b = document.createElement('button');
+  b.className = 'chip'; b.textContent = SHAPES[k].name; b.dataset.k = k;
+  b.onclick = function(){ setShape(k); };
+  shapesRow.appendChild(b);
+});
+
+const TOGGLES = [
+  { k:'vp',       t:'Vanishing points' },
+  { k:'contours', t:'Cross-contours' },
+  { k:'ground',   t:'Ground plane' },
+  { k:'bbox',     t:'Bounding box' },
+  { k:'diag',     t:'Face diagonals' },
+  { k:'hidden',   t:'Hidden lines' }
+];
+const togRow = document.getElementById('toggles');
+TOGGLES.forEach(function(o){
+  const b = document.createElement('button');
+  b.className = 'chip' + (show[o.k] ? ' on' : ''); b.textContent = o.t;
+  b.onclick = function(){ show[o.k] = !show[o.k]; b.classList.toggle('on', show[o.k]); applyVisibility(); };
+  togRow.appendChild(b);
+});
+
+function lensWords(f){
+  const mm = Math.round(12/Math.tan(f*DEG/2));
+  let s;
+  if(f < 16) s = 'almost no convergence';
+  else if(f < 30) s = 'gentle convergence';
+  else if(f < 50) s = 'natural';
+  else if(f < 68) s = 'strong convergence';
+  else if(f < 95) s = 'wide, close up';
+  else s = 'extreme, almost fisheye';
+  return mm + 'mm equivalent, ' + s;
+}
+const fovEl = document.getElementById('fov'), fovVal = document.getElementById('fovVal');
+fovEl.oninput = function(){ view.fov = +fovEl.value; fovVal.textContent = lensWords(view.fov); };
+fovVal.textContent = lensWords(view.fov);
+const shadeEl = document.getElementById('shade'), shadeVal = document.getElementById('shadeVal');
+shadeEl.oninput = function(){ state.shade = +shadeEl.value; shadeVal.textContent = state.shade + '%'; applyVisibility(); };
+shadeVal.textContent = state.shade + '%';
+
+const modesRow = document.getElementById('modes');
+[['model','The model'],['camera','The view']].forEach(function(m){
+  const b = document.createElement('button');
+  b.className = 'chip' + (state.drag === m[0] ? ' on' : ''); b.textContent = m[1];
+  b.onclick = function(){
+    state.drag = m[0];
+    modesRow.querySelectorAll('.chip').forEach(function(x){ x.classList.remove('on'); });
+    b.classList.add('on');
+  };
+  modesRow.appendChild(b);
+});
+const upright = document.createElement('button');
+upright.className = 'chip'; upright.textContent = 'Stand it upright';
+upright.onclick = function(){ state.tilt = 0; state.spin = 0; state.roll = 0; qFromSliders(); syncSliderUI(); };
+modesRow.appendChild(upright);
+
+const tiltEl = document.getElementById('tilt'), tiltVal = document.getElementById('tiltVal');
+const spinEl = document.getElementById('spin'), spinVal = document.getElementById('spinVal');
+const rollEl = document.getElementById('roll'), rollVal = document.getElementById('rollVal');
+
+function syncSliderUI(){
+  tiltEl.value = state.tilt; tiltVal.textContent = state.tilt + '°';
+  spinEl.value = state.spin; spinVal.textContent = state.spin + '°';
+  rollEl.value = state.roll; rollVal.textContent = state.roll + '°';
+}
+tiltEl.oninput = function(){ state.tilt = +tiltEl.value; qFromSliders(); syncSliderUI(); };
+spinEl.oninput = function(){ state.spin = +spinEl.value; qFromSliders(); syncSliderUI(); };
+rollEl.oninput = function(){ state.roll = +rollEl.value; qFromSliders(); syncSliderUI(); };
+qFromSliders(); syncSliderUI();
+
+document.getElementById('reset').onclick = function(e){
+  e.stopPropagation();
+  view.az = .7; view.el = .22; view.zoom = 1; view.roll = 0; view.target.set(0,0,0);
+};
+
+const panel = document.getElementById('panel');
+document.getElementById('grip').onclick = function(e){
+  if(e.target.id === 'reset') return;
+  panel.classList.toggle('down');
+  document.getElementById('gripLabel').textContent =
+    panel.classList.contains('down') ? 'Controls' : 'Controls';
+};
+
+init();
+})();
+</script>
+</body>
+</html>
