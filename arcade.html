@@ -26,6 +26,8 @@
   .pill{font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:6px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52vw;cursor:pointer;}
   .pill.on{border-color:var(--felt);color:#9ed0b3;background:rgba(61,90,76,.25);}
   .pill.on::before{content:"●";margin-right:6px;color:#7cc39a;}
+  .pill.exit{background:transparent;color:var(--brass);border-color:var(--brass);font-family:inherit;font-weight:700;max-width:none;flex:0 0 auto;}
+  .pill.exit:active{background:rgba(224,164,88,.15);}
 
   /* HUD */
   .hud{display:flex;justify-content:space-between;align-items:center;padding:10px 16px 6px;gap:8px;}
@@ -193,7 +195,10 @@
 
 <div class="top">
   <div class="brand">Woodshed<small>arcade</small></div>
-  <div class="pill" id="midiPill">no midi · tap</div>
+  <div style="display:flex;gap:6px;align-items:center;min-width:0;">
+    <div class="pill" id="midiPill">no midi · tap</div>
+    <button class="pill exit" id="exitBtn" style="display:none;">✕ exit</button>
+  </div>
 </div>
 
 <div class="hud">
@@ -697,15 +702,16 @@ function startGame(opts){
   const ll=$("#lvlline");ll.style.display=level?"":"none";
   if(level)ll.innerHTML=`level <b>${level.id}</b> · ${level.name} · ${level.mode==="streak"?`reach <b>${level.goal}</b>`:`pass at <b>80%</b>`}`;
   $("#startOv").classList.add("hide");$("#endOv").classList.add("hide");$("#statsOv").classList.add("hide");$("#levelsOv").classList.add("hide");
+  $("#exitBtn").style.display="";
   updateHUD();newQuestion();wakeOn();
   if(mode==="timed"){const t0=performance.now();G.timer=setInterval(()=>{G.timeLeft=Math.max(0,dur-(performance.now()-t0)/1000);updateHUD();if(G.timeLeft<=0)endGame();},100);}
 }
 const chip=(m,label,cls)=>`<span class="chip ${cls||""}"><span class="ch">${chordHTML(m.root,m.qual)}</span><span class="dg">${degLabel(m.deg)}</span><span class="mc">${label}</span></span>`;
 function endGame(){
-  if(!G)return;G.running=false;clearInterval(G.timer);killAll();$("#weaktag").classList.remove("show");
+  if(!G)return;G.running=false;clearInterval(G.timer);killAll();$("#weaktag").classList.remove("show");$("#exitBtn").style.display="none";
   const a=G.total?Math.round(100*G.correct/G.total):0;
   const xp=Math.round(G.score/10)+G.correct*2; ST.xp+=xp; ST.games++;
-  if(G.total>0){ ST.log.push({t:Date.now(),kind:G.assess?"assess":G.level?("L"+G.level.id):("free · "+G.mode),acc:a,score:G.score,n:G.total,xp}); if(ST.log.length>300)ST.log=ST.log.slice(-300); }
+  if(G.total>=5){ ST.log.push({t:Date.now(),kind:G.assess?"assess":G.level?("L"+G.level.id):("free · "+G.mode),acc:a,score:G.score,n:G.total,xp}); if(ST.log.length>300)ST.log=ST.log.slice(-300); }
   saveStats();
   $("#rScore").textContent=G.score;$("#rAcc").textContent=a+"%";$("#rCombo").textContent=G.bestCombo;$("#rN").textContent=G.correct+"/"+G.total;$("#rXp").textContent="+"+xp;
   const m={};G.missed.forEach(x=>{const k=x.root+"|"+x.qual+"|"+x.deg;m[k]=m[k]||{...x,n:0};m[k].n++;});
@@ -733,6 +739,7 @@ function endGame(){
   $("#lvlline").style.display="none";
   renderRank();$("#endOv").classList.remove("hide");
 }
+$("#exitBtn").addEventListener("click",()=>{if(G&&G.running)endGame();});
 $("#startBtn").addEventListener("click",()=>startGame({}));
 $("#assessBtn").addEventListener("click",()=>startGame({assess:true}));
 $("#againBtn").addEventListener("click",()=>startGame({assess:G&&G.assess,level:G&&G.level}));
