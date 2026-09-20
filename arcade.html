@@ -176,6 +176,16 @@
   .stars.big{font-size:38px;text-align:center;margin:2px 0 8px;}
   .lvlsum{width:100%;max-width:460px;text-align:center;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
   .lvlsum b{color:var(--brass);}
+  .tbars{display:flex;align-items:flex-end;gap:5px;height:92px;padding:0 2px;}
+  .tbar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
+  .tbar i{display:block;width:100%;border-radius:4px 4px 2px 2px;min-height:4px;}
+  .tbar i.g{background:var(--green);} .tbar i.a{background:var(--amber);} .tbar i.r{background:var(--red);}
+  .tbar span{font-size:8px;color:var(--dim);margin-top:4px;}
+  .logrow{display:grid;grid-template-columns:1.25fr 1fr .6fr 1fr;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:11px;}
+  .logrow:last-child{border-bottom:0;}
+  .logrow .lw{color:var(--dim);font-size:10px;} .logrow .lk{color:var(--ink);letter-spacing:.04em;}
+  .logrow .la{font-weight:700;text-align:right;} .logrow .la.g{color:var(--green);} .logrow .la.a{color:var(--amber);} .logrow .la.r{color:var(--red-soft);}
+  .logrow .ls{color:var(--dim);text-align:right;font-size:10px;}
   textarea{width:100%;background:#0b111a;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font-family:inherit;font-size:10px;height:64px;}
 </style>
 </head>
@@ -346,7 +356,7 @@
 <!-- STATS -->
 <div class="overlay hide" id="statsOv">
   <div class="title">My stats</div>
-  <div class="sub">accuracy per quality × degree · all time</div>
+  <div class="sub">accuracy per quality × degree · recent form</div>
   <div class="card">
     <div class="gridwrap" id="gridWrap"></div>
     <div class="legend">
@@ -356,10 +366,19 @@
       <span><i style="background:rgba(111,185,143,.6)"></i>&gt;85%</span>
       <span><i style="background:var(--brass)"></i>mastered</span>
     </div>
+    <div class="hint" style="margin-top:8px;text-align:center;">percent is recent form — old misses fade as you fix them · small number is attempts</div>
   </div>
   <div class="card">
     <div class="label">weakest right now</div>
     <div class="chips" id="sWeak"></div>
+  </div>
+  <div class="card">
+    <div class="label">trend · accuracy per round</div>
+    <div id="sTrend"></div>
+  </div>
+  <div class="card">
+    <div class="label">recent rounds</div>
+    <div id="sLog"></div>
   </div>
   <div class="card">
     <div class="label">summary</div>
@@ -417,17 +436,23 @@ let best={timed:loadLS("ws_best_timed",0),streak:loadLS("ws_best_streak",0)};
 
 // ---------- the memory ----------
 // cells: "qual|deg" -> {n,miss}     roots: "root|qual|deg" -> {n,miss}
-let ST=loadLS("ws_stats",{cells:{},roots:{},xp:0,games:0});
+let ST=loadLS("ws_stats",{cells:{},roots:{},xp:0,games:0,levels:{},log:[]});
+ST.log=ST.log||[];
 const cellKey=(q,d)=>q+"|"+d, rootKey=(r,q,d)=>r+"|"+q+"|"+d;
-function bump(map,key,miss){const c=map[key]||(map[key]={n:0,miss:0});c.n++;if(miss)c.miss++;}
+// Each cell keeps lifetime totals (n, miss) AND a recency-weighted accuracy `r`:
+// an exponential moving average where the last ~15 attempts dominate, so old
+// misses fade once you've actually fixed something.
+const ALPHA=0.15;
+function bump(map,key,miss){const c=map[key]||(map[key]={n:0,miss:0});if(c.r==null)c.r=c.n?1-c.miss/c.n:null;c.n++;if(miss)c.miss++;const hit=miss?0:1;c.r=c.r==null?hit:c.r*(1-ALPHA)+hit*ALPHA;}
 function record(root,q,d,miss){bump(ST.cells,cellKey(q,d),miss);bump(ST.roots,rootKey(root,q,d),miss);}
 function saveStats(){saveLS("ws_stats",ST);}
-const acc=c=>(c&&c.n)?1-c.miss/c.n:null;
-// how much a cell "wants" to be asked: misses and thin data both push it forward,
-// but nothing ever drops to zero, so mastered cells still come round
-function weight(c){ if(!c||!c.n) return 2.2; const a=1-c.miss/c.n; return 0.6 + (1-a)*4 + (c.n<6?0.8:0); }
+const acc=c=>(c&&c.n)?1-c.miss/c.n:null;                 // lifetime
+const recent=c=>(c&&c.n)?(c.r!=null?c.r:acc(c)):null;    // what matters now
+// how much a cell "wants" to be asked: recent misses and thin data both push it
+// forward, but nothing ever drops to zero, so mastered cells still come round
+function weight(c){ if(!c||!c.n) return 2.2; const a=recent(c); return 0.6 + (1-a)*4 + (c.n<6?0.8:0); }
 function pickWeighted(items,wfn){const ws=items.map(wfn);const tot=ws.reduce((a,b)=>a+b,0);let r=Math.random()*tot;for(let i=0;i<items.length;i++){r-=ws[i];if(r<=0)return items[i];}return items[items.length-1];}
-const isWeakCell=c=>!!(c&&c.n>=4&&acc(c)<.7);
+const isWeakCell=c=>!!(c&&c.n>=4&&recent(c)<.7);
 
 // ---------- ranks ----------
 const RANKS=["Beginner","Sideman","Section player","Soloist","Bandleader","Legend","Master","Grandmaster"];
@@ -679,7 +704,9 @@ const chip=(m,label,cls)=>`<span class="chip ${cls||""}"><span class="ch">${chor
 function endGame(){
   if(!G)return;G.running=false;clearInterval(G.timer);killAll();$("#weaktag").classList.remove("show");
   const a=G.total?Math.round(100*G.correct/G.total):0;
-  const xp=Math.round(G.score/10)+G.correct*2; ST.xp+=xp; ST.games++; saveStats();
+  const xp=Math.round(G.score/10)+G.correct*2; ST.xp+=xp; ST.games++;
+  if(G.total>0){ ST.log.push({t:Date.now(),kind:G.assess?"assess":G.level?("L"+G.level.id):("free · "+G.mode),acc:a,score:G.score,n:G.total,xp}); if(ST.log.length>300)ST.log=ST.log.slice(-300); }
+  saveStats();
   $("#rScore").textContent=G.score;$("#rAcc").textContent=a+"%";$("#rCombo").textContent=G.bestCombo;$("#rN").textContent=G.correct+"/"+G.total;$("#rXp").textContent="+"+xp;
   const m={};G.missed.forEach(x=>{const k=x.root+"|"+x.qual+"|"+x.deg;m[k]=m[k]||{...x,n:0};m[k].n++;});
   const list=Object.values(m).sort((p,q)=>q.n-p.n);
@@ -713,25 +740,37 @@ $("#nextBtn").addEventListener("click",()=>startGame({level:PLAYABLE[G.level.id]
 $("#menuBtn").addEventListener("click",()=>{$("#endOv").classList.add("hide");if(G&&G.level){renderLevels();$("#levelsOv").classList.remove("hide");}else{$("#startOv").classList.remove("hide");renderRank();}});
 
 // ---------- stats screen ----------
-function cellClass(c){if(!c||!c.n)return"none";const a=acc(c);if(c.n>=10&&a>=.9)return"gold";if(a<.6)return"bad";if(a<.85)return"mid";return"good";}
+function cellClass(c){if(!c||!c.n)return"none";const a=recent(c);if(c.n>=10&&a>=.9)return"gold";if(a<.6)return"bad";if(a<.85)return"mid";return"good";}
 function renderStats(){
   const g=$("#gridWrap");
   let h=`<div class="grid" style="grid-template-columns:26px repeat(${DEG_LIST.length},1fr);">`;
   h+=`<div></div>`+DEG_LIST.map(d=>`<div class="h">${degLabel(d)}</div>`).join("");
-  QUALS.forEach(q=>{h+=`<div class="rh">${QLABEL[q]}</div>`;DEG_LIST.forEach(d=>{const c=ST.cells[cellKey(q,d)];const a=acc(c);h+=`<div class="cell ${cellClass(c)}">${a==null?"·":Math.round(a*100)}${c&&c.n?`<small>${c.n}</small>`:""}</div>`;});});
+  QUALS.forEach(q=>{h+=`<div class="rh">${QLABEL[q]}</div>`;DEG_LIST.forEach(d=>{const c=ST.cells[cellKey(q,d)];const a=recent(c);h+=`<div class="cell ${cellClass(c)}">${a==null?"·":Math.round(a*100)}${c&&c.n?`<small>${c.n}</small>`:""}</div>`;});});
   h+=`</div>`;g.innerHTML=h;
-  const weak=Object.entries(ST.cells).map(([k,c])=>({k,c,a:acc(c)})).filter(x=>x.c.n>=3).sort((p,q)=>p.a-q.a).slice(0,5);
+  const weak=Object.entries(ST.cells).map(([k,c])=>({k,c,a:recent(c)})).filter(x=>x.c.n>=3).sort((p,q)=>p.a-q.a).slice(0,5);
   $("#sWeak").innerHTML=weak.length?weak.map(x=>{const [q,d]=x.k.split("|");return `<span class="chip"><span class="ch">X<span class="q">${QLABEL[q]}</span></span><span class="dg">${degLabel(d)}</span><span class="mc">${Math.round(x.a*100)}%</span></span>`;}).join(""):'<span class="hint">play a few rounds first</span>';
   const tot=Object.values(ST.cells).reduce((s,c)=>s+c.n,0), miss=Object.values(ST.cells).reduce((s,c)=>s+c.miss,0);
   const gold=Object.values(ST.cells).filter(c=>cellClass(c)==="gold").length;
-  $("#sSummary").innerHTML=`<b>${ST.games}</b> rounds · <b>${tot}</b> questions · <b>${tot?Math.round(100*(1-miss/tot)):0}%</b> overall · <b>${gold}</b> cells mastered · level <b>${levelFromXp(ST.xp)}</b>`;
+  $("#sSummary").innerHTML=`<b>${ST.games}</b> rounds · <b>${tot}</b> questions · <b>${tot?Math.round(100*(1-miss/tot)):0}%</b> lifetime · <b>${gold}</b> cells mastered · level <b>${levelFromXp(ST.xp)}</b>`;
+  renderLog();
   $("#ioBox").value=btoa(unescape(encodeURIComponent(JSON.stringify({ST,best,calibOffset}))));
+}
+function renderLog(){
+  const log=ST.log, el=$("#sLog"), tr=$("#sTrend");
+  if(!log.length){el.innerHTML='<span class="hint">no rounds yet</span>';tr.innerHTML="";return;}
+  const last=log.slice(-12);
+  const avg=a=>a.length?Math.round(a.reduce((s,r)=>s+r.acc,0)/a.length):null;
+  const now=avg(log.slice(-10)), before=avg(log.slice(-20,-10));
+  tr.innerHTML=`<div class="tbars">${last.map(r=>`<div class="tbar" title="${r.acc}%"><i style="height:${Math.max(4,r.acc)}%" class="${r.acc>=85?'g':r.acc>=60?'a':'r'}"></i><span>${r.acc}</span></div>`).join("")}</div>
+    <div class="hint" style="text-align:center;margin-top:6px;">last 10 rounds <b>${now}%</b>${before!=null?` · the 10 before <b>${before}%</b> · <b style="color:${now>=before?'var(--green)':'var(--red-soft)'}">${now>=before?'+':''}${now-before}</b>`:""}</div>`;
+  el.innerHTML=log.slice(-10).reverse().map(r=>{const d=new Date(r.t);const when=d.toLocaleDateString(undefined,{day:"numeric",month:"short"})+" "+d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+    return `<div class="logrow"><span class="lw">${when}</span><span class="lk">${r.kind}</span><span class="la ${r.acc>=85?'g':r.acc>=60?'a':'r'}">${r.acc}%</span><span class="ls">${r.n} q · ${r.score}</span></div>`;}).join("");
 }
 $("#statsBtn").addEventListener("click",()=>{renderStats();$("#startOv").classList.add("hide");$("#statsOv").classList.remove("hide");});
 $("#statsBack").addEventListener("click",()=>{$("#statsOv").classList.add("hide");$("#startOv").classList.remove("hide");renderRank();});
 $("#exportBtn").addEventListener("click",async()=>{const t=$("#ioBox");t.select();try{await navigator.clipboard.writeText(t.value);}catch(e){}$("#exportBtn").textContent="copied ✓";setTimeout(()=>$("#exportBtn").textContent="copy code",1500);});
-$("#importBtn").addEventListener("click",()=>{try{const o=JSON.parse(decodeURIComponent(escape(atob($("#ioBox").value.trim()))));if(o.ST){ST=o.ST;ST.levels=ST.levels||{};saveStats();}if(o.best){best=o.best;saveLS("ws_best_timed",best.timed);saveLS("ws_best_streak",best.streak);}if(o.calibOffset!=null){calibOffset=o.calibOffset;saveLS("ws_calib",calibOffset);}renderStats();$("#importBtn").textContent="restored ✓";}catch(e){$("#importBtn").textContent="bad code";}setTimeout(()=>$("#importBtn").textContent="restore from code",1500);});
-$("#resetBtn").addEventListener("click",()=>{if(confirm("Wipe all stats and XP? This can't be undone.")){ST={cells:{},roots:{},xp:0,games:0,levels:{}};saveStats();renderStats();}});
+$("#importBtn").addEventListener("click",()=>{try{const o=JSON.parse(decodeURIComponent(escape(atob($("#ioBox").value.trim()))));if(o.ST){ST=o.ST;ST.levels=ST.levels||{};ST.log=ST.log||[];saveStats();}if(o.best){best=o.best;saveLS("ws_best_timed",best.timed);saveLS("ws_best_streak",best.streak);}if(o.calibOffset!=null){calibOffset=o.calibOffset;saveLS("ws_calib",calibOffset);}renderStats();$("#importBtn").textContent="restored ✓";}catch(e){$("#importBtn").textContent="bad code";}setTimeout(()=>$("#importBtn").textContent="restore from code",1500);});
+$("#resetBtn").addEventListener("click",()=>{if(confirm("Wipe all stats and XP? This can't be undone.")){ST={cells:{},roots:{},xp:0,games:0,levels:{},log:[]};saveStats();renderStats();}});
 
 // ---------- wake lock ----------
 let wl=null;
