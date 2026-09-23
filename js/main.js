@@ -1,18 +1,16 @@
-// Horn check: connect the horn, calibrate on a written C, then show the
-// written note name of whatever is played.
+// App wiring: horn connection and calibration, the degree drill, and the
+// "you played" readout.
 //
-// Pitch spaces: the horn sends MIDI in whatever pitch its current voice
-// implies. Calibration stores the MIDI pitch class the horn sends for a
-// fingered written C, so (midi − calib) mod 12 is the WRITTEN pitch class,
-// independent of the horn's voice or the instrument's transposition.
+// Pitch spaces: see music.js. Calibration stores the MIDI pitch class the
+// horn sends for a fingered written C; that one number converts both ways
+// between written (display, judging) and concert (the pad).
 
 import { connectMidi } from './midi.js';
-
-// Spelling chosen by the player (see docs/handover/SOLVED.md): sharps for
-// the two lower black keys, flats for the three upper. Indexed by pitch class.
-const NOTES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+import { NOTES, writtenPc } from './music.js';
+import { startRound, stopRound, drillNote, isRunning } from './drill.js';
 
 const CALIB_KEY = 'woodshed.calib';
+const MODE_KEY = 'woodshed.mode';
 
 const $ = sel => document.querySelector(sel);
 const statusEl = $('#status');
@@ -21,21 +19,22 @@ const rawEl = $('#raw');
 const hintEl = $('#hint');
 const calibBtn = $('#calibrate');
 const connectBtn = $('#connect');
+const startBtn = $('#start');
+const stopBtn = $('#stop');
+const modeBtns = document.querySelectorAll('[data-mode]');
 
-// localStorage can throw (private mode, storage disabled); treat that as
-// "not calibrated" rather than breaking the page.
-function loadCalib() {
-  try {
-    const v = localStorage.getItem(CALIB_KEY);
-    return v === null ? null : Number(v);
-  } catch { return null; }
+// localStorage can throw (private mode, storage disabled); fall back to
+// defaults rather than breaking the page.
+function load(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
-function saveCalib(pc) {
-  try { localStorage.setItem(CALIB_KEY, String(pc)); } catch { /* ignore */ }
+function save(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* ignore */ }
 }
 
-let calib = loadCalib();   // MIDI pitch class of a written C, or null
+let calib = load(CALIB_KEY) === null ? null : Number(load(CALIB_KEY));
 let calibrating = false;
+let mode = load(MODE_KEY) === 'learn' ? 'learn' : 'practice';
 
 function showHint() {
   if (calibrating) hintEl.textContent = 'Play a written C.';
@@ -43,29 +42,34 @@ function showHint() {
   else hintEl.textContent = 'Calibrated. Recalibrate after changing the horn’s voice.';
 }
 
+function showMode() {
+  modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+}
+
+function setCalibrating(on) {
+  calibrating = on;
+  calibBtn.classList.toggle('active', on);
+  showHint();
+}
+
 function onNote(midi) {
   rawEl.textContent = `MIDI ${midi}`;
   if (calibrating) {
     calib = midi % 12;
-    saveCalib(calib);
-    calibrating = false;
-    calibBtn.classList.remove('active');
+    save(CALIB_KEY, String(calib));
+    setCalibrating(false);
     noteEl.textContent = 'C';
-    showHint();
     return;
   }
-  if (calib === null) {
-    noteEl.textContent = '?';
-    return;
-  }
-  // +12 keeps the result non-negative before the modulo.
-  noteEl.textContent = NOTES[(midi % 12 - calib + 12) % 12];
+  noteEl.textContent = calib === null ? '?' : NOTES[writtenPc(midi, calib)];
+  drillNote(midi);
 }
 
-function onStatus({ state, names }) {
+function onStatus({ state, names, error }) {
   const text = {
     unsupported: 'No Web MIDI here — use Chrome on Android or desktop.',
-    denied: 'MIDI permission refused.',
+    denied: `MIDI permission refused — allow it via the icon left of the address bar, then reload. (${error})`,
+    failed: `MIDI failed — ${error}`,
     none: 'No horn connected.',
     connected: `Horn: ${names.join(', ')}`,
   }[state];
@@ -75,14 +79,50 @@ function onStatus({ state, names }) {
   connectBtn.hidden = state === 'connected' || state === 'unsupported';
 }
 
-calibBtn.addEventListener('click', () => {
-  calibrating = !calibrating;          // a second tap cancels
-  calibBtn.classList.toggle('active', calibrating);
-  showHint();
+// Idle vs running: which controls are usable.
+function showRunning(running) {
+  startBtn.hidden = running;
+  stopBtn.hidden = !running;
+  calibBtn.disabled = running;
+  modeBtns.forEach(b => { b.disabled = running; });
+}
+
+function onRoundEnd(result) {
+  showRunning(false);
+  $('#chord').textContent = '—';
+  $('#degree').textContent = '';
+  $('#progress').textContent = '';
+  $('#feedback').className = '';
+  if (!result) {
+    $('#feedback').textContent = '';
+    return;
+  }
+  const { mode: m, total, firstTry } = result;
+  $('#feedback').textContent = m === 'practice'
+    ? `${firstTry} / ${total} right first time`
+    : `${total} done · ${total - firstTry} needed another go`;
+}
+
+startBtn.addEventListener('click', () => {
+  // The drill judges in written pitch, which needs calibration first.
+  if (calib === null) { setCalibrating(true); return; }
+  if (calibrating) setCalibrating(false);
+  showRunning(true);
+  startRound(mode, calib, onRoundEnd);
 });
+stopBtn.addEventListener('click', () => { if (isRunning()) stopRound(); });
+
+modeBtns.forEach(b => b.addEventListener('click', () => {
+  mode = b.dataset.mode;
+  save(MODE_KEY, mode);
+  showMode();
+}));
+
+calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a second tap cancels
 connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 
 showHint();
+showMode();
 connectMidi(onNote, onStatus);
 
 // Offline support and fresh files after deploys; see sw.js.

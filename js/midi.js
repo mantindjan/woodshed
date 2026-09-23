@@ -7,9 +7,10 @@
 // 70 ms debounce was dropped.
 
 // onNote(midiNumber)  — a note-on, raw MIDI number as the horn sent it.
-// onStatus({state, names}) — state is one of:
+// onStatus({state, names, error}) — state is one of:
 //   'unsupported' (no Web MIDI: iOS, non-Chrome, or insecure origin)
-//   'denied'      (permission refused)
+//   'denied'      (permission refused; error = Chrome's error text)
+//   'failed'      (any other failure; error = Chrome's error text)
 //   'none'        (access granted, no input connected)
 //   'connected'   (names = input device names)
 export async function connectMidi(onNote, onStatus) {
@@ -21,8 +22,12 @@ export async function connectMidi(onNote, onStatus) {
   let access;
   try {
     access = await navigator.requestMIDIAccess({ sysex: false });
-  } catch {
-    onStatus({ state: 'denied', names: [] });
+  } catch (err) {
+    // Report Chrome's actual error: a generic "refused" hid the real cause
+    // once already.
+    const error = `${err.name}: ${err.message}`;
+    const denied = err.name === 'NotAllowedError' || err.name === 'SecurityError';
+    onStatus({ state: denied ? 'denied' : 'failed', names: [], error });
     return;
   }
 

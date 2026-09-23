@@ -14,7 +14,10 @@ const NETWORK_TIMEOUT_MS = 3000;
 // Everything the app needs, cached at install so the very first visit is
 // enough to work offline. tests/offline.spec.js fails if a file in public/
 // is missing from this list.
-const ASSETS = ['./', 'index.html', 'js/main.js', 'js/midi.js'];
+const ASSETS = [
+  './', 'index.html',
+  'js/main.js', 'js/midi.js', 'js/music.js', 'js/audio.js', 'js/events.js', 'js/drill.js',
+];
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {

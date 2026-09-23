@@ -8,37 +8,75 @@
 <meta name="robots" content="noindex">
 <title>Woodshed</title>
 <style>
-  :root { --bg: #111; --ink: #ddd; --dim: #888; --brass: #d9a441; --line: #333; }
+  :root { --bg: #111; --ink: #ddd; --dim: #888; --brass: #d9a441; --line: #333;
+          --right: #6c6; --wrong: #d66; }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
          font: 16px/1.4 system-ui, sans-serif; }
   main { max-width: 390px; margin: 0 auto; padding: 16px;
-         display: flex; flex-direction: column; gap: 16px; }
+         display: flex; flex-direction: column; gap: 14px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   h1 { margin: 0; font: 20px Georgia, serif; color: var(--dim); }
-  #status { font-size: 14px; color: var(--dim); }
+  #status { font-size: 13px; color: var(--dim); text-align: right; }
   #status[data-state="connected"] { color: var(--ink); }
-  #note { font: 120px/1 Georgia, serif; color: var(--brass); text-align: center;
-          padding: 24px 0 8px; }
-  #raw { text-align: center; font-size: 13px; color: var(--dim);
-         font-variant-numeric: tabular-nums; min-height: 1.4em; }
-  #hint { text-align: center; font-size: 14px; min-height: 2.8em; }
-  .buttons { display: flex; gap: 8px; }
+
+  /* The question. Fixed heights so nothing jumps between questions. */
+  .drill { text-align: center; }
+  #progress { font-size: 13px; color: var(--dim); min-height: 1.4em;
+              font-variant-numeric: tabular-nums; }
+  #chord { font: 72px/1.1 Georgia, serif; min-height: 1.1em; }
+  #degree { font: 96px/1 Georgia, serif; color: var(--brass); min-height: 1em; }
+  #feedback { font-size: 18px; min-height: 2.8em; padding-top: 8px; }
+  #feedback.right { color: var(--right); }
+  #feedback.wrong { color: var(--wrong); }
+
+  .row { display: flex; gap: 8px; }
   button { flex: 1; padding: 14px; font: inherit; color: var(--ink);
            background: transparent; border: 1px solid var(--line); border-radius: 8px; }
   button.active { border-color: var(--brass); color: var(--brass); }
+  button:disabled { opacity: 0.4; }
+  #start, #stop { font-size: 18px; }
+
+  /* Horn readout and calibration, secondary. */
+  .horn { border-top: 1px solid var(--line); padding-top: 12px;
+          display: flex; flex-direction: column; gap: 8px; }
+  .played { display: flex; justify-content: space-between; align-items: baseline; }
+  #note { font: 28px Georgia, serif; color: var(--brass); }
+  #raw { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #hint { font-size: 14px; color: var(--dim); min-height: 1.4em; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Woodshed</h1>
-  <div id="status">Connecting…</div>
-  <div id="note">—</div>
-  <div id="raw"></div>
-  <div id="hint"></div>
-  <div class="buttons">
-    <button id="calibrate">Calibrate</button>
-    <button id="connect" hidden>Connect horn</button>
+  <header>
+    <h1>Woodshed</h1>
+    <div id="status">Connecting…</div>
+  </header>
+
+  <section class="drill">
+    <div id="progress"></div>
+    <div id="chord">—</div>
+    <div id="degree"></div>
+    <div id="feedback"></div>
+  </section>
+
+  <div class="row">
+    <button data-mode="learn">Learn</button>
+    <button data-mode="practice">Practice</button>
   </div>
+  <div class="row">
+    <button id="start">Start</button>
+    <button id="stop" hidden>Stop</button>
+  </div>
+
+  <section class="horn">
+    <div class="played"><span>You played <span id="note">—</span></span><span id="raw"></span></div>
+    <div id="hint"></div>
+    <div class="row">
+      <button id="calibrate">Calibrate</button>
+      <button id="connect" hidden>Connect horn</button>
+    </div>
+  </section>
 </main>
 <script type="module" src="js/main.js"></script>
 </body>
