@@ -82,8 +82,9 @@ function ask() {
   $('#progress').textContent = `${s.index} / ${ROUND_LENGTH}`;
   $('#chord').innerHTML = chordHTML(root, quality);
   $('#degree').textContent = degree;
-  $('#degree').classList.remove('reveal');
+  $('#degree').classList.remove('reveal', 'pulse', 'miss');
   $('#feedback').textContent = '';
+  $('#feedback').className = '';
   playChord(concertPc(root, s.calib), quality, CHORD_SECONDS);
   s.shownAt = performance.now();   // for note timings
   s.shownT = Date.now();           // wall clock, stored in the event
@@ -99,36 +100,35 @@ export function drillNote(midi) {
   s.notes.push([midi, ms]);
   const played = writtenPc(midi, s.calib);
   if (played === s.q.target) {
-    // Right: brass glow, and a cloud with the reaction time (feature #7).
+    // Right: brass burst from the disc, and the reaction time (feature #7).
     s.times.push(ms);
     flash('good');
-    pop(`${(ms / 1000).toFixed(2)} s`, false, speedLabel(ms));
+    burst(false);
+    label(`${(ms / 1000).toFixed(2)} s`, speedLabel(ms), false);
     finish(!s.missed, PAUSE_RIGHT_MS);
   } else {
-    // Wrong: red glow, the chord shakes, the played note sinks away in smoke.
+    // Wrong: red shaking burst and the chord shakes. The wrong note itself
+    // isn't shown — only what the right one was.
     s.missed = true;
     flash('bad');
+    burst(true);
     shake();
-    pop(NOTES[played], true);
     if (s.mode === 'practice') {
-      // Practice moves on: the disc flips to show the right note first.
+      // Practice moves on: the disc turns red and flips to the right note.
       $('#degree').textContent = NOTES[s.q.target];
       $('#degree').classList.add('reveal');
       finish(false, PAUSE_WRONG_MS);
+    } else {
+      // Learn: the disc flashes red, no answer given; keep waiting.
+      restart($('#degree'), 'miss');
+      label('', 'try again', true);
     }
-    // Learn: keep waiting for the right note.
   }
 }
 
-// --- Feedback effects: a radial glow behind the question, a puffy cloud
-// that bounces in and floats up with sparks (right) or a red smoke puff that
-// deflates and sinks (wrong), and a shake on a miss. ---
-
-// Cloud outline: overlapping circles on a rounded base, in a 200×120 box.
-const CLOUD = `<svg viewBox="0 0 200 120" aria-hidden="true">
-  <g class="puff"><circle cx="62" cy="72" r="34"/><circle cx="100" cy="50" r="44"/>
-  <circle cx="142" cy="70" r="34"/><rect x="40" y="62" width="124" height="46" rx="23"/></g>
-  <ellipse class="shine" cx="86" cy="36" rx="22" ry="9"/></svg>`;
+// --- Feedback effects, game style: a burst that flashes out from the
+// degree disc (brass expanding ring when right, red shaking burst when
+// wrong), a glow behind the question, and a label under it. ---
 
 // Speed is the skill: under a second is playing, four seconds is theory.
 function speedLabel(ms) {
@@ -144,33 +144,38 @@ function flash(kind) {
   f.className = kind;
 }
 
-// text: big line in the cloud; sub: optional small line under it.
-function pop(text, bad, sub = '') {
-  const c = document.createElement('div');
-  c.className = bad ? 'cloud bad' : 'cloud';
-  c.innerHTML = CLOUD + '<div class="cloud-text"><b></b><small></small></div>';
-  c.querySelector('b').textContent = text;
-  c.querySelector('small').textContent = sub;
-  if (!bad) {
-    // Sparks fly out in a ring, each at its own angle and distance.
-    for (let i = 0; i < 10; i++) {
-      const k = document.createElement('i');
-      const a = (i / 10) * 2 * Math.PI + Math.random() * 0.4;
-      const d = 90 + Math.random() * 50;
-      k.style.setProperty('--dx', `${Math.cos(a) * d}px`);
-      k.style.setProperty('--dy', `${Math.sin(a) * d * 0.7}px`);
-      c.append(k);
-    }
-  }
-  $('.drill').append(c);
-  setTimeout(() => c.remove(), 1100);
+// A burst centred on the degree disc — the thing the player answered.
+function burst(bad) {
+  const drill = $('.drill').getBoundingClientRect();
+  const disc = $('#degree').getBoundingClientRect();
+  const b = document.createElement('div');
+  b.className = bad ? 'burst bad' : 'burst good';
+  b.style.left = `${disc.left - drill.left + disc.width / 2}px`;
+  b.style.top = `${disc.top - drill.top + disc.height / 2}px`;
+  $('.drill').append(b);
+  setTimeout(() => b.remove(), 700);
+  if (!bad) restart($('#degree'), 'pulse');
+}
+
+// The line under the question: reaction time + speed, or "try again".
+function label(text, sub, bad) {
+  const f = $('#feedback');
+  f.innerHTML = '<b></b><small></small>';
+  f.querySelector('b').textContent = text;
+  f.querySelector('small').textContent = sub;
+  f.className = '';
+  restart(f, bad ? 'fb-bad' : 'fb-good');
+}
+
+// Re-trigger a CSS animation class on an element.
+function restart(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
 }
 
 function shake() {
-  const q = $('.question');
-  q.classList.remove('shake');
-  void q.offsetWidth;
-  q.classList.add('shake');
+  restart($('.question'), 'shake');
 }
 
 // ok: right first time (the scored outcome).

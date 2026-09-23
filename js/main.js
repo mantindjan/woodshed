@@ -94,7 +94,8 @@ function onRoundEnd(result) {
   $('#chord').textContent = '—';
   $('#degree').textContent = '';
   $('#progress').textContent = '';
-  $('#degree').classList.remove('reveal');
+  $('#degree').classList.remove('reveal', 'pulse', 'miss');
+  $('#feedback').className = '';
   if (!result) {
     $('#feedback').textContent = '';
     return;
