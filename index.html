@@ -2,80 +2,111 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- viewport-fit=cover: in full-screen landscape the camera hole sits on a
+     side edge; the layout pads itself with the safe-area insets instead. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- Keep the Pages site out of search results; the public repo is listed on
      the GitHub profile regardless, but nobody needs to land here from Google. -->
 <meta name="robots" content="noindex">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
 <title>Woodshed</title>
 <style>
   :root { --bg: #111; --ink: #ddd; --dim: #888; --brass: #d9a441; --line: #333;
-          --right: #6c6; --wrong: #d66; }
+          --right: #6c6; --wrong: #d66; --pad: 16px; }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
-         font: 16px/1.4 system-ui, sans-serif; }
-  main { max-width: 390px; margin: 0 auto; padding: 16px;
-         display: flex; flex-direction: column; gap: 14px; }
-  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  h1 { margin: 0; font: 20px Georgia, serif; color: var(--dim); }
-  #status { font-size: 13px; color: var(--dim); text-align: right; }
-  #status[data-state="connected"] { color: var(--ink); }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, sans-serif;
+         overflow: hidden; }
+
+  /* Landscape only (target: 844 × 390 installed full screen). Question on
+     the left, controls in a fixed-width column on the right. */
+  main { height: 100dvh; display: grid; grid-template-columns: 1fr 280px; gap: var(--pad);
+         padding: 12px max(var(--pad), env(safe-area-inset-right))
+                  12px max(var(--pad), env(safe-area-inset-left)); }
 
   /* The question. Fixed heights so nothing jumps between questions. */
-  .drill { text-align: center; }
-  #progress { font-size: 13px; color: var(--dim); min-height: 1.4em;
+  .drill { display: flex; flex-direction: column; justify-content: center;
+           align-items: center; text-align: center; min-width: 0; }
+  #progress { font-size: 14px; color: var(--dim); min-height: 1.4em;
               font-variant-numeric: tabular-nums; }
-  #chord { font: 72px/1.1 Georgia, serif; min-height: 1.1em; }
-  #degree { font: 96px/1 Georgia, serif; color: var(--brass); min-height: 1em; }
-  #feedback { font-size: 18px; min-height: 2.8em; padding-top: 8px; }
+  .question { display: flex; align-items: baseline; justify-content: center; gap: 40px;
+              min-height: 130px; }
+  #chord { font: 88px/1.1 Georgia, serif; }
+  #degree { font: 120px/1 Georgia, serif; color: var(--brass); }
+  #feedback { font-size: 20px; min-height: 2.8em; padding-top: 4px; }
   #feedback.right { color: var(--right); }
   #feedback.wrong { color: var(--wrong); }
 
+  /* Controls. */
+  .panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  h1 { margin: 0; font: 18px Georgia, serif; color: var(--dim); }
+  #status { font-size: 12px; color: var(--dim); text-align: right;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status[data-state="connected"] { color: var(--ink); }
   .row { display: flex; gap: 8px; }
-  button { flex: 1; padding: 14px; font: inherit; color: var(--ink);
+  button { flex: 1; padding: 10px; font: inherit; color: var(--ink);
            background: transparent; border: 1px solid var(--line); border-radius: 8px; }
   button.active { border-color: var(--brass); color: var(--brass); }
   button:disabled { opacity: 0.4; }
-  #start, #stop { font-size: 18px; }
+  #start, #stop { font-size: 18px; padding: 14px; }
 
-  /* Horn readout and calibration, secondary. */
-  .horn { border-top: 1px solid var(--line); padding-top: 12px;
-          display: flex; flex-direction: column; gap: 8px; }
+  /* Horn readout and calibration, secondary; pinned to the bottom. */
+  .horn { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px;
+          display: flex; flex-direction: column; gap: 6px; }
   .played { display: flex; justify-content: space-between; align-items: baseline; }
-  #note { font: 28px Georgia, serif; color: var(--brass); }
-  #raw { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
-  #hint { font-size: 14px; color: var(--dim); min-height: 1.4em; }
+  #note { font: 24px Georgia, serif; color: var(--brass); }
+  #raw { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #hint { font-size: 12px; color: var(--dim); min-height: 1.4em; }
+
+  /* Portrait: no layout, just ask for landscape. The installed app is
+     locked to landscape by the manifest; this covers a browser tab. */
+  #rotate { display: none; }
+  @media (orientation: portrait) {
+    main { display: none; }
+    #rotate { display: flex; height: 100dvh; align-items: center; justify-content: center;
+              flex-direction: column; gap: 12px; padding: var(--pad); text-align: center;
+              color: var(--dim); }
+    #rotate b { font: 48px Georgia, serif; color: var(--brass); }
+  }
 </style>
 </head>
 <body>
+<div id="rotate"><b>⟳</b>Turn your phone sideways.</div>
 <main>
-  <header>
-    <h1>Woodshed</h1>
-    <div id="status">Connecting…</div>
-  </header>
-
   <section class="drill">
     <div id="progress"></div>
-    <div id="chord">—</div>
-    <div id="degree"></div>
+    <div class="question">
+      <div id="chord">—</div>
+      <div id="degree"></div>
+    </div>
     <div id="feedback"></div>
   </section>
 
-  <div class="row">
-    <button data-mode="learn">Learn</button>
-    <button data-mode="practice">Practice</button>
-  </div>
-  <div class="row">
-    <button id="start">Start</button>
-    <button id="stop" hidden>Stop</button>
-  </div>
-
-  <section class="horn">
-    <div class="played"><span>You played <span id="note">—</span></span><span id="raw"></span></div>
-    <div id="hint"></div>
+  <section class="panel">
+    <header>
+      <h1>Woodshed</h1>
+      <div id="status">Connecting…</div>
+    </header>
     <div class="row">
-      <button id="calibrate">Calibrate</button>
-      <button id="connect" hidden>Connect horn</button>
+      <button data-mode="learn">Learn</button>
+      <button data-mode="practice">Practice</button>
     </div>
+    <div class="row">
+      <button id="start">Start</button>
+      <button id="stop" hidden>Stop</button>
+    </div>
+
+    <section class="horn">
+      <div class="played"><span>You played <span id="note">—</span></span><span id="raw"></span></div>
+      <div id="hint"></div>
+      <div class="row">
+        <button id="calibrate">Calibrate</button>
+        <button id="connect" hidden>Connect horn</button>
+      </div>
+    </section>
   </section>
 </main>
 <script type="module" src="js/main.js"></script>

@@ -15,7 +15,7 @@ const NETWORK_TIMEOUT_MS = 3000;
 // enough to work offline. tests/offline.spec.js fails if a file in public/
 // is missing from this list.
 const ASSETS = [
-  './', 'index.html',
+  './', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
   'js/main.js', 'js/midi.js', 'js/music.js', 'js/audio.js', 'js/events.js', 'js/drill.js',
 ];
 
