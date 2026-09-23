@@ -34,10 +34,16 @@
            align-items: center; text-align: center; min-width: 0; }
   #progress { font-size: 14px; color: var(--dim); min-height: 1.4em;
               font-variant-numeric: tabular-nums; }
-  .question { display: flex; align-items: baseline; justify-content: center; gap: 40px;
-              min-height: 130px; }
-  #chord { font: 116px/1.1 'RealBook', Georgia, serif; }
-  #degree { font: 120px/1 'RealBook', Georgia, serif; color: var(--brass); }
+  .question { display: flex; align-items: center; justify-content: center; gap: 36px;
+              min-height: 160px; }
+  /* The chord is the big thing; the degree is a smaller, plainly lettered
+     token beside it, so the two never read as one symbol. */
+  #chord { font: 140px/1.1 'RealBook', Georgia, serif; }
+  #degree { width: 96px; height: 96px; flex: none; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--brass); color: var(--bg);
+            font: 700 58px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  #degree:empty { visibility: hidden; }   /* idle: keep the space, hide the disc */
   #feedback { font-size: 20px; min-height: 2.8em; padding-top: 4px; }
   #feedback.right { color: var(--right); }
   #feedback.wrong { color: var(--wrong); }
