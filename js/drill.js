@@ -104,6 +104,7 @@ export function drillNote(midi) {
     s.times.push(ms);
     flash('good');
     burst(false);
+    floatNote(NOTES[s.q.target]);
     label(`${(ms / 1000).toFixed(2)} s`, speedLabel(ms), false);
     finish(!s.missed, PAUSE_RIGHT_MS);
   } else {
@@ -155,6 +156,40 @@ function burst(bad) {
   $('.drill').append(b);
   setTimeout(() => b.remove(), 700);
   if (!bad) restart($('#degree'), 'pulse');
+}
+
+// The right note drifts up out of the disc on a random, slow wobble and
+// fades — like floating score numbers in a game. Each gets its own sway
+// (amplitude, speed, direction) so no two rise the same way.
+function floatNote(text) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const drill = $('.drill').getBoundingClientRect();
+  const disc = $('#degree').getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'float-note';
+  el.textContent = text;
+  el.style.left = `${disc.left - drill.left + disc.width / 2}px`;
+  el.style.top = `${disc.top - drill.top + disc.height / 2}px`;
+  $('.drill').append(el);
+
+  const sway = 8 + Math.random() * 12;          // px either side
+  const cycles = 0.8 + Math.random() * 0.8;     // wobbles on the way up
+  const phase = Math.random() * 2 * Math.PI;
+  const rise = 120 + Math.random() * 50;        // px
+  const drift = (Math.random() - 0.5) * 40;     // slow sideways lean
+  const steps = 12;
+  const frames = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = drift * t + sway * Math.sin(phase + t * cycles * 2 * Math.PI) - sway * Math.sin(phase);
+    const y = -rise * t;
+    const tilt = 6 * Math.cos(phase + t * cycles * 2 * Math.PI);
+    frames.push({
+      transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${tilt}deg) scale(${t < 0.15 ? 0.6 + t * 2.7 : 1})`,
+      opacity: t < 0.1 ? t * 10 : t > 0.6 ? (1 - t) / 0.4 : 1,
+    });
+  }
+  el.animate(frames, { duration: 1400, easing: 'ease-out' }).onfinish = () => el.remove();
 }
 
 // The line under the question: reaction time + speed, or "try again".

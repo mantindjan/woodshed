@@ -94,6 +94,10 @@
     60% { transform: translateX(-8px) scale(1.7); opacity: .7; }
     80% { transform: translateX(4px) scale(1.8); }
     100% { transform: translateX(0) scale(1.9); opacity: 0; } }
+  /* Right note floating up out of the disc (drill.js floatNote). */
+  .float-note { position: absolute; z-index: 3; pointer-events: none; opacity: 0;
+                font: 800 26px/1 system-ui, sans-serif; color: #ffe2a8;
+                text-shadow: 0 0 12px rgba(244,195,122,.9), 0 0 3px #000; white-space: nowrap; }
   /* The disc gives a quick pulse on a right answer. */
   #degree.pulse { animation: pulse .3s cubic-bezier(.2,.9,.3,1.4); }
   @keyframes pulse { 50% { transform: scale(1.18); } }
