@@ -11,8 +11,9 @@
 // see docs/midi.md for why the prototype's 70 ms debounce was dropped.
 
 // Captured 2026-09-23: stray puffs peaked at 6, the softest real answer
-// at 21, typical answers 33–49.
-const BREATH_THRESHOLD = 15;
+// at 21, typical answers 33–49. Started at 15; lowered to 10 by the boss
+// after playing (still above the puffs) so soft answers register sooner.
+const BREATH_THRESHOLD = 10;
 const BREATH_CC = 11;
 
 // onNote(midiNumber)  — a note-on, raw MIDI number as the horn sent it.
