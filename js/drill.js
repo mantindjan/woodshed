@@ -49,8 +49,17 @@ function unlockScreen() {
 
 export const isRunning = () => s !== null;
 
+// Median of a list of ms values, or null when empty.
+function medianMs(values) {
+  if (!values.length) return null;
+  const v = [...values].sort((a, b) => a - b);
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
 // mode: 'learn' | 'practice'. calib: MIDI pitch class of a written C.
-// onEnd(result | null): result = {mode, total, firstTry} after a full round,
+// onEnd(result | null): result = {mode, total, firstTry, median} after a full
+// round (median: ms from chord to correct note, or null),
 // null when stopped early.
 export function startRound(mode, calib, onEnd) {
   initAudio();            // inside the Start tap, so Chrome allows sound
@@ -60,6 +69,7 @@ export function startRound(mode, calib, onEnd) {
     mode, calib, onEnd,
     round: Date.now().toString(36),   // groups this round's events
     index: 0, firstTry: 0, q: null,
+    times: [],        // ms from chord to correct note, per answered question
     accepting: false, timer: null,
   };
   ask();
@@ -72,8 +82,8 @@ function ask() {
   $('#progress').textContent = `${s.index} / ${ROUND_LENGTH}`;
   $('#chord').innerHTML = chordHTML(root, quality);
   $('#degree').textContent = degree;
+  $('#degree').classList.remove('reveal');
   $('#feedback').textContent = '';
-  $('#feedback').className = '';
   playChord(concertPc(root, s.calib), quality, CHORD_SECONDS);
   s.shownAt = performance.now();   // for note timings
   s.shownT = Date.now();           // wall clock, stored in the event
@@ -85,29 +95,88 @@ function ask() {
 // Called with every note-on from the horn (raw MIDI number).
 export function drillNote(midi) {
   if (!s || !s.accepting) return;
-  s.notes.push([midi, Math.round(performance.now() - s.shownAt)]);
+  const ms = Math.round(performance.now() - s.shownAt);
+  s.notes.push([midi, ms]);
   const played = writtenPc(midi, s.calib);
   if (played === s.q.target) {
-    finish(!s.missed, PAUSE_RIGHT_MS, true, '✓');
-  } else if (s.mode === 'practice') {
-    s.missed = true;
-    finish(false, PAUSE_WRONG_MS, false, `✗ ${NOTES[played]} — it’s ${NOTES[s.q.target]}`);
+    // Right: brass glow, and a cloud with the reaction time (feature #7).
+    s.times.push(ms);
+    flash('good');
+    pop(`${(ms / 1000).toFixed(2)} s`, false, speedLabel(ms));
+    finish(!s.missed, PAUSE_RIGHT_MS);
   } else {
-    // Learn: show the wrong note, keep waiting for the right one.
+    // Wrong: red glow, the chord shakes, the played note sinks away in smoke.
     s.missed = true;
-    $('#feedback').textContent = `✗ ${NOTES[played]}`;
-    $('#feedback').className = 'wrong';
+    flash('bad');
+    shake();
+    pop(NOTES[played], true);
+    if (s.mode === 'practice') {
+      // Practice moves on: the disc flips to show the right note first.
+      $('#degree').textContent = NOTES[s.q.target];
+      $('#degree').classList.add('reveal');
+      finish(false, PAUSE_WRONG_MS);
+    }
+    // Learn: keep waiting for the right note.
   }
 }
 
-// ok: right first time (scored). correct: the note just played was right
-// (learn mode can be correct but not ok). text: the feedback line, plain —
-// Real Book lettering is illegible at small sizes.
-function finish(ok, pauseMs, correct, text) {
+// --- Feedback effects: a radial glow behind the question, a puffy cloud
+// that bounces in and floats up with sparks (right) or a red smoke puff that
+// deflates and sinks (wrong), and a shake on a miss. ---
+
+// Cloud outline: overlapping circles on a rounded base, in a 200×120 box.
+const CLOUD = `<svg viewBox="0 0 200 120" aria-hidden="true">
+  <g class="puff"><circle cx="62" cy="72" r="34"/><circle cx="100" cy="50" r="44"/>
+  <circle cx="142" cy="70" r="34"/><rect x="40" y="62" width="124" height="46" rx="23"/></g>
+  <ellipse class="shine" cx="86" cy="36" rx="22" ry="9"/></svg>`;
+
+// Speed is the skill: under a second is playing, four seconds is theory.
+function speedLabel(ms) {
+  if (ms < 800) return 'blazing';
+  if (ms < 1500) return 'nice';
+  return '';
+}
+
+function flash(kind) {
+  const f = $('#fx');
+  f.className = '';
+  void f.offsetWidth;   // restart the animation if it's already running
+  f.className = kind;
+}
+
+// text: big line in the cloud; sub: optional small line under it.
+function pop(text, bad, sub = '') {
+  const c = document.createElement('div');
+  c.className = bad ? 'cloud bad' : 'cloud';
+  c.innerHTML = CLOUD + '<div class="cloud-text"><b></b><small></small></div>';
+  c.querySelector('b').textContent = text;
+  c.querySelector('small').textContent = sub;
+  if (!bad) {
+    // Sparks fly out in a ring, each at its own angle and distance.
+    for (let i = 0; i < 10; i++) {
+      const k = document.createElement('i');
+      const a = (i / 10) * 2 * Math.PI + Math.random() * 0.4;
+      const d = 90 + Math.random() * 50;
+      k.style.setProperty('--dx', `${Math.cos(a) * d}px`);
+      k.style.setProperty('--dy', `${Math.sin(a) * d * 0.7}px`);
+      c.append(k);
+    }
+  }
+  $('.drill').append(c);
+  setTimeout(() => c.remove(), 1100);
+}
+
+function shake() {
+  const q = $('.question');
+  q.classList.remove('shake');
+  void q.offsetWidth;
+  q.classList.add('shake');
+}
+
+// ok: right first time (the scored outcome).
+function finish(ok, pauseMs) {
   s.accepting = false;
   if (ok) s.firstTry++;
-  $('#feedback').textContent = text;
-  $('#feedback').className = correct ? 'right' : 'wrong';
 
   // Raw, game-agnostic event — format documented in docs/data.md.
   addEvent({
@@ -130,8 +199,9 @@ function finish(ok, pauseMs, correct, text) {
 
 function endRound() {
   const { mode, index: total, firstTry, onEnd } = s;
+  const median = medianMs(s.times);
   cleanup();
-  onEnd({ mode, total, firstTry });
+  onEnd({ mode, total, firstTry, median });
 }
 
 // Stop mid-round. Answered questions are already saved.

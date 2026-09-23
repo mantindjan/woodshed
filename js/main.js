@@ -94,15 +94,17 @@ function onRoundEnd(result) {
   $('#chord').textContent = '—';
   $('#degree').textContent = '';
   $('#progress').textContent = '';
-  $('#feedback').className = '';
+  $('#degree').classList.remove('reveal');
   if (!result) {
     $('#feedback').textContent = '';
     return;
   }
-  const { mode: m, total, firstTry } = result;
-  $('#feedback').textContent = m === 'practice'
+  const { mode: m, total, firstTry, median } = result;
+  const score = m === 'practice'
     ? `${firstTry} / ${total} right first time`
     : `${total} done · ${total - firstTry} needed another go`;
+  $('#feedback').textContent = median === null
+    ? score : `${score} · median ${(median / 1000).toFixed(2)} s`;
 }
 
 startBtn.addEventListener('click', () => {
