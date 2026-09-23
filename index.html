@@ -9,6 +9,10 @@
      the GitHub profile regardless, but nobody needs to land here from Google. -->
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#111111">
+<!-- Declares the page already dark, so Chrome's "auto dark mode for web"
+     leaves its colours alone — it was repainting the dark degree number
+     white on the brass disc. -->
+<meta name="color-scheme" content="dark">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <title>Woodshed</title>
@@ -16,7 +20,7 @@
   /* Real Book lettering: note letters and digits only (tools/subset_font.py). */
   @font-face { font-family: 'RealBook'; src: url(fonts/realbook.woff2) format('woff2');
                font-display: swap; }
-  :root { --bg: #111; --ink: #ddd; --dim: #888; --brass: #d9a441; --line: #333;
+  :root { color-scheme: dark; --bg: #111; --ink: #ddd; --dim: #888; --brass: #d9a441; --line: #333;
           --right: #6c6; --wrong: #d66; --pad: 16px; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
