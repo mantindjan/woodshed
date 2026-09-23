@@ -1,21 +1,18 @@
 // MIDI input from the horn.
 //
-// Listens on every connected input (the YDS appears as one, over USB or BLE),
-// re-attaches when devices come and go, and debounces note-ons: the YDS emits
-// brief intermediate pitches while fingers move between notes, so a note only
-// counts once no other note-on has arrived for DEBOUNCE_MS. Last note wins.
-// Note-ons only fire with breath, so every reported note was actually blown.
+// Listens on every connected input (the YDS appears as one, over USB or BLE)
+// and re-attaches when devices come and go. Every note-on is reported
+// immediately, unfiltered: the horn only sends notes while air is blown, so
+// what arrives is what was played. See docs/midi.md for why the prototype's
+// 70 ms debounce was dropped.
 
-const DEBOUNCE_MS = 70;
-
-// onNote(midiNumber)  — a debounced note-on, raw MIDI number as the horn sent it.
+// onNote(midiNumber)  — a note-on, raw MIDI number as the horn sent it.
 // onStatus({state, names}) — state is one of:
 //   'unsupported' (no Web MIDI: iOS, non-Chrome, or insecure origin)
 //   'denied'      (permission refused)
 //   'none'        (access granted, no input connected)
 //   'connected'   (names = input device names)
-// onRaw(data, timeMs) — optional; every message before filtering (diagnostics).
-export async function connectMidi(onNote, onStatus, onRaw) {
+export async function connectMidi(onNote, onStatus) {
   if (!navigator.requestMIDIAccess) {
     onStatus({ state: 'unsupported', names: [] });
     return;
@@ -29,16 +26,12 @@ export async function connectMidi(onNote, onStatus, onRaw) {
     return;
   }
 
-  let pendingTimer = null;
-
   function onMessage(e) {
-    if (onRaw) onRaw(e.data, e.timeStamp ?? performance.now());
     const [status, note, velocity] = e.data;
     // Note-on is 0x9n on any channel. Velocity 0 is a note-off by MIDI
-    // convention and is ignored.
+    // convention — the YDS releases notes this way — and is ignored.
     if ((status & 0xf0) !== 0x90 || velocity === 0) return;
-    clearTimeout(pendingTimer);
-    pendingTimer = setTimeout(() => onNote(note), DEBOUNCE_MS);
+    onNote(note);
   }
 
   function attachAll() {

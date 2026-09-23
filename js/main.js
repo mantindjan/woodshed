@@ -44,7 +44,6 @@ function showHint() {
 }
 
 function onNote(midi) {
-  logLine(`        ✓ counted ${midi}`);   // TEMPORARY: raw MIDI log
   rawEl.textContent = `MIDI ${midi}`;
   if (calibrating) {
     calib = midi % 12;
@@ -76,44 +75,12 @@ function onStatus({ state, names }) {
   connectBtn.hidden = state === 'connected' || state === 'unsupported';
 }
 
-// --- TEMPORARY: raw MIDI log, to diagnose the display freezing during fast
-// runs. Remove once the debounce issue is understood and fixed. ---
-const LOG_LINES = 40;
-const logEl = $('#log');
-let logLines = [];
-let lastNoteMsgTime = null;   // time of the previous note message, for deltas
-let otherCount = 0;           // non-note messages (breath CC etc.) since last note message
-
-function logLine(text) {
-  logLines.unshift(text);               // newest on top
-  logLines.length = Math.min(logLines.length, LOG_LINES);
-  logEl.textContent = logLines.join('\n');
-}
-
-function onRaw(data, t) {
-  const [status, d1, d2] = data;
-  const type = status & 0xf0;
-  const isNote = type === 0x90 || type === 0x80;
-  if (!isNote) { otherCount++; return; }
-  // Collapse the non-note traffic since the last note into one line.
-  if (otherCount) { logLine(`        (${otherCount} other msgs)`); otherCount = 0; }
-  const dt = lastNoteMsgTime === null ? '' : `+${Math.round(t - lastNoteMsgTime)}`;
-  lastNoteMsgTime = t;
-  const kind = type === 0x80 ? 'off' : d2 === 0 ? 'on v0' : 'on';
-  logLine(`${dt.padStart(6)}ms  ${kind.padEnd(5)} ${d1} v${d2}`);
-}
-
-$('#logClear').addEventListener('click', () => {
-  logLines = []; lastNoteMsgTime = null; otherCount = 0; logEl.textContent = '';
-});
-// --- end TEMPORARY ---
-
 calibBtn.addEventListener('click', () => {
   calibrating = !calibrating;          // a second tap cancels
   calibBtn.classList.toggle('active', calibrating);
   showHint();
 });
-connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus, onRaw));
+connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 
 showHint();
-connectMidi(onNote, onStatus, onRaw);
+connectMidi(onNote, onStatus);
