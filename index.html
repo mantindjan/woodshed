@@ -26,6 +26,12 @@
   button { flex: 1; padding: 14px; font: inherit; color: var(--ink);
            background: transparent; border: 1px solid var(--line); border-radius: 8px; }
   button.active { border-color: var(--brass); color: var(--brass); }
+  /* TEMPORARY: raw MIDI log */
+  .loghead { display: flex; justify-content: space-between; align-items: center;
+             font-size: 13px; color: var(--dim); }
+  .loghead button { flex: 0; padding: 6px 12px; font-size: 13px; }
+  #log { margin: 0; font: 12px/1.35 ui-monospace, monospace; color: var(--dim);
+         white-space: pre; overflow-x: auto; }
 </style>
 </head>
 <body>
@@ -39,6 +45,9 @@
     <button id="calibrate">Calibrate</button>
     <button id="connect" hidden>Connect horn</button>
   </div>
+  <!-- TEMPORARY: raw MIDI log, newest on top -->
+  <div class="loghead"><span>MIDI log</span><button id="logClear">Clear</button></div>
+  <pre id="log"></pre>
 </main>
 <script type="module" src="js/main.js"></script>
 </body>

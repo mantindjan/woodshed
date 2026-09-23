@@ -14,7 +14,8 @@ const DEBOUNCE_MS = 70;
 //   'denied'      (permission refused)
 //   'none'        (access granted, no input connected)
 //   'connected'   (names = input device names)
-export async function connectMidi(onNote, onStatus) {
+// onRaw(data, timeMs) — optional; every message before filtering (diagnostics).
+export async function connectMidi(onNote, onStatus, onRaw) {
   if (!navigator.requestMIDIAccess) {
     onStatus({ state: 'unsupported', names: [] });
     return;
@@ -31,6 +32,7 @@ export async function connectMidi(onNote, onStatus) {
   let pendingTimer = null;
 
   function onMessage(e) {
+    if (onRaw) onRaw(e.data, e.timeStamp ?? performance.now());
     const [status, note, velocity] = e.data;
     // Note-on is 0x9n on any channel. Velocity 0 is a note-off by MIDI
     // convention and is ignored.
