@@ -84,3 +84,6 @@ connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 
 showHint();
 connectMidi(onNote, onStatus);
+
+// Offline support and fresh files after deploys; see sw.js.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
