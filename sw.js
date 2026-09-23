@@ -17,6 +17,7 @@ const NETWORK_TIMEOUT_MS = 3000;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
   'js/main.js', 'js/midi.js', 'js/music.js', 'js/audio.js', 'js/events.js', 'js/drill.js',
+  'js/notation.js', 'fonts/realbook.woff2', 'fonts/LICENSE.txt',
 ];
 
 self.addEventListener('install', e => {

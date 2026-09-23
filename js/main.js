@@ -6,7 +6,8 @@
 // between written (display, judging) and concert (the pad).
 
 import { connectMidi } from './midi.js';
-import { NOTES, writtenPc } from './music.js';
+import { writtenPc } from './music.js';
+import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
 
 const CALIB_KEY = 'woodshed.calib';
@@ -58,10 +59,11 @@ function onNote(midi) {
     calib = midi % 12;
     save(CALIB_KEY, String(calib));
     setCalibrating(false);
-    noteEl.textContent = 'C';
+    noteEl.innerHTML = noteHTML(0);
     return;
   }
-  noteEl.textContent = calib === null ? '?' : NOTES[writtenPc(midi, calib)];
+  if (calib === null) noteEl.textContent = '?';
+  else noteEl.innerHTML = noteHTML(writtenPc(midi, calib));
   drillNote(midi);
 }
 

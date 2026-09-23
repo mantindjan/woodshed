@@ -14,7 +14,7 @@ export const NOTES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', '
 export const QUALITIES = {
   maj7: '△',
   '7': '7',
-  m7: '−',
+  m7: '–',     // en dash, as on the prototype, whose sizing was tuned for it
   m7b5: 'ø',
 };
 

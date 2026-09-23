@@ -9,6 +9,7 @@
 // moment it's answered, so quitting mid-round loses nothing.
 
 import { NOTES, QUALITIES, DEG_SEMI, pc, writtenPc, concertPc } from './music.js';
+import { chordHTML } from './notation.js';
 import { initAudio, playChord, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 
@@ -69,7 +70,7 @@ function ask() {
   s.index++;
   const { root, quality, degree } = s.q;
   $('#progress').textContent = `${s.index} / ${ROUND_LENGTH}`;
-  $('#chord').textContent = NOTES[root] + QUALITIES[quality];
+  $('#chord').innerHTML = chordHTML(root, quality);
   $('#degree').textContent = degree;
   $('#feedback').textContent = '';
   $('#feedback').className = '';
@@ -87,10 +88,10 @@ export function drillNote(midi) {
   s.notes.push([midi, Math.round(performance.now() - s.shownAt)]);
   const played = writtenPc(midi, s.calib);
   if (played === s.q.target) {
-    finish(!s.missed, PAUSE_RIGHT_MS, '✓');
+    finish(!s.missed, PAUSE_RIGHT_MS, true, '✓');
   } else if (s.mode === 'practice') {
     s.missed = true;
-    finish(false, PAUSE_WRONG_MS, `✗ ${NOTES[played]} — it’s ${NOTES[s.q.target]}`);
+    finish(false, PAUSE_WRONG_MS, false, `✗ ${NOTES[played]} — it’s ${NOTES[s.q.target]}`);
   } else {
     // Learn: show the wrong note, keep waiting for the right one.
     s.missed = true;
@@ -99,11 +100,14 @@ export function drillNote(midi) {
   }
 }
 
-function finish(ok, pauseMs, text) {
+// ok: right first time (scored). correct: the note just played was right
+// (learn mode can be correct but not ok). text: the feedback line, plain —
+// Real Book lettering is illegible at small sizes.
+function finish(ok, pauseMs, correct, text) {
   s.accepting = false;
   if (ok) s.firstTry++;
   $('#feedback').textContent = text;
-  $('#feedback').className = text.startsWith('✓') ? 'right' : 'wrong';
+  $('#feedback').className = correct ? 'right' : 'wrong';
 
   // Raw, game-agnostic event — format documented in docs/data.md.
   addEvent({

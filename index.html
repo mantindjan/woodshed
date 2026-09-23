@@ -13,6 +13,9 @@
 <link rel="icon" href="icons/icon-192.png">
 <title>Woodshed</title>
 <style>
+  /* Real Book lettering: note letters and digits only (tools/subset_font.py). */
+  @font-face { font-family: 'RealBook'; src: url(fonts/realbook.woff2) format('woff2');
+               font-display: swap; }
   :root { --bg: #111; --ink: #ddd; --dim: #888; --brass: #d9a441; --line: #333;
           --right: #6c6; --wrong: #d66; --pad: 16px; }
   * { box-sizing: border-box; }
@@ -33,18 +36,32 @@
               font-variant-numeric: tabular-nums; }
   .question { display: flex; align-items: baseline; justify-content: center; gap: 40px;
               min-height: 130px; }
-  #chord { font: 88px/1.1 Georgia, serif; }
-  #degree { font: 120px/1 Georgia, serif; color: var(--brass); }
+  #chord { font: 116px/1.1 'RealBook', Georgia, serif; }
+  #degree { font: 120px/1 'RealBook', Georgia, serif; color: var(--brass); }
   #feedback { font-size: 20px; min-height: 2.8em; padding-top: 4px; }
   #feedback.right { color: var(--right); }
   #feedback.wrong { color: var(--wrong); }
+
+  /* Real Book notation (notation.js). Letters/digits in the Real Book font;
+     accidentals and quality symbols in Georgia, sized and raised relative to
+     the letter. Numbers from the prototype, tuned by eye on the phone — don't
+     change them without a phone screenshot (docs/notation.md). */
+  .rb { font-family: 'RealBook', Georgia, serif; }
+  .acc { font-family: Georgia, serif; font-size: .5em; vertical-align: .42em; font-weight: 700; }
+  .acc-s { margin-left: 0; margin-right: .02em; }
+  .acc-f { margin-left: -.12em; margin-right: -.06em; }   /* the flat has more side-bearing */
+  .q { font-family: Georgia, serif; font-weight: 600; margin-left: .02em; }
+  .q-maj7 { font-size: .5em; vertical-align: .30em; }
+  .q-7 { font-family: 'RealBook', Georgia, serif; font-weight: 400; font-size: .62em; vertical-align: .24em; }
+  .q-m7 { font-size: .66em; vertical-align: .30em; }
+  .q-m7b5 { font-size: .5em; vertical-align: .24em; }
 
   /* Controls. */
   .panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   h1 { margin: 0; font: 18px Georgia, serif; color: var(--dim); }
-  #status { font-size: 12px; color: var(--dim); text-align: right;
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Wraps rather than truncating: error states carry the fix in the text. */
+  #status { font-size: 12px; color: var(--dim); text-align: right; }
   #status[data-state="connected"] { color: var(--ink); }
   .row { display: flex; gap: 8px; }
   button { flex: 1; padding: 10px; font: inherit; color: var(--ink);
@@ -57,7 +74,7 @@
   .horn { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px;
           display: flex; flex-direction: column; gap: 6px; }
   .played { display: flex; justify-content: space-between; align-items: baseline; }
-  #note { font: 24px Georgia, serif; color: var(--brass); }
+  #note { font: 34px/1 'RealBook', Georgia, serif; color: var(--brass); }
   #raw { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
   #hint { font-size: 12px; color: var(--dim); min-height: 1.4em; }
 

@@ -1,0 +1,7 @@
+realbook.woff2 is a subset of "GJM realbook" (realbook-webfont.ttf) from
+https://github.com/vinzentt/jazz-lead-sheet, distributed under the
+GNU General Public License v2.0:
+https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
+Modification: subset to the glyphs "ABCDEFGW0123456789 " and converted to
+WOFF2 with fontTools. The unmodified original is available at the URL above.
