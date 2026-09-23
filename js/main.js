@@ -8,6 +8,7 @@
 import { connectMidi } from './midi.js';
 import { NOTES, writtenPc } from './music.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
+import { logMidi } from './midilog.js';   // TEMPORARY: breath diagnosis
 
 const CALIB_KEY = 'woodshed.calib';
 const MODE_KEY = 'woodshed.mode';
@@ -119,11 +120,11 @@ modeBtns.forEach(b => b.addEventListener('click', () => {
 }));
 
 calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a second tap cancels
-connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
+connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus, logMidi));
 
 showHint();
 showMode();
-connectMidi(onNote, onStatus);
+connectMidi(onNote, onStatus, logMidi);
 
 // Offline support and fresh files after deploys; see sw.js.
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');

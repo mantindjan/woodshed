@@ -17,6 +17,7 @@ const NETWORK_TIMEOUT_MS = 3000;
 const ASSETS = [
   './', 'index.html',
   'js/main.js', 'js/midi.js', 'js/music.js', 'js/audio.js', 'js/events.js', 'js/drill.js',
+  'js/midilog.js',   // TEMPORARY: breath diagnosis
 ];
 
 self.addEventListener('install', e => {

@@ -44,6 +44,11 @@
   #note { font: 28px Georgia, serif; color: var(--brass); }
   #raw { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
   #hint { font-size: 14px; color: var(--dim); min-height: 1.4em; }
+  /* TEMPORARY: raw MIDI log (breath diagnosis) */
+  .midilog .row { align-items: center; font-size: 13px; color: var(--dim); }
+  .midilog .row button { flex: 0; padding: 6px 12px; font-size: 13px; }
+  #midilog { margin: 0; height: 240px; overflow-y: auto; white-space: pre;
+             font: 12px/1.35 ui-monospace, monospace; color: var(--dim); }
 </style>
 </head>
 <body>
@@ -76,6 +81,13 @@
       <button id="calibrate">Calibrate</button>
       <button id="connect" hidden>Connect horn</button>
     </div>
+  </section>
+
+  <!-- TEMPORARY: raw MIDI log (breath diagnosis), oldest first -->
+  <section class="midilog">
+    <div class="row"><span style="flex:1">MIDI log</span>
+      <button id="midilogCopy">Copy</button><button id="midilogClear">Clear</button></div>
+    <pre id="midilog"></pre>
   </section>
 </main>
 <script type="module" src="js/main.js"></script>
