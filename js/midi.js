@@ -1,10 +1,19 @@
 // MIDI input from the horn.
 //
 // Listens on every connected input (the YDS appears as one, over USB or BLE)
-// and re-attaches when devices come and go. Every note-on is reported
-// immediately, unfiltered: the horn only sends notes while air is blown, so
-// what arrives is what was played. See docs/midi.md for why the prototype's
-// 70 ms debounce was dropped.
+// and re-attaches when devices come and go.
+//
+// Breath gate: the YDS streams breath as CC 11 and sends note-on as breath
+// rises past a very low level, so a faint residual puff still plays a note.
+// A note is only reported once the current breath reaches BREATH_THRESHOLD;
+// after that, every note change in the same breath is reported instantly,
+// so legato and fast trills aren't delayed. There is no time-based filter —
+// see docs/midi.md for why the prototype's 70 ms debounce was dropped.
+
+// Captured 2026-09-23: stray puffs peaked at 6, the softest real answer
+// at 21, typical answers 33–49.
+const BREATH_THRESHOLD = 15;
+const BREATH_CC = 11;
 
 // onNote(midiNumber)  — a note-on, raw MIDI number as the horn sent it.
 // onStatus({state, names, error}) — state is one of:
@@ -13,8 +22,7 @@
 //   'failed'      (any other failure; error = Chrome's error text)
 //   'none'        (access granted, no input connected)
 //   'connected'   (names = input device names)
-// onRaw(data, timeMs) — optional; every message before filtering (diagnostics).
-export async function connectMidi(onNote, onStatus, onRaw) {
+export async function connectMidi(onNote, onStatus) {
   if (!navigator.requestMIDIAccess) {
     onStatus({ state: 'unsupported', names: [] });
     return;
@@ -32,13 +40,38 @@ export async function connectMidi(onNote, onStatus, onRaw) {
     return;
   }
 
+  let breathSeen = false;   // a horn that never sends CC 11 isn't gated
+  let breathOpen = false;   // current breath has reached the threshold
+  let pending = null;       // note sounding before the breath reached it
+
   function onMessage(e) {
-    if (onRaw) onRaw(e.data, e.timeStamp ?? performance.now());
-    const [status, note, velocity] = e.data;
+    const [status, data1, data2] = e.data;
+    const type = status & 0xf0;
+
+    if (type === 0xb0 && data1 === BREATH_CC) {
+      breathSeen = true;
+      if (data2 === 0) {
+        // Breath over: a note that never reached the threshold was a puff.
+        breathOpen = false;
+        pending = null;
+      } else if (data2 >= BREATH_THRESHOLD && !breathOpen) {
+        breathOpen = true;
+        if (pending !== null) onNote(pending);
+        pending = null;
+      }
+      return;
+    }
+
     // Note-on is 0x9n on any channel. Velocity 0 is a note-off by MIDI
-    // convention — the YDS releases notes this way — and is ignored.
-    if ((status & 0xf0) !== 0x90 || velocity === 0) return;
-    onNote(note);
+    // convention (the YDS releases notes this way); releasing the pending
+    // note means it ended before the breath got there.
+    if (type !== 0x90) return;
+    if (data2 === 0) {
+      if (data1 === pending) pending = null;
+      return;
+    }
+    if (breathOpen || !breathSeen) onNote(data1);
+    else pending = data1;   // latest note wins if fingers move before then
   }
 
   function attachAll() {
