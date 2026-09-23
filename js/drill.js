@@ -15,7 +15,7 @@ import { addEvent, requestPersistence } from './events.js';
 
 export const ROUND_LENGTH = 20;
 const CHORD_SECONDS = 1.4;     // pad length per question (prototype value)
-const PAUSE_RIGHT_MS = 600;    // after a right answer, before the next question
+const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
 const PAUSE_WRONG_MS = 1500;   // practice miss: time to read the right answer
 const DEGREES = ['3', '5', '7'];
 const QUALITY_IDS = Object.keys(QUALITIES);
@@ -189,7 +189,7 @@ function floatNote(text) {
       opacity: t < 0.1 ? t * 10 : t > 0.6 ? (1 - t) / 0.4 : 1,
     });
   }
-  el.animate(frames, { duration: 1400, easing: 'ease-out' }).onfinish = () => el.remove();
+  el.animate(frames, { duration: 900, easing: 'ease-out' }).onfinish = () => el.remove();
 }
 
 // The line under the question: reaction time + speed, or "try again".
