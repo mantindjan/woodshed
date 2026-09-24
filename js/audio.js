@@ -61,6 +61,30 @@ export function playChord(rootConcertPc, quality, dur) {
   });
 }
 
+// A soft, bell-like ping of one note on a right answer: a sine plus a quiet
+// octave partial, 5 ms attack, exponential fade. Sits an octave above the
+// pad's close voicing (MIDI 72–83) so it reads as an echo, not a new chord.
+// pitchConcertPc is a CONCERT pitch class, so it matches the horn.
+export function playPing(pitchConcertPc) {
+  if (!ctx) return;
+  const t = ctx.currentTime + 0.01;
+  const f = 440 * Math.pow(2, (72 + pitchConcertPc - 69) / 12);
+  for (const [mult, level] of [[1, 0.16], [2, 0.04]]) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = f * mult;
+    o.connect(g);
+    g.connect(master);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    o.start(t);
+    o.stop(t + 0.75);
+    voices.push({ o, g });
+  }
+}
+
 // Silence everything now. Called on every stop path, or notes hang.
 export function stopAll() {
   if (!ctx) return;

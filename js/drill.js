@@ -10,9 +10,9 @@
 
 import { NOTES, QUALITIES, DEG_SEMI, pc, writtenPc, concertPc } from './music.js';
 import { chordHTML } from './notation.js';
-import { initAudio, playChord, stopAll } from './audio.js';
+import { initAudio, playChord, playPing, stopAll } from './audio.js';
 import { addEvent, allEvents, requestPersistence } from './events.js';
-import { createModel, pickWeighted, FAST_MS } from './weakspots.js';
+import { createModel, pickWeighted, FAST_MS, GOOD_MS, SLOW_MS } from './weakspots.js';
 
 const CHORD_SECONDS = 1.4;     // pad length per question (prototype value)
 const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
@@ -118,6 +118,7 @@ export function drillNote(midi) {
     flash('good');
     burst(false);
     floatNote(NOTES[s.q.target]);
+    playPing(concertPc(s.q.target, s.calib));
     label(`${(ms / 1000).toFixed(2)} s`, speedLabel(ms), false);
     finish(!s.missed, PAUSE_RIGHT_MS);
   } else {
@@ -145,11 +146,13 @@ export function drillNote(midi) {
 // wrong), a glow behind the question, and a label under it. ---
 
 // Speed is the skill: under a second is playing, four seconds is theory.
-// "Blazing" is also where the weak-spot score gives full marks.
+// Tiers agreed with the boss; the weak-spot score uses the same edges
+// (full marks under FAST_MS, floor from SLOW_MS).
 function speedLabel(ms) {
   if (ms < FAST_MS) return 'blazing';
-  if (ms < 1500) return 'nice';
-  return '';
+  if (ms < GOOD_MS) return 'good';
+  if (ms < SLOW_MS) return 'to improve';
+  return 'slow';
 }
 
 function flash(kind) {
@@ -172,9 +175,10 @@ function burst(bad) {
   if (!bad) restart($('#degree'), 'pulse');
 }
 
-// The right note drifts up out of the disc on a random, slow wobble and
+// The right note drifts gently up out of the disc on a random wobble and
 // fades — like floating score numbers in a game. Each gets its own sway
-// (amplitude, speed, direction) so no two rise the same way.
+// (amplitude, speed, direction) so no two rise the same way. Kept low and
+// soft, and done within the 1 s pause before the next question.
 function floatNote(text) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const drill = $('.drill').getBoundingClientRect();
@@ -186,24 +190,24 @@ function floatNote(text) {
   el.style.top = `${disc.top - drill.top + disc.height / 2}px`;
   $('.drill').append(el);
 
-  const sway = 8 + Math.random() * 12;          // px either side
-  const cycles = 0.8 + Math.random() * 0.8;     // wobbles on the way up
+  const sway = 4 + Math.random() * 5;           // px either side
+  const cycles = 0.5 + Math.random() * 0.5;     // wobbles on the way up
   const phase = Math.random() * 2 * Math.PI;
-  const rise = 120 + Math.random() * 50;        // px
-  const drift = (Math.random() - 0.5) * 40;     // slow sideways lean
+  const rise = 45 + Math.random() * 20;         // px
+  const drift = (Math.random() - 0.5) * 20;     // slow sideways lean
   const steps = 12;
   const frames = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const x = drift * t + sway * Math.sin(phase + t * cycles * 2 * Math.PI) - sway * Math.sin(phase);
     const y = -rise * t;
-    const tilt = 6 * Math.cos(phase + t * cycles * 2 * Math.PI);
+    const tilt = 4 * Math.cos(phase + t * cycles * 2 * Math.PI);
     frames.push({
       transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${tilt}deg) scale(${t < 0.15 ? 0.6 + t * 2.7 : 1})`,
       opacity: t < 0.1 ? t * 10 : t > 0.6 ? (1 - t) / 0.4 : 1,
     });
   }
-  el.animate(frames, { duration: 900, easing: 'ease-out' }).onfinish = () => el.remove();
+  el.animate(frames, { duration: 950, easing: 'cubic-bezier(.25,.6,.4,1)' }).onfinish = () => el.remove();
 }
 
 // The line under the question: reaction time + speed, or "try again".
