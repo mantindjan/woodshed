@@ -9,6 +9,7 @@ import { connectMidi } from './midi.js';
 import { writtenPc } from './music.js';
 import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
+import { downloadBackup, loadBackup, countEvents } from './backup.js';
 
 const CALIB_KEY = 'woodshed.calib';
 const MODE_KEY = 'woodshed.mode';
@@ -98,6 +99,7 @@ function showRunning(running) {
   startBtn.hidden = running;
   stopBtn.hidden = !running;
   calibBtn.disabled = running;
+  $('#menuBtn').disabled = running;
   pickBtn.disabled = running;
   lengthBtn.disabled = running;
   modeBtns.forEach(b => { b.disabled = running; });
@@ -150,6 +152,39 @@ lengthBtn.addEventListener('click', () => {
 });
 
 calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a second tap cancels
+
+// --- Backup panel (A7) ---
+const menu = $('#menu');
+const menuMsg = $('#menuMsg');
+function say(text, bad = false) {
+  menuMsg.textContent = text;
+  menuMsg.className = bad ? 'bad' : '';
+}
+async function showCount() {
+  const n = await countEvents();
+  $('#menuCount').textContent = `${n} answer${n === 1 ? '' : 's'} stored on this device.`;
+}
+$('#menuBtn').addEventListener('click', () => { say(''); menu.hidden = false; showCount(); });
+$('#menuClose').addEventListener('click', () => { menu.hidden = true; });
+$('#saveBackup').addEventListener('click', async () => {
+  const n = await downloadBackup();
+  say(`Saved ${n} answer${n === 1 ? '' : 's'} — check your Downloads.`);
+});
+$('#loadBackupBtn').addEventListener('click', () => $('#loadBackup').click());
+$('#loadBackup').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';                 // allow loading the same file again
+  if (!file) return;
+  try {
+    const { added, skipped } = await loadBackup(await file.text());
+    const answers = n => `${n} answer${n === 1 ? '' : 's'}`;
+    say(`Loaded ${answers(added)}; ${skipped} already here. Restarting…`);
+    // Reload so restored settings (calibration, mode, …) take effect.
+    setTimeout(() => location.reload(), 1500);
+  } catch (err) {
+    say(err.message, true);
+  }
+});
 connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 
 showHint();

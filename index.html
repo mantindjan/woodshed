@@ -154,6 +154,19 @@
   button:disabled { opacity: 0.4; }
   #start, #stop { font-size: 18px; padding: 14px; }
 
+  /* ⚙ button and the backup panel (A7). */
+  #menuBtn { flex: none; padding: 2px 8px; font-size: 16px; border: none; color: var(--dim); }
+  #menu { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.7);
+          display: flex; align-items: center; justify-content: center; }
+  #menu[hidden] { display: none; }
+  #menu .sheet { width: min(460px, 92vw); background: #1a1a1a; border: 1px solid var(--line);
+                 border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  #menu h2 { margin: 0; font: 20px Georgia, serif; }
+  #menu p { margin: 0; font-size: 14px; }
+  #menu .note { color: var(--dim); font-size: 12px; }
+  #menuMsg:empty { display: none; }
+  #menuMsg.bad { color: #ff9b9b; }
+
   /* Horn readout and calibration, secondary; pinned to the bottom. */
   .horn { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px;
           display: flex; flex-direction: column; gap: 6px; }
@@ -192,6 +205,7 @@
     <header>
       <h1>Woodshed</h1>
       <div id="status">Connecting…</div>
+      <button id="menuBtn" aria-label="Backup">⚙</button>
     </header>
     <div class="row">
       <button data-mode="learn">Learn</button>
@@ -216,6 +230,22 @@
     </section>
   </section>
 </main>
+<!-- Backup panel (A7), opened by ⚙. -->
+<div id="menu" hidden>
+  <div class="sheet">
+    <h2>Backup</h2>
+    <p id="menuCount">…</p>
+    <div class="row">
+      <button id="saveBackup">Save backup</button>
+      <button id="loadBackupBtn">Load backup</button>
+      <input id="loadBackup" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p id="menuMsg"></p>
+    <p class="note">Saves every answer and your settings to a file — put it in Drive.
+      Loading merges: nothing already here is duplicated or lost.</p>
+    <button id="menuClose">Close</button>
+  </div>
+</div>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

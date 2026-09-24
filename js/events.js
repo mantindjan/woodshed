@@ -34,6 +34,18 @@ export async function addEvent(event) {
   });
 }
 
+// Append many events in one transaction (backup restore).
+export async function addEvents(events) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    for (const e of events) store.add(e);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 // Every event, oldest first.
 export async function allEvents() {
   const db = await openDb();
