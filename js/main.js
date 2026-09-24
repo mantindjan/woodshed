@@ -7,12 +7,12 @@
 // between written (display, judging) and concert (the pad).
 
 import { connectMidi } from './midi.js';
-import { QUALITY_ORDER, QUALITY_TEXT, DEGREES, degreeLabel, writtenPc } from './music.js';
+import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, degreeLabel, writtenPc } from './music.js';
 import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
 import { downloadBackup, loadBackup, countEvents } from './backup.js';
 import { allEvents } from './events.js';
-import { LEVELS, exercise as resolveExercise, customCells, starsByExercise } from './levels.js';
+import { LEVELS, UNIT_TITLES, exercise as resolveExercise, customCells, matchLevel, setsOf, starsByExercise } from './levels.js';
 import { renderHeatmap } from './heatmap.js';
 
 // Settings (localStorage, all carried by the backup file).
@@ -55,10 +55,10 @@ let mode = load(MODE_KEY) === 'learn' ? 'learn' : 'practice';
 let pick = load(PICK_KEY) === 'random' ? 'random' : 'weak';
 let length = LENGTHS.includes(Number(load(LENGTH_KEY) ?? 20)) ? Number(load(LENGTH_KEY) ?? 20) : 20;
 // Default to the first rung of the ladder, not the everything-mix.
-let exerciseId = load(EXERCISE_KEY) || 'chord-maj7';
+let exerciseId = load(EXERCISE_KEY) || LEVELS[0].id;
 let custom = loadJSON(CUSTOM_KEY, { qualities: ['maj7'], degrees: ['3', '7'] });
 
-const currentExercise = () => resolveExercise(exerciseId, custom);
+const currentExercise = () => resolveExercise(exerciseId, custom, describe);
 
 // --- Tabs: each selects a pane (right) and a view (left stage). ---
 const VIEW_FOR = { play: 'play', levels: 'levels', stats: 'stats', horn: 'horn' };
@@ -83,12 +83,12 @@ function showSettings() {
   $$('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   $$('[data-pick]').forEach(b => b.classList.toggle('active', b.dataset.pick === pick));
   $$('[data-length]').forEach(b => b.classList.toggle('active', Number(b.dataset.length) === length));
+  // The exercise everywhere as "L13 · Major" + its degrees in brass, so
+  // what's being practised is as clear as the chord quality.
   const ex = currentExercise();
-  $('#exerciseLabel').textContent = ex.name;
-  $('#exerciseName').textContent = ex.name;
-  // Idle card on the stage: what this exercise asks.
-  $('#idleName').textContent = ex.name;
-  $('#idleWhat').textContent = describe(ex.cells);
+  const title = ex.num ? `${ex.num} · ${ex.title}` : ex.title;
+  for (const [sel, t] of [['#exerciseLabel', title], ['#exerciseName', title], ['#idleName', title]]) $(sel).textContent = t;
+  for (const sel of ['#exerciseDegrees', '#stageDegrees', '#idleWhat']) $(sel).textContent = ex.degrees;
   // An empty custom pick can't be played.
   startBtn.disabled = ex.cells.length === 0;
 }
@@ -204,55 +204,61 @@ function selectExercise(id) {
   showLevels();
 }
 
+// The ladder: one block per unit, one row per quality, the levels as flat
+// pills along it (degrees + stars), numbered in ladder order.
 async function showLevels() {
   const stars = starsByExercise(await allEvents());
   const starText = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  const pill = l => `<button class="lvl${l.id === exerciseId ? ' active' : ''}" data-level="${l.id}">` +
+    `<b>${l.num}</b><span>${l.degrees}</span><i>${starText(stars.get(l.id) || 0)}</i></button>`;
   let h = '';
-  let tier = '';
-  for (const l of LEVELS) {
-    if (l.tier !== tier) {
-      if (tier) h += '</div>';
-      tier = l.tier;
-      h += `<div class="tier">${tier}</div><div class="lvls">`;
+  for (const [unit, title] of UNIT_TITLES) {
+    h += `<div class="tier">${title}</div>`;
+    const levels = LEVELS.filter(l => l.unit === unit);
+    for (const q of [...QUALITY_ORDER, 'all']) {
+      const row = levels.filter(l => l.quality === q);
+      if (!row.length) continue;
+      const label = q === 'all' ? (unit === 'everything' ? '' : 'All') : `${QUALITY_NAME[q]} <small>${QUALITY_TEXT[q]}</small>`;
+      h += `<div class="lrow"><span class="lq">${label}</span>${row.map(pill).join('')}</div>`;
     }
-    h += `<button class="lvl${l.id === exerciseId ? ' active' : ''}" data-level="${l.id}">` +
-         `<b>${l.num}</b><span>${l.name}</span><em>${l.degrees}</em>` +
-         `<i>${starText(stars.get(l.id) || 0)}</i></button>`;
   }
-  h += `</div><div class="tier">Your own</div><div class="lvls">` +
+  h += `<div class="tier">Your own</div><div class="lrow"><span class="lq">Custom</span>` +
        `<button class="lvl${exerciseId === 'custom' ? ' active' : ''}" data-level="custom">` +
-       `<b>Custom</b><span>${describe(customCells(custom.qualities, custom.degrees))}</span>` +
-       `<i>${starText(stars.get('custom') || 0)}</i></button></div>`;
+       `<span>${describe(customCells(custom.qualities, custom.degrees))}</span></button></div>`;
   $('#ladder').innerHTML = h;
   $$('#ladder [data-level]').forEach(b => b.addEventListener('click', () => selectExercise(b.dataset.level)));
 
   const ex = currentExercise();
-  $('#levelInfo').innerHTML = '<b></b><span></span>';
-  $('#levelInfo b').textContent = ex.name;
-  $('#levelInfo span').textContent = describe(ex.cells);
+  $('#levelInfo').innerHTML = '<b></b><span class="degs"></span>';
+  $('#levelInfo b').textContent = ex.num ? `${ex.num} · ${ex.title}` : ex.title;
+  $('#levelInfo .degs').textContent = ex.degrees;
   showCustom();
 }
 
+// The builder starts from the current exercise. Any change makes a custom
+// pick — unless it matches an existing level, which is then selected.
 function showCustom() {
+  // A custom pick keeps the chips as tapped: derived from its cells, an
+  // empty pick would forget the chosen qualities.
+  const sets = exerciseId === 'custom' ? custom : setsOf(currentExercise().cells);
   const chip = (attr, value, label, on) =>
     `<button data-${attr}="${value}" class="${on ? 'active' : ''}">${label}</button>`;
   $('#customQualities').innerHTML = QUALITY_ORDER
-    .map(q => chip('cq', q, QUALITY_TEXT[q], custom.qualities.includes(q))).join('');
+    .map(q => chip('cq', q, QUALITY_TEXT[q], sets.qualities.includes(q))).join('');
   $('#customDegrees').innerHTML = DEGREES
-    .map(d => chip('cd', d, degreeLabel(d), custom.degrees.includes(d))).join('');
-  const n = customCells(custom.qualities, custom.degrees).length;
+    .map(d => chip('cd', d, degreeLabel(d), sets.degrees.includes(d))).join('');
+  const n = currentExercise().cells.length;
   $('#customHint').textContent = n ? `${n} combination${n === 1 ? '' : 's'} × 12 roots` : 'Pick at least one quality and one degree that fits it.';
   const toggle = (list, v) => (list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
-  $$('#customQualities [data-cq]').forEach(b => b.addEventListener('click', () => {
-    custom = { ...custom, qualities: toggle(custom.qualities, b.dataset.cq) };
-    save(CUSTOM_KEY, JSON.stringify(custom));
-    selectExercise('custom');
-  }));
-  $$('#customDegrees [data-cd]').forEach(b => b.addEventListener('click', () => {
-    custom = { ...custom, degrees: toggle(custom.degrees, b.dataset.cd) };
-    save(CUSTOM_KEY, JSON.stringify(custom));
-    selectExercise('custom');
-  }));
+  const change = next => {
+    const level = matchLevel(customCells(next.qualities, next.degrees));
+    if (!level) { custom = next; save(CUSTOM_KEY, JSON.stringify(custom)); }
+    selectExercise(level ? level.id : 'custom');
+  };
+  $$('#customQualities [data-cq]').forEach(b => b.addEventListener('click', () =>
+    change({ ...sets, qualities: toggle(sets.qualities, b.dataset.cq) })));
+  $$('#customDegrees [data-cd]').forEach(b => b.addEventListener('click', () =>
+    change({ ...sets, degrees: toggle(sets.degrees, b.dataset.cd) })));
 }
 $('#playLevel').addEventListener('click', () => showTab('play'));
 

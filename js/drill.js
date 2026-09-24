@@ -1,8 +1,9 @@
 // Degree drill: a chord symbol and a degree appear (silently), the player
 // blows the note on the horn; a right answer sounds the chord and the note.
 //
-// Learn mode: a wrong note is shown but doesn't end the question; it waits
-// for the right one. Practice mode: the first note decides, then it moves on.
+// Learn mode: a wrong note shows the answer on the disc for a moment, then
+// waits for it to be played. Practice mode: the first note decides — a miss
+// floats the right note away in red — then it moves on.
 // Either way only the first attempt counts as "right first time".
 //
 // Every question is saved as a raw event (events.js, docs/data.md) the
@@ -20,7 +21,8 @@ import { points, comboMult } from './scoring.js';
 // reward with the right answer instead.
 const CHORD_SECONDS = 0.9;     // reward chord length
 const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
-const PAUSE_WRONG_MS = 1500;   // practice miss: time to read the right answer
+const PAUSE_WRONG_MS = 1200;   // practice miss: the right note floats away, then next
+const LEARN_REVEAL_MS = 1000;  // learn miss: the disc shows the right note this long
 const FLOAT_GAP_PX = 6;        // floating note starts this far above the disc
 const SCHEMA_VERSION = 2;       // v2 adds `exercise` (docs/data.md)
 
@@ -106,6 +108,7 @@ function showScore() {
 }
 
 function ask() {
+  clearTimeout(s.revealTimer);
   s.q = pickQuestion(s.q, s.model, s.exercise.cells);
   s.index++;
   const { root, quality, degree } = s.q;
@@ -160,14 +163,26 @@ export function drillNote(midi) {
     burst(true);
     shake();
     if (s.mode === 'practice') {
-      // Practice moves on: the disc turns red and flips to the right note.
-      $('#degree').textContent = NOTES[s.q.target];
-      $('#degree').classList.add('reveal');
+      // Practice moves on: the right note floats up out of the disc, in red.
+      floatNote(NOTES[s.q.target], true);
       finish(false, PAUSE_WRONG_MS);
     } else {
-      // Learn: the disc flashes red, no answer given; keep waiting.
-      restart($('#degree'), 'miss');
+      // Learn: the disc turns red showing the right note for a moment, then
+      // flips back to the degree and waits for it to be played.
+      const disc = $('#degree');
+      disc.textContent = NOTES[s.q.target];
+      disc.classList.remove('long');
+      disc.classList.add('reveal');
       label('', 'try again', true);
+      clearTimeout(s.revealTimer);
+      const q = s.q;
+      s.revealTimer = setTimeout(() => {
+        if (!s || s.q !== q || !s.accepting) return;
+        const d = degreeLabel(q.degree);
+        disc.textContent = d;
+        disc.classList.remove('reveal');
+        disc.classList.toggle('long', d.length > 2);
+      }, LEARN_REVEAL_MS);
     }
   }
 }
@@ -210,12 +225,13 @@ function burst(bad) {
 // fades — like floating score numbers in a game. Each gets its own sway
 // (amplitude, speed, direction) so no two rise the same way. Kept low and
 // soft, and done within the 1 s pause before the next question.
-function floatNote(text) {
+// bad: a practice miss — the right note, in red.
+function floatNote(text, bad = false) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const drill = $('.drill').getBoundingClientRect();
   const disc = $('#degree').getBoundingClientRect();
   const el = document.createElement('div');
-  el.className = 'float-note';
+  el.className = bad ? 'float-note bad' : 'float-note';
   el.textContent = text;
   $('.drill').append(el);
   // Start just above the disc's top edge, not its centre: light text over
@@ -317,6 +333,7 @@ function summary() {
 
 function cleanup() {
   clearTimeout(s.timer);
+  clearTimeout(s.revealTimer);
   stopAll();
   unlockScreen();
   s = null;

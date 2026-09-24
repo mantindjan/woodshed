@@ -55,8 +55,8 @@
   #idle { position: absolute; inset: 0; display: flex; flex-direction: column;
           align-items: center; justify-content: center; gap: 6px; pointer-events: none; }
   #idle[hidden] { display: none; }
-  #idleName { font: 600 28px/1.2 system-ui, sans-serif; }
-  #idleWhat { font-size: 18px; color: var(--brass); }
+  #idleName { font: 600 24px/1.2 system-ui, sans-serif; }
+  #idleWhat { font: 800 40px/1.2 system-ui, sans-serif; color: #ffe2a8; }
   .idle-go { margin-top: 10px; font-size: 13px; color: var(--dim); }
   /* The question. Fixed heights so nothing jumps between questions. */
   .drill { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center;
@@ -73,8 +73,8 @@
             font: 700 58px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
   #degree.long { font-size: 42px; letter-spacing: -.02em; }   /* ♯11 */
   #degree:empty { visibility: hidden; }   /* idle: keep the space, hide the disc */
-  /* Practice miss: the disc turns red and flips to show the right note.
-     Learn miss: it flashes red and stays on the degree. */
+  /* Learn miss: the disc turns red and flips to show the right note for a
+     moment. (Practice miss floats the right note away instead.) */
   #degree.reveal { background: #d65a5a; font-size: 40px; animation: flip .35s ease-out; }
   #degree.miss { animation: miss-flash .5s ease-out; }
   @keyframes miss-flash { 25% { background: #d65a5a; transform: scale(1.08); } }
@@ -119,6 +119,7 @@
   .float-note { position: absolute; z-index: 3; pointer-events: none; opacity: 0;
                 font: 800 26px/1 system-ui, sans-serif; color: #ffe2a8;
                 text-shadow: 0 0 12px rgba(244,195,122,.9), 0 0 3px #000; white-space: nowrap; }
+  .float-note.bad { color: #ff9b9b; text-shadow: 0 0 12px rgba(214,70,70,.9), 0 0 3px #000; }
   /* The disc gives a quick pulse on a right answer. */
   #degree.pulse { animation: pulse .3s cubic-bezier(.2,.9,.3,1.4); }
   @keyframes pulse { 50% { transform: scale(1.18); } }
@@ -193,8 +194,13 @@
   /* Exercise card: what's being asked; tap to change it. */
   #exerciseBtn { display: flex; justify-content: space-between; align-items: center; gap: 8px;
                  text-align: left; padding: 8px 10px; background: #181818; }
-  #exerciseBtn b { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #exerciseBtn span { color: var(--brass); font-size: 12px; flex: none; }
+  #exerciseBtn .ex { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  #exerciseLabel { font-weight: 600; font-size: 14px; white-space: nowrap; }
+  #exerciseBtn .chg { color: var(--dim); font-size: 12px; flex: none; }
+  /* What's being practised: the degrees, in brass, wherever the exercise shows. */
+  .degs { color: #ffe2a8; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #exerciseDegrees { font-size: 17px; }
+  #stageDegrees { font-size: 14px; }
 
   #start, #stop { font-size: 17px; font-weight: 600; padding: 11px; border: none;
                   background: var(--brass); color: #1a1206; }
@@ -220,16 +226,18 @@
   .tier { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
           margin: 8px 0 4px; }
   .tier:first-child { margin-top: 0; }
-  .lvls { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
-  .lvl { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px;
-         background: #181818; text-align: left; }
-  .lvl b { font-size: 10px; color: var(--dim); font-weight: 600; }
-  .lvl span { font-size: 13px; white-space: nowrap; }
-  .lvl em { font-style: normal; font-size: 11px; color: var(--dim); }
-  .lvl i { font-style: normal; font-size: 11px; color: var(--brass); letter-spacing: 1px; }
-  .lvl.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
+  /* One row per quality; its levels as flat pills: number · degrees · stars. */
+  .lrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 4px; }
+  .lq { flex: none; width: 84px; font-size: 13px; color: var(--ink); white-space: nowrap; }
+  .lq small { color: var(--dim); font-size: 12px; }
+  .lvl { display: flex; align-items: baseline; gap: 5px; padding: 5px 7px; background: #181818;
+         border-radius: 6px; white-space: nowrap; }
+  .lvl b { font-size: 9px; color: var(--dim); font-weight: 600; }
+  .lvl span { font-size: 14px; font-weight: 600; color: #ffe2a8; }
+  .lvl i { font-style: normal; font-size: 9px; color: var(--brass); letter-spacing: 1px; }
+  .lvl.active { border-color: var(--brass); background: rgba(217,164,65,.14); }
   #levelInfo b { display: block; font-size: 15px; }
-  #levelInfo span { font-size: 12px; color: var(--dim); }
+  #levelInfo .degs { font-size: 22px; }
   #customHint { font-size: 11px; color: var(--dim); }
 
   /* Stats: heatmap on the stage. */
@@ -284,7 +292,7 @@
     <!-- Play: the question. -->
     <div class="view" id="view-play">
       <div class="stage-top">
-        <span id="exerciseName"></span>
+        <span><span id="exerciseName"></span> <b id="stageDegrees" class="degs"></b></span>
         <span id="progress"></span>
         <span class="scorebox"><b id="score"></b><small id="combo"></small></span>
       </div>
@@ -330,7 +338,7 @@
     </nav>
 
     <div class="pane" data-pane="play">
-      <button id="exerciseBtn"><b id="exerciseLabel"></b><span>change ›</span></button>
+      <button id="exerciseBtn"><span class="ex"><b id="exerciseLabel"></b><b id="exerciseDegrees" class="degs"></b></span><span class="chg">change ›</span></button>
       <div class="seg">
         <button data-mode="learn">Learn</button>
         <button data-mode="practice">Practice</button>

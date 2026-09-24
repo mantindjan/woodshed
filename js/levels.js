@@ -10,8 +10,10 @@
 import { QUALITY_ORDER as Q, QUALITY_NAME, VALID_DEGREES, degreeLabel } from './music.js';
 
 // Units of degrees, as the boss plays them (2026-09-24): chord tones, upper
-// structure, alterations. Each unit goes one quality at a time (only the
-// degrees valid on it), then all qualities mixed.
+// structure, alterations. Within a unit: every quality × single degree
+// (Major 3, Major 5, …, Half-dim 7), then each quality with all its unit
+// degrees, then all qualities mixed. A level whose cells repeat an earlier
+// one (e.g. Major alterations = just ♯11) is skipped.
 const UNITS = [
   { key: 'chord', name: 'Chord tones', degrees: ['3', '5', '7'] },
   { key: 'upper', name: 'Upper structure', degrees: ['9', '11', '13'] },
@@ -19,29 +21,59 @@ const UNITS = [
 ];
 
 const labelOf = degrees => degrees.map(degreeLabel).join(' ');
+const idPart = d => d.replace('#', 's');   // ids stay plain: #11 → s11
+
+// A level: `quality` is a quality id or 'all' (for the row it sits on).
+function level(id, unit, quality, degrees, cells) {
+  return { id, unit: unit.key, tier: `${unit.name} · ${labelOf(unit.degrees)}`,
+           quality, name: quality === 'all' ? 'All' : QUALITY_NAME[quality],
+           degrees: labelOf(degrees), cells };
+}
 
 function unitLevels(unit) {
   const perQuality = Q.map(q => ({ q, degrees: unit.degrees.filter(d => VALID_DEGREES[q].includes(d)) }))
     .filter(x => x.degrees.length);
-  const levels = perQuality.map(({ q, degrees }) => ({
-    id: `${unit.key}-${q}`, tier: `${unit.name} · ${labelOf(unit.degrees)}`,
-    name: QUALITY_NAME[q], degrees: labelOf(degrees),
-    cells: degrees.map(degree => ({ quality: q, degree })),
-  }));
-  levels.push({
-    id: `${unit.key}-all`, tier: levels[0].tier, name: 'All', degrees: labelOf(unit.degrees),
-    cells: perQuality.flatMap(({ q, degrees }) => degrees.map(degree => ({ quality: q, degree }))),
-  });
-  return levels;
+  const singles = perQuality.flatMap(({ q, degrees }) => degrees.map(d =>
+    level(`${unit.key}-${q}-${idPart(d)}`, unit, q, [d], [{ quality: q, degree: d }])));
+  const combined = perQuality.filter(x => x.degrees.length > 1).map(({ q, degrees }) =>
+    level(`${unit.key}-${q}`, unit, q, degrees, degrees.map(degree => ({ quality: q, degree }))));
+  const all = level(`${unit.key}-all`, unit, 'all', unit.degrees,
+    perQuality.flatMap(({ q, degrees }) => degrees.map(degree => ({ quality: q, degree }))));
+  return [...singles, ...combined, all];
+}
+
+// Identity of a cell set, for spotting duplicates and matching custom picks.
+export const cellsKey = cells => cells.map(c => `${c.quality}|${c.degree}`).sort().join(',');
+
+function dedupe(levels) {
+  const seen = new Set();
+  return levels.filter(l => !seen.has(cellsKey(l.cells)) && seen.add(cellsKey(l.cells)));
 }
 
 // Ids are stable (stored in events and settings); the "L1…" numbers are
 // display only and follow ladder order.
-export const LEVELS = [
+export const LEVELS = dedupe([
   ...UNITS.flatMap(unitLevels),
-  { id: 'everything', tier: 'Everything', name: 'Everything', degrees: 'all',
+  { id: 'everything', unit: 'everything', tier: 'Everything', quality: 'all', name: 'Everything', degrees: 'all degrees',
     cells: Q.flatMap(q => VALID_DEGREES[q].map(degree => ({ quality: q, degree }))) },
-].map((l, i) => ({ ...l, num: `L${i + 1}` }));
+]).map((l, i) => ({ ...l, num: `L${i + 1}` }));
+
+export const UNIT_TITLES = [...new Map(LEVELS.map(l => [l.unit, l.tier])).entries()];
+
+// The level with exactly these cells, if any.
+export function matchLevel(cells) {
+  const key = cellsKey(cells);
+  return LEVELS.find(l => cellsKey(l.cells) === key) || null;
+}
+
+// The qualities and degrees a cell set is built from (every level and
+// custom pick is qualities × degrees, filtered to valid combinations).
+export function setsOf(cells) {
+  return {
+    qualities: Q.filter(q => cells.some(c => c.quality === q)),
+    degrees: [...new Set(cells.map(c => c.degree))],
+  };
+}
 
 // A custom pick: every valid combination of the chosen qualities and degrees.
 export function customCells(qualities, degrees) {
@@ -49,16 +81,18 @@ export function customCells(qualities, degrees) {
     degrees.filter(d => VALID_DEGREES[quality].includes(d)).map(degree => ({ quality, degree })));
 }
 
-// Resolve an exercise id ('chord-7', … or 'custom') to {id, name, cells}.
-// Unknown ids (e.g. from the old ladder) fall back to the first level.
-export function exercise(id, custom) {
+// Resolve an exercise id (a level id, or 'custom') to
+// {id, num, title, degrees, name, cells}: `title` is the quality in words,
+// `degrees` what gets asked — shown big wherever the exercise is named.
+// Unknown ids (e.g. from an older ladder) fall back to the first level.
+export function exercise(id, custom, describe) {
   if (id === 'custom') {
     const cells = customCells(custom.qualities, custom.degrees);
-    return { id, name: 'Custom', cells };
+    return { id, num: '', title: 'Custom', degrees: describe(cells), name: 'Custom', cells };
   }
-  const level = LEVELS.find(l => l.id === id) || LEVELS[0];
-  const name = level.name === level.tier ? level.name : `${level.name} · ${level.degrees}`;
-  return { id: level.id, name: `${level.num} · ${name}`, cells: level.cells };
+  const l = LEVELS.find(x => x.id === id) || LEVELS[0];
+  return { id: l.id, num: l.num, title: l.name, degrees: l.degrees,
+           name: `${l.num} · ${l.name} · ${l.degrees}`, cells: l.cells };
 }
 
 // Stars per exercise id from the event log: the best PRACTICE round of at
