@@ -11,9 +11,9 @@
 import { NOTES, QUALITIES, DEG_SEMI, pc, writtenPc, concertPc } from './music.js';
 import { chordHTML } from './notation.js';
 import { initAudio, playChord, stopAll } from './audio.js';
-import { addEvent, requestPersistence } from './events.js';
+import { addEvent, allEvents, requestPersistence } from './events.js';
+import { createModel, pickWeighted, FAST_MS } from './weakspots.js';
 
-export const ROUND_LENGTH = 20;
 const CHORD_SECONDS = 1.4;     // pad length per question (prototype value)
 const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
 const PAUSE_WRONG_MS = 1500;   // practice miss: time to read the right answer
@@ -24,12 +24,15 @@ const SCHEMA_VERSION = 1;
 const $ = sel => document.querySelector(sel);
 const rand = arr => arr[Math.floor(Math.random() * arr.length)];
 
-// Random root, quality and degree; never the exact same question twice in
-// a row. All pitch values WRITTEN.
-function pickQuestion(prev) {
+// Next question: weighted toward weak spots when a model is given (D3),
+// otherwise uniformly random. Never the exact same question twice in a row.
+// All pitch values WRITTEN.
+function pickQuestion(prev, model) {
   let q;
   do {
-    q = { root: Math.floor(Math.random() * 12), quality: rand(QUALITY_IDS), degree: rand(DEGREES) };
+    q = model
+      ? pickWeighted(model, QUALITY_IDS, DEGREES)
+      : { root: Math.floor(Math.random() * 12), quality: rand(QUALITY_IDS), degree: rand(DEGREES) };
   } while (prev && q.root === prev.root && q.quality === prev.quality && q.degree === prev.degree);
   q.target = pc(q.root + DEG_SEMI[q.quality][q.degree]);
   return q;
@@ -58,28 +61,38 @@ function medianMs(values) {
 }
 
 // mode: 'learn' | 'practice'. calib: MIDI pitch class of a written C.
-// onEnd(result | null): result = {mode, total, firstTry, median} after a full
-// round (median: ms from chord to correct note, or null),
-// null when stopped early.
-export function startRound(mode, calib, onEnd) {
+// length: questions per round, 0 = endless (until Stop).
+// pick: 'weak' (weighted toward weak spots, D3) | 'random'.
+// onEnd(result | null): result = {mode, total, firstTry, median} when the
+// round ends or is stopped with at least one answer (median: ms from chord
+// to correct note, or null); null if stopped before any answer.
+export async function startRound(mode, calib, onEnd, { length = 20, pick = 'weak' } = {}) {
   initAudio();            // inside the Start tap, so Chrome allows sound
   requestPersistence();
   lockScreen();
-  s = {
-    mode, calib, onEnd,
+  const round = {
+    mode, calib, onEnd, length,
     round: Date.now().toString(36),   // groups this round's events
-    index: 0, firstTry: 0, q: null,
+    index: 0, answered: 0, firstTry: 0, q: null,
     times: [],        // ms from chord to correct note, per answered question
+    model: null,      // weak-spot model, built from the whole event log
     accepting: false, timer: null,
   };
+  s = round;
+  if (pick === 'weak') {
+    const model = createModel();
+    for (const e of await allEvents()) model.add(e);
+    if (s !== round) return;          // stopped while loading
+    round.model = model;
+  }
   ask();
 }
 
 function ask() {
-  s.q = pickQuestion(s.q);
+  s.q = pickQuestion(s.q, s.model);
   s.index++;
   const { root, quality, degree } = s.q;
-  $('#progress').textContent = `${s.index} / ${ROUND_LENGTH}`;
+  $('#progress').textContent = `${s.index} / ${s.length || '∞'}`;
   $('#chord').innerHTML = chordHTML(root, quality);
   $('#degree').textContent = degree;
   $('#degree').classList.remove('reveal', 'pulse', 'miss');
@@ -132,8 +145,9 @@ export function drillNote(midi) {
 // wrong), a glow behind the question, and a label under it. ---
 
 // Speed is the skill: under a second is playing, four seconds is theory.
+// "Blazing" is also where the weak-spot score gives full marks.
 function speedLabel(ms) {
-  if (ms < 800) return 'blazing';
+  if (ms < FAST_MS) return 'blazing';
   if (ms < 1500) return 'nice';
   return '';
 }
@@ -219,7 +233,7 @@ function finish(ok, pauseMs) {
   if (ok) s.firstTry++;
 
   // Raw, game-agnostic event — format documented in docs/data.md.
-  addEvent({
+  const event = {
     v: SCHEMA_VERSION,
     t: s.shownT,
     round: s.round,
@@ -232,24 +246,34 @@ function finish(ok, pauseMs) {
     calib: s.calib,
     notes: s.notes,
     ok,
-  });
+  };
+  addEvent(event);
+  s.answered++;
+  // The weak-spot model learns within the round too.
+  if (s.model) s.model.add(event);
 
-  s.timer = setTimeout(s.index >= ROUND_LENGTH ? endRound : ask, pauseMs);
+  s.timer = setTimeout(s.length && s.index >= s.length ? endRound : ask, pauseMs);
 }
 
 function endRound() {
-  const { mode, index: total, firstTry, onEnd } = s;
-  const median = medianMs(s.times);
-  cleanup();
-  onEnd({ mode, total, firstTry, median });
-}
-
-// Stop mid-round. Answered questions are already saved.
-export function stopRound() {
-  if (!s) return;
+  const result = summary();
   const { onEnd } = s;
   cleanup();
-  onEnd(null);
+  onEnd(result);
+}
+
+// Stop mid-round (or end an endless one). Answered questions are already
+// saved; a summary is shown if at least one was answered.
+export function stopRound() {
+  if (!s) return;
+  const result = s.answered ? summary() : null;
+  const { onEnd } = s;
+  cleanup();
+  onEnd(result);
+}
+
+function summary() {
+  return { mode: s.mode, total: s.answered, firstTry: s.firstTry, median: medianMs(s.times) };
 }
 
 function cleanup() {

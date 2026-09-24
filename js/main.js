@@ -12,6 +12,11 @@ import { startRound, stopRound, drillNote, isRunning } from './drill.js';
 
 const CALIB_KEY = 'woodshed.calib';
 const MODE_KEY = 'woodshed.mode';
+const PICK_KEY = 'woodshed.pick';
+const LENGTH_KEY = 'woodshed.length';
+
+// Question-count choices; 0 = endless (until Stop).
+const LENGTHS = [10, 20, 50, 100, 0];
 
 const $ = sel => document.querySelector(sel);
 const statusEl = $('#status');
@@ -23,6 +28,8 @@ const connectBtn = $('#connect');
 const startBtn = $('#start');
 const stopBtn = $('#stop');
 const modeBtns = document.querySelectorAll('[data-mode]');
+const pickBtn = $('#pick');
+const lengthBtn = $('#length');
 
 // localStorage can throw (private mode, storage disabled); fall back to
 // defaults rather than breaking the page.
@@ -36,6 +43,8 @@ function save(key, value) {
 let calib = load(CALIB_KEY) === null ? null : Number(load(CALIB_KEY));
 let calibrating = false;
 let mode = load(MODE_KEY) === 'learn' ? 'learn' : 'practice';
+let pick = load(PICK_KEY) === 'random' ? 'random' : 'weak';
+let length = LENGTHS.includes(Number(load(LENGTH_KEY) ?? 20)) ? Number(load(LENGTH_KEY) ?? 20) : 20;
 
 function showHint() {
   if (calibrating) hintEl.textContent = 'Play a written C.';
@@ -45,6 +54,9 @@ function showHint() {
 
 function showMode() {
   modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  pickBtn.textContent = pick === 'weak' ? 'Weak spots' : 'Random';
+  pickBtn.classList.toggle('active', pick === 'weak');
+  lengthBtn.textContent = length ? `${length} questions` : 'Endless';
 }
 
 function setCalibrating(on) {
@@ -86,12 +98,14 @@ function showRunning(running) {
   startBtn.hidden = running;
   stopBtn.hidden = !running;
   calibBtn.disabled = running;
+  pickBtn.disabled = running;
+  lengthBtn.disabled = running;
   modeBtns.forEach(b => { b.disabled = running; });
 }
 
 function onRoundEnd(result) {
   showRunning(false);
-  $('#chord').textContent = '—';
+  $('#chord').textContent = '';
   $('#degree').textContent = '';
   $('#progress').textContent = '';
   $('#degree').classList.remove('reveal', 'pulse', 'miss');
@@ -113,7 +127,7 @@ startBtn.addEventListener('click', () => {
   if (calib === null) { setCalibrating(true); return; }
   if (calibrating) setCalibrating(false);
   showRunning(true);
-  startRound(mode, calib, onRoundEnd);
+  startRound(mode, calib, onRoundEnd, { length, pick });
 });
 stopBtn.addEventListener('click', () => { if (isRunning()) stopRound(); });
 
@@ -122,6 +136,18 @@ modeBtns.forEach(b => b.addEventListener('click', () => {
   save(MODE_KEY, mode);
   showMode();
 }));
+// Weak spots ⇄ Random (D3).
+pickBtn.addEventListener('click', () => {
+  pick = pick === 'weak' ? 'random' : 'weak';
+  save(PICK_KEY, pick);
+  showMode();
+});
+// Cycle through the question counts.
+lengthBtn.addEventListener('click', () => {
+  length = LENGTHS[(LENGTHS.indexOf(length) + 1) % LENGTHS.length];
+  save(LENGTH_KEY, String(length));
+  showMode();
+});
 
 calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a second tap cancels
 connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
