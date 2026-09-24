@@ -24,6 +24,8 @@ function recentAnswers(events) {
     const a = { ok: !!e.ok, ms: e.notes[0][1], score: eventScore(e) ?? 0 };
     push(`${e.quality}|${e.degrees[0]}`, a);
     push(`root|${e.rootWritten}`, a);
+    // Per cell + root, for the root row when a cell is selected.
+    push(`root|${e.quality}|${e.degrees[0]}|${e.rootWritten}`, a);
   }
   return byKey;
 }
@@ -53,8 +55,10 @@ function cellHTML(fig, attrs = '', label = '') {
     `<b>${Math.round(fig.acc * 100)}%</b><span>${time}</span></div>`;
 }
 
-// Render into `el` from all events.
-export function renderHeatmap(el, events) {
+// Render into `el` from all events. `selected` is a cell key ("m7|3") or
+// null: when set, that cell is outlined and the root row shows only that
+// quality × degree, so you can see which chords the degree is missed on.
+export function renderHeatmap(el, events, selected = null) {
   const recent = recentAnswers(events);
 
   let h = '<div class="hm-grid"><div class="hm-corner"></div>';
@@ -64,12 +68,16 @@ export function renderHeatmap(el, events) {
     for (const d of DEGREES) {
       if (!VALID_DEGREES[q].includes(d)) { h += '<div class="hm-cell na"></div>'; continue; }
       const key = `${q}|${d}`;
-      h += cellHTML(figures(recent.get(key)), `data-cell="${key}"`);
+      const cls = key === selected ? ' selected' : '';
+      h += cellHTML(figures(recent.get(key)), `data-cell="${key}"`).replace('class="hm-cell', `class="hm-cell${cls}`);
     }
   }
-  h += '</div><div class="hm-sub">By root</div><div class="hm-roots">';
+  const [sq, sd] = selected ? selected.split('|') : [];
+  h += `</div><div class="hm-sub">By root${selected ? ` · ${QUALITY_TEXT[sq]} ${degreeLabel(sd)}` : ''}</div>`;
+  h += '<div class="hm-roots">';
   for (let r = 0; r < 12; r++) {
-    h += cellHTML(figures(recent.get(`root|${r}`)), `data-root="${r}"`, `<i>${NOTES[r]}</i>`);
+    const key = selected ? `root|${selected}|${r}` : `root|${r}`;
+    h += cellHTML(figures(recent.get(key)), `data-root="${r}"`, `<i>${NOTES[r]}</i>`);
   }
   el.innerHTML = h + '</div>';
 }

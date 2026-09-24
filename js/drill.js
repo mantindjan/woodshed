@@ -1,5 +1,5 @@
-// Degree drill: a chord symbol and a degree appear, the pad sounds the
-// chord in concert pitch, the player blows the note on the horn.
+// Degree drill: a chord symbol and a degree appear (silently), the player
+// blows the note on the horn; a right answer sounds the chord and the note.
 //
 // Learn mode: a wrong note is shown but doesn't end the question; it waits
 // for the right one. Practice mode: the first note decides, then it moves on.
@@ -15,7 +15,10 @@ import { addEvent, allEvents, requestPersistence } from './events.js';
 import { createModel, pickWeighted, FAST_MS, GOOD_MS, SLOW_MS } from './weakspots.js';
 import { points, comboMult } from './scoring.js';
 
-const CHORD_SECONDS = 1.4;     // pad length per question (prototype value)
+// The question appears in silence: sounding the chord first made the boss
+// wait for it before answering (2026-09-24). The chord plays briefly as a
+// reward with the right answer instead.
+const CHORD_SECONDS = 0.9;     // reward chord length
 const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
 const PAUSE_WRONG_MS = 1500;   // practice miss: time to read the right answer
 const FLOAT_GAP_PX = 6;        // floating note starts this far above the disc
@@ -114,7 +117,6 @@ function ask() {
   $('#degree').classList.remove('reveal', 'pulse', 'miss');
   $('#feedback').textContent = '';
   $('#feedback').className = '';
-  playChord(concertPc(root, s.calib), quality, CHORD_SECONDS);
   s.shownAt = performance.now();   // for note timings
   s.shownT = Date.now();           // wall clock, stored in the event
   s.notes = [];
@@ -134,6 +136,7 @@ export function drillNote(midi) {
     flash('good');
     burst(false);
     floatNote(NOTES[s.q.target]);
+    playChord(concertPc(s.q.root, s.calib), s.q.quality, CHORD_SECONDS);
     playPing(concertPc(s.q.target, s.calib));
     // D5: points only for right-first-time in practice; the streak grows.
     let gained = 0;

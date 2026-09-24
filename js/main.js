@@ -250,9 +250,23 @@ function showCustom() {
 $('#playLevel').addEventListener('click', () => showTab('play'));
 
 // --- Stats (D4) ---
+// Tapping a cell selects it (root row narrows to that quality × degree);
+// tapping it again, or anywhere else on the matrix, clears it.
+let heatSelected = null;
+let heatEvents = [];
+function drawHeatmap() { renderHeatmap($('#heatmap'), heatEvents, heatSelected); }
+$('#heatmap').addEventListener('click', e => {
+  if (!e.target.closest('.hm-grid')) return;          // root row: no effect
+  const cell = e.target.closest('[data-cell]');
+  const key = cell ? cell.dataset.cell : null;
+  heatSelected = key && key !== heatSelected ? key : null;
+  drawHeatmap();
+});
+
 async function showStats() {
   const events = (await allEvents()).filter(e => e.game === 'degrees');
-  renderHeatmap($('#heatmap'), events);
+  heatEvents = events;
+  drawHeatmap();
   const dayStart = new Date().setHours(0, 0, 0, 0);
   const last = events.slice(-100);
   const ok = last.filter(e => e.ok);
