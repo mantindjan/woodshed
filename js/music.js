@@ -10,7 +10,15 @@
 // flats for the three upper. Indexed by pitch class.
 export const NOTES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 
-// Chord qualities with their symbols as displayed.
+// Quality ids in display order. Always iterate this, never Object.keys:
+// JS puts integer-like keys ("7") first, which scrambled every list.
+export const QUALITY_ORDER = ['maj7', '7', 'm7', 'm7b5'];
+
+// Symbols for plain-text contexts (labels, chips): a real minus sign, since
+// the chord symbol's hyphen only looks right in the Real Book font.
+export const QUALITY_TEXT = { maj7: '△', '7': '7', m7: '−', m7b5: 'ø' };
+
+// Chord qualities with their symbols as displayed in chord symbols.
 export const QUALITIES = {
   maj7: '△',
   '7': '7',
@@ -18,13 +26,29 @@ export const QUALITIES = {
   m7b5: 'ø',
 };
 
-// Semitones above the root. Degrees are plain numbers; the quality does the
-// work (the 3 of C− is E♭ and is still "3"; the 5 of Cø is G♭, still "5").
+// Semitones above the root (SOLVED.md). Degrees are plain numbers; the
+// quality does the work (the 3 of C− is E♭ and is still "3"; the 5 of Cø is
+// G♭, still "5"; ø takes ♭13, still "13"). Only b9 #9 #11 are named as
+// alterations, because those are choices on a chart.
 export const DEG_SEMI = {
-  maj7: { 3: 4, 5: 7, 7: 11 },
-  '7': { 3: 4, 5: 7, 7: 10 },
-  m7: { 3: 3, 5: 7, 7: 10 },
-  m7b5: { 3: 3, 5: 6, 7: 10 },
+  maj7: { 1: 0, 3: 4, 5: 7, 7: 11, 9: 2, 11: 5, 13: 9, b9: 1, '#9': 3, '#11': 6 },
+  '7': { 1: 0, 3: 4, 5: 7, 7: 10, 9: 2, 11: 5, 13: 9, b9: 1, '#9': 3, '#11': 6 },
+  m7: { 1: 0, 3: 3, 5: 7, 7: 10, 9: 2, 11: 5, 13: 9, b9: 1, '#9': 3, '#11': 6 },
+  m7b5: { 1: 0, 3: 3, 5: 6, 7: 10, 9: 2, 11: 5, 13: 8, b9: 1, '#9': 3, '#11': 6 },
+};
+
+// Degree ids in display order, and how they're written.
+export const DEGREES = ['3', '5', '7', '9', '11', '13', 'b9', '#9', '#11'];
+export const degreeLabel = d => d.replace('b', '♭').replace('#', '♯');
+
+// Degrees that make musical sense to ask per quality. The natural 11 on △
+// and 7 is in the table but never asked ("nobody wants that sound"); the
+// alterations belong to the dominant, plus ♯11 (lydian) on △.
+export const VALID_DEGREES = {
+  maj7: ['3', '5', '7', '9', '13', '#11'],
+  '7': ['3', '5', '7', '9', '13', 'b9', '#9', '#11'],
+  m7: ['3', '5', '7', '9', '11', '13'],
+  m7b5: ['3', '5', '7', '9', '11', '13'],
 };
 
 // The pad voicing, semitones from the root: bass root an octave down, close

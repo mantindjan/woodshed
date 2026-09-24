@@ -8,32 +8,32 @@
 // Every question is saved as a raw event (events.js, docs/data.md) the
 // moment it's answered, so quitting mid-round loses nothing.
 
-import { NOTES, QUALITIES, DEG_SEMI, pc, writtenPc, concertPc } from './music.js';
+import { NOTES, DEG_SEMI, degreeLabel, pc, writtenPc, concertPc } from './music.js';
 import { chordHTML } from './notation.js';
 import { initAudio, playChord, playPing, stopAll } from './audio.js';
 import { addEvent, allEvents, requestPersistence } from './events.js';
 import { createModel, pickWeighted, FAST_MS, GOOD_MS, SLOW_MS } from './weakspots.js';
+import { points, comboMult } from './scoring.js';
 
 const CHORD_SECONDS = 1.4;     // pad length per question (prototype value)
 const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
 const PAUSE_WRONG_MS = 1500;   // practice miss: time to read the right answer
 const FLOAT_GAP_PX = 6;        // floating note starts this far above the disc
-const DEGREES = ['3', '5', '7'];
-const QUALITY_IDS = Object.keys(QUALITIES);
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;       // v2 adds `exercise` (docs/data.md)
 
 const $ = sel => document.querySelector(sel);
 const rand = arr => arr[Math.floor(Math.random() * arr.length)];
 
-// Next question: weighted toward weak spots when a model is given (D3),
-// otherwise uniformly random. Never the exact same question twice in a row.
-// All pitch values WRITTEN.
-function pickQuestion(prev, model) {
+// Next question from the exercise's cells ({quality, degree}; any root):
+// weighted toward weak spots when a model is given (D3), otherwise uniformly
+// random. Never the exact same question twice in a row. All pitch values
+// WRITTEN.
+function pickQuestion(prev, model, cells) {
   let q;
   do {
     q = model
-      ? pickWeighted(model, QUALITY_IDS, DEGREES)
-      : { root: Math.floor(Math.random() * 12), quality: rand(QUALITY_IDS), degree: rand(DEGREES) };
+      ? pickWeighted(model, cells)
+      : { ...rand(cells), root: Math.floor(Math.random() * 12) };
   } while (prev && q.root === prev.root && q.quality === prev.quality && q.degree === prev.degree);
   q.target = pc(q.root + DEG_SEMI[q.quality][q.degree]);
   return q;
@@ -62,19 +62,23 @@ function medianMs(values) {
 }
 
 // mode: 'learn' | 'practice'. calib: MIDI pitch class of a written C.
+// exercise: {id, name, cells} from levels.js — what gets asked.
 // length: questions per round, 0 = endless (until Stop).
 // pick: 'weak' (weighted toward weak spots, D3) | 'random'.
-// onEnd(result | null): result = {mode, total, firstTry, median} when the
-// round ends or is stopped with at least one answer (median: ms from chord
-// to correct note, or null); null if stopped before any answer.
-export async function startRound(mode, calib, onEnd, { length = 20, pick = 'weak' } = {}) {
+// onEnd(result | null): result = {mode, total, firstTry, median, score,
+// bestStreak} when the round ends or is stopped with at least one answer
+// (median: ms from chord to correct note, or null); null if stopped before
+// any answer.
+export async function startRound(mode, calib, onEnd, { length = 20, pick = 'weak', exercise } = {}) {
   initAudio();            // inside the Start tap, so Chrome allows sound
   requestPersistence();
   lockScreen();
   const round = {
     mode, calib, onEnd, length,
     round: Date.now().toString(36),   // groups this round's events
+    exercise,
     index: 0, answered: 0, firstTry: 0, q: null,
+    score: 0, streak: 0, bestStreak: 0,   // D5: practice only
     times: [],        // ms from chord to correct note, per answered question
     model: null,      // weak-spot model, built from the whole event log
     accepting: false, timer: null,
@@ -86,16 +90,27 @@ export async function startRound(mode, calib, onEnd, { length = 20, pick = 'weak
     if (s !== round) return;          // stopped while loading
     round.model = model;
   }
+  showScore();
   ask();
 }
 
+// Score and combo, top right of the stage (practice only).
+function showScore() {
+  const practice = s.mode === 'practice';
+  $('#score').textContent = practice ? s.score.toLocaleString('en') : '';
+  const mult = comboMult(s.streak);
+  $('#combo').textContent = practice && mult > 1 ? `×${mult} · ${s.streak} in a row` : '';
+}
+
 function ask() {
-  s.q = pickQuestion(s.q, s.model);
+  s.q = pickQuestion(s.q, s.model, s.exercise.cells);
   s.index++;
   const { root, quality, degree } = s.q;
   $('#progress').textContent = `${s.index} / ${s.length || '∞'}`;
   $('#chord').innerHTML = chordHTML(root, quality);
-  $('#degree').textContent = degree;
+  const label = degreeLabel(degree);
+  $('#degree').textContent = label;
+  $('#degree').classList.toggle('long', label.length > 2);   // ♯11 needs a smaller size
   $('#degree').classList.remove('reveal', 'pulse', 'miss');
   $('#feedback').textContent = '';
   $('#feedback').className = '';
@@ -120,12 +135,24 @@ export function drillNote(midi) {
     burst(false);
     floatNote(NOTES[s.q.target]);
     playPing(concertPc(s.q.target, s.calib));
-    label(`${(ms / 1000).toFixed(2)} s`, speedLabel(ms), false);
+    // D5: points only for right-first-time in practice; the streak grows.
+    let gained = 0;
+    if (s.mode === 'practice' && !s.missed) {
+      s.streak++;
+      s.bestStreak = Math.max(s.bestStreak, s.streak);
+      gained = points(ms, s.streak);
+      s.score += gained;
+      showScore();
+    }
+    const sub = [speedLabel(ms), gained ? `+${gained}` : ''].filter(Boolean).join(' · ');
+    label(`${(ms / 1000).toFixed(2)} s`, sub, false);
     finish(!s.missed, PAUSE_RIGHT_MS);
   } else {
     // Wrong: red shaking burst and the chord shakes. The wrong note itself
     // isn't shown — only what the right one was.
     s.missed = true;
+    s.streak = 0;          // a miss breaks the combo
+    showScore();
     flash('bad');
     burst(true);
     shake();
@@ -246,6 +273,7 @@ function finish(ok, pauseMs) {
     round: s.round,
     game: 'degrees',
     mode: s.mode,
+    exercise: s.exercise.id,
     rootWritten: s.q.root,
     quality: s.q.quality,
     degrees: [s.q.degree],
@@ -280,7 +308,8 @@ export function stopRound() {
 }
 
 function summary() {
-  return { mode: s.mode, total: s.answered, firstTry: s.firstTry, median: medianMs(s.times) };
+  return { mode: s.mode, total: s.answered, firstTry: s.firstTry, median: medianMs(s.times),
+           score: s.score, bestStreak: s.bestStreak };
 }
 
 function cleanup() {

@@ -89,9 +89,9 @@ function weighted(items, weights, rand) {
   return items[items.length - 1];
 }
 
-// Draw {quality, degree, root}: a cell by its tickets, then a root inside it.
-export function pickWeighted(model, qualities, degrees, rand = Math.random) {
-  const cells = qualities.flatMap(quality => degrees.map(degree => ({ quality, degree })));
+// Draw {quality, degree, root}: a cell (from the exercise's cells, each
+// {quality, degree}) by its tickets, then a root inside it.
+export function pickWeighted(model, cells, rand = Math.random) {
   const cell = weighted(cells, cells.map(c => model.cellTickets(c.quality, c.degree)), rand);
   const roots = [...Array(12).keys()];
   const root = weighted(roots, roots.map(r => model.rootTickets(cell.quality, cell.degree, r)), rand);

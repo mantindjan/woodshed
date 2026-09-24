@@ -31,17 +31,36 @@
   body { background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, sans-serif;
          overflow: hidden; }
 
-  /* Landscape only (target: 844 × 390 installed full screen). Question on
-     the left, controls in a fixed-width column on the right. */
-  main { height: 100dvh; display: grid; grid-template-columns: 1fr 280px; gap: var(--pad);
-         padding: 12px max(var(--pad), env(safe-area-inset-right))
-                  12px max(var(--pad), env(safe-area-inset-left)); }
+  /* Landscape only (target: 844 × 390 installed full screen). The stage on
+     the left shows what the selected tab is about (question, ladder,
+     heatmap, horn); the panel on the right is the control panel. */
+  main { height: 100dvh; display: grid; grid-template-columns: 1fr 272px; gap: 14px;
+         padding: 10px max(var(--pad), env(safe-area-inset-right))
+                  10px max(var(--pad), env(safe-area-inset-left)); }
+  .stage { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .view[hidden] { display: none; }
+  .view h2 { margin: 2px 0 8px; font: 13px/1 system-ui, sans-serif; letter-spacing: .14em;
+             text-transform: uppercase; color: var(--dim); }
 
+  /* Play view: a top bar (exercise · progress · score) over the question. */
+  .stage-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline;
+               font-size: 13px; color: var(--dim); min-height: 34px; }
+  #exerciseName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #progress { font-variant-numeric: tabular-nums; }
+  .scorebox { text-align: right; line-height: 1.1; }
+  #score { font: 800 20px/1 system-ui, sans-serif; color: #ffe2a8; font-variant-numeric: tabular-nums; }
+  #combo { display: block; font-size: 11px; letter-spacing: .08em; color: var(--brass); }
+  /* Idle card, centred over the empty question area. */
+  #idle { position: absolute; inset: 0; display: flex; flex-direction: column;
+          align-items: center; justify-content: center; gap: 6px; pointer-events: none; }
+  #idle[hidden] { display: none; }
+  #idleName { font: 600 28px/1.2 system-ui, sans-serif; }
+  #idleWhat { font-size: 18px; color: var(--brass); }
+  .idle-go { margin-top: 10px; font-size: 13px; color: var(--dim); }
   /* The question. Fixed heights so nothing jumps between questions. */
-  .drill { position: relative; display: flex; flex-direction: column; justify-content: center;
+  .drill { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center;
            align-items: center; text-align: center; min-width: 0; }
-  #progress { font-size: 14px; color: var(--dim); min-height: 1.4em;
-              font-variant-numeric: tabular-nums; }
   .question { display: flex; align-items: center; justify-content: center; gap: 36px;
               min-height: 160px; }
   /* The chord is the big thing; the degree is a smaller, plainly lettered
@@ -51,6 +70,7 @@
             display: flex; align-items: center; justify-content: center;
             background: var(--brass); color: var(--bg);
             font: 700 58px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  #degree.long { font-size: 42px; letter-spacing: -.02em; }   /* ♯11 */
   #degree:empty { visibility: hidden; }   /* idle: keep the space, hide the disc */
   /* Practice miss: the disc turns red and flips to show the right note.
      Learn miss: it flashes red and stays on the degree. */
@@ -61,7 +81,7 @@
 
   /* --- Feedback effects (drill.js) --- */
   /* Radial glow behind the question. */
-  #fx { position: absolute; inset: -12px; pointer-events: none; opacity: 0; }
+  #fx { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
   #fx.good { background: radial-gradient(circle at 50% 50%, rgba(244,195,122,.35), transparent 62%);
              animation: glow .6s ease-out; }
   #fx.bad { background: radial-gradient(circle at 50% 50%, rgba(214,70,70,.4), transparent 62%);
@@ -140,41 +160,106 @@
   .q-m7b5 { font-size: .9em; vertical-align: -.24em; }   /* glyph sits high in the font: pull down to centre */
   .rb + .q-m7, .acc + .q-m7, .rb + .q-m7b5, .acc + .q-m7b5 { margin-left: .04em; }
 
-  /* Controls. */
-  .panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  h1 { margin: 0; font: 18px Georgia, serif; color: var(--dim); }
-  /* Wraps rather than truncating: error states carry the fix in the text. */
-  #status { font-size: 12px; color: var(--dim); text-align: right; }
-  #status[data-state="connected"] { color: var(--ink); }
-  .row { display: flex; gap: 8px; }
-  button { flex: 1; padding: 10px; font: inherit; color: var(--ink);
-           background: transparent; border: 1px solid var(--line); border-radius: 8px; }
-  button.active { border-color: var(--brass); color: var(--brass); }
-  button:disabled { opacity: 0.4; }
-  #start, #stop { font-size: 18px; padding: 14px; }
+  /* --- Control panel --- */
+  .panel { display: flex; flex-direction: column; gap: 9px; min-height: 0;
+           border-left: 1px solid var(--line); padding-left: 14px; }
+  button { font: inherit; color: var(--ink); background: transparent; cursor: pointer;
+           border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  button:disabled { opacity: .35; cursor: default; }
+  .label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+           margin-bottom: -4px; }
 
-  /* ⚙ button and the backup panel (A7). */
-  #menuBtn { flex: none; padding: 2px 8px; font-size: 16px; border: none; color: var(--dim); }
-  #menu { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.7);
-          display: flex; align-items: center; justify-content: center; }
-  #menu[hidden] { display: none; }
-  #menu .sheet { width: min(460px, 92vw); background: #1a1a1a; border: 1px solid var(--line);
-                 border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-  #menu h2 { margin: 0; font: 20px Georgia, serif; }
-  #menu p { margin: 0; font-size: 14px; }
-  #menu .note { color: var(--dim); font-size: 12px; }
+  /* Tabs. */
+  .tabs { display: flex; gap: 2px; background: #1b1b1b; border-radius: 10px; padding: 3px; }
+  .tabs button { flex: 1; border: none; padding: 6px 0; font-size: 13px; color: var(--dim);
+                 border-radius: 8px; }
+  .tabs button.active { background: #2a2a2a; color: var(--ink); }
+  /* Controls never shrink to fit (squashed buttons stop taking taps); if a
+     long MIDI error makes a pane too tall, it scrolls instead. */
+  .pane { display: flex; flex-direction: column; gap: 9px; flex: 1; min-height: 0; overflow-y: auto; }
+  .pane > * { flex-shrink: 0; }
+  .pane[hidden] { display: none; }
+
+  /* Segmented controls and chips: one choice lit in brass. */
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { flex: 1; border: none; border-radius: 0; padding: 7px 0; font-size: 14px; color: var(--dim); }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.active, .chips button.active { background: rgba(217,164,65,.16); color: #ffe2a8; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chips button { padding: 4px 9px; font-size: 13px; border-radius: 14px; color: var(--dim); }
+  .chips button.active { border-color: var(--brass); }
+
+  /* Exercise card: what's being asked; tap to change it. */
+  #exerciseBtn { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+                 text-align: left; padding: 8px 10px; background: #181818; }
+  #exerciseBtn b { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #exerciseBtn span { color: var(--brass); font-size: 12px; flex: none; }
+
+  #start, #stop { font-size: 17px; font-weight: 600; padding: 11px; border: none;
+                  background: var(--brass); color: #1a1206; }
+  #stop { background: #3a2222; color: #ff9b9b; }
+
+  /* Horn line at the bottom of Play. */
+  .hornline { margin-top: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  /* Wraps rather than truncating: error states carry the fix in the text. */
+  #status { flex: 1; color: var(--dim); }
+  #status::before { content: '●'; margin-right: 5px; color: #7a3a3a; }
+  #status[data-state="connected"] { color: var(--ink); }
+  #status[data-state="connected"]::before { color: #5aa05a; }
+  .hornline button { flex: none; padding: 4px 9px; font-size: 12px; }
+  .hornline button.active { border-color: var(--brass); color: var(--brass); }
+  #hint { font-size: 11px; color: var(--dim); margin-top: -4px; }
+  /* Not connected: the horn line and hint jump to the top of Play, so the
+     problem (and its fix, in the error text) is the first thing seen. */
+  .pane:has(#status:not([data-state="connected"])) .hornline { order: -2; margin-top: 0; }
+  .pane:has(#status:not([data-state="connected"])) #hint { order: -1; }
+
+  /* Levels: the ladder on the stage, grouped by tier. */
+  #ladder { overflow-y: auto; padding-right: 4px; }
+  .tier { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+          margin: 8px 0 4px; }
+  .tier:first-child { margin-top: 0; }
+  .lvls { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+  .lvl { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px;
+         background: #181818; text-align: left; }
+  .lvl b { font-size: 10px; color: var(--dim); font-weight: 600; }
+  .lvl span { font-size: 13px; white-space: nowrap; }
+  .lvl i { font-style: normal; font-size: 11px; color: var(--brass); letter-spacing: 1px; }
+  .lvl.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
+  #levelInfo b { display: block; font-size: 15px; }
+  #levelInfo span { font-size: 12px; color: var(--dim); }
+  #customHint { font-size: 11px; color: var(--dim); }
+
+  /* Stats: heatmap on the stage. */
+  .hm-grid { display: grid; grid-template-columns: 28px repeat(9, 1fr); gap: 3px; }
+  .hm-head, .hm-row { font-size: 12px; color: var(--dim); text-align: center; align-self: center; }
+  .hm-row { font-family: system-ui, sans-serif; font-size: 17px; color: var(--ink); }
+  .hm-cell { height: 42px; border-radius: 5px; display: flex; flex-direction: column;
+             align-items: center; justify-content: center; line-height: 1.1; color: #fff; }
+  .hm-cell b { font-size: 12px; }
+  .hm-cell span { font-size: 10px; opacity: .8; }
+  .hm-cell.empty { background: #1c1c1c; color: #555; }
+  .hm-cell.na { background: repeating-linear-gradient(135deg, #151515 0 4px, #1b1b1b 4px 8px); }
+  .hm-sub { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+            margin: 10px 0 4px; }
+  .hm-roots { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; }
+  .hm-roots .hm-cell { height: 46px; }
+  .hm-roots i { font-style: normal; font-size: 11px; font-weight: 700; }
+  .stat { display: flex; justify-content: space-between; font-size: 13px; }
+  .stat b { color: #ffe2a8; font-variant-numeric: tabular-nums; }
+  .legend { height: 8px; border-radius: 4px; margin-top: 4px;
+            background: linear-gradient(90deg, hsl(0 55% 38%), hsl(60 55% 38%), hsl(120 55% 38%)); }
+  .legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); }
+
+  /* Horn & backup: horn check on the stage. */
+  #view-horn { align-items: center; justify-content: center; text-align: center; gap: 6px; }
+  #note { font: 120px/1 'RealBook', Georgia, serif; color: var(--brass); min-height: 1em; }
+  #raw { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  .note-help { font-size: 12px; color: var(--dim); max-width: 340px; }
+  #menuMsg { font-size: 12px; }
   #menuMsg:empty { display: none; }
   #menuMsg.bad { color: #ff9b9b; }
-
-  /* Horn readout and calibration, secondary; pinned to the bottom. */
-  .horn { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px;
-          display: flex; flex-direction: column; gap: 6px; }
-  .played { display: flex; justify-content: space-between; align-items: baseline;
-            white-space: nowrap; }
-  #note { font: 34px/1 'RealBook', Georgia, serif; color: var(--brass); }
-  #raw { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
-  #hint { font-size: 12px; color: var(--dim); min-height: 1.4em; }
+  .small-note { font-size: 11px; color: var(--dim); }
 
   /* Portrait: no layout, just ask for landscape. The installed app is
      locked to landscape by the manifest; this covers a browser tab. */
@@ -191,61 +276,114 @@
 <body>
 <div id="rotate"><b>⟳</b>Turn your phone sideways.</div>
 <main>
-  <section class="drill">
-    <div id="fx"></div>
-    <div id="progress"></div>
-    <div class="question">
-      <div id="chord"></div>
-      <div id="degree"></div>
+  <section class="stage">
+    <!-- Play: the question. -->
+    <div class="view" id="view-play">
+      <div class="stage-top">
+        <span id="exerciseName"></span>
+        <span id="progress"></span>
+        <span class="scorebox"><b id="score"></b><small id="combo"></small></span>
+      </div>
+      <div class="drill">
+        <div id="fx"></div>
+        <!-- Idle card: what the selected exercise asks; hidden during a round. -->
+        <div id="idle">
+          <div class="label">Next up</div>
+          <div id="idleName"></div>
+          <div id="idleWhat"></div>
+          <div class="idle-go">Press Start — the chord sounds, blow the degree.</div>
+        </div>
+        <div class="question">
+          <div id="chord"></div>
+          <div id="degree"></div>
+        </div>
+        <div id="feedback"></div>
+      </div>
     </div>
-    <div id="feedback"></div>
+    <!-- Levels: the ladder (D6). -->
+    <div class="view" id="view-levels" hidden><div id="ladder"></div></div>
+    <!-- Stats: the heatmap (D4). -->
+    <div class="view" id="view-stats" hidden>
+      <h2>Recent answers · quality × degree</h2>
+      <div id="heatmap"></div>
+    </div>
+    <!-- Horn check. -->
+    <div class="view" id="view-horn" hidden>
+      <div class="label">You played</div>
+      <div id="note">—</div>
+      <div id="raw"></div>
+      <p class="note-help">Blow any note to check the horn. Calibrate by playing a written C;
+        redo it after changing the horn's voice.</p>
+    </div>
   </section>
 
   <section class="panel">
-    <header>
-      <h1>Woodshed</h1>
-      <div id="status">Connecting…</div>
-      <button id="menuBtn" aria-label="Backup">⚙</button>
-    </header>
-    <div class="row">
-      <button data-mode="learn">Learn</button>
-      <button data-mode="practice">Practice</button>
-    </div>
-    <div class="row">
-      <button id="pick">Weak spots</button>
-      <button id="length">20 questions</button>
-    </div>
-    <div class="row">
+    <nav class="tabs">
+      <button data-tab="play" class="active">Play</button>
+      <button data-tab="levels">Levels</button>
+      <button data-tab="stats">Stats</button>
+      <button data-tab="horn" aria-label="Horn and backup">⚙</button>
+    </nav>
+
+    <div class="pane" data-pane="play">
+      <button id="exerciseBtn"><b id="exerciseLabel"></b><span>change ›</span></button>
+      <div class="seg">
+        <button data-mode="learn">Learn</button>
+        <button data-mode="practice">Practice</button>
+      </div>
+      <div class="seg">
+        <button data-pick="weak">Weak spots</button>
+        <button data-pick="random">Random</button>
+      </div>
+      <div class="chips" id="lengths">
+        <button data-length="10">10</button><button data-length="20">20</button>
+        <button data-length="50">50</button><button data-length="100">100</button>
+        <button data-length="0">∞</button>
+      </div>
       <button id="start">Start</button>
       <button id="stop" hidden>Stop</button>
+      <div class="hornline">
+        <span id="status">Connecting…</span>
+        <button id="connect" hidden>Connect</button>
+        <button id="calibrate">Calibrate</button>
+      </div>
+      <div id="hint"></div>
     </div>
 
-    <section class="horn">
-      <div class="played"><span>You played <span id="note">—</span></span><span id="raw"></span></div>
-      <div id="hint"></div>
-      <div class="row">
-        <button id="calibrate">Calibrate</button>
-        <button id="connect" hidden>Connect horn</button>
+    <div class="pane" data-pane="levels" hidden>
+      <div id="levelInfo"></div>
+      <div class="label">Custom</div>
+      <div class="chips" id="customQualities"></div>
+      <div class="chips" id="customDegrees"></div>
+      <div id="customHint">Pick qualities and degrees to build your own.</div>
+      <button id="playLevel">Play this ›</button>
+    </div>
+
+    <div class="pane" data-pane="stats" hidden>
+      <div class="stat">Answers <b id="statAnswers">0</b></div>
+      <div class="stat">Today <b id="statToday">0</b></div>
+      <div class="stat">Right first time <b id="statAcc">–</b></div>
+      <div class="stat">Median right answer <b id="statMedian">–</b></div>
+      <div>
+        <div class="legend"></div>
+        <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-    </section>
-  </section>
-</main>
-<!-- Backup panel (A7), opened by ⚙. -->
-<div id="menu" hidden>
-  <div class="sheet">
-    <h2>Backup</h2>
-    <p id="menuCount">…</p>
-    <div class="row">
+      <div class="small-note">Each cell: last 20 answers — % right first time and median time.
+        Colour mixes accuracy and speed, like the weak-spot picker.</div>
+    </div>
+
+    <div class="pane" data-pane="horn" hidden>
+      <div class="label">Backup</div>
+      <div id="menuCount" class="small-note">…</div>
       <button id="saveBackup">Save backup</button>
       <button id="loadBackupBtn">Load backup</button>
       <input id="loadBackup" type="file" accept="application/json,.json" hidden>
+      <div id="menuMsg"></div>
+      <div class="small-note">Saves every answer and your settings to a file — put it in Drive.
+        Loading merges: nothing already here is duplicated or lost.</div>
     </div>
-    <p id="menuMsg"></p>
-    <p class="note">Saves every answer and your settings to a file — put it in Drive.
-      Loading merges: nothing already here is duplicated or lost.</p>
-    <button id="menuClose">Close</button>
-  </div>
-</div>
+  </section>
+</main>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

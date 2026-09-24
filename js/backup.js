@@ -11,7 +11,8 @@ import { addEvents, allEvents } from './events.js';
 
 export const FORMAT = 1;
 // localStorage keys carried in the backup (see main.js).
-const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length'];
+const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
+                  'woodshed.exercise', 'woodshed.custom'];
 
 // Identity of an event across devices: one question = one appearance time
 // within one round. IndexedDB's own ids differ per device, so aren't used.
