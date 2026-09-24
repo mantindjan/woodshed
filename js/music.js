@@ -18,6 +18,10 @@ export const QUALITY_ORDER = ['maj7', '7', 'm7', 'm7b5'];
 // the chord symbol's hyphen only looks right in the Real Book font.
 export const QUALITY_TEXT = { maj7: '△', '7': '7', m7: '−', m7b5: 'ø' };
 
+// Words for level names, where a symbol next to degree numbers is ambiguous
+// ("7 3 5 7").
+export const QUALITY_NAME = { maj7: 'Major', '7': 'Dominant', m7: 'Minor', m7b5: 'Half-dim' };
+
 // Chord qualities with their symbols as displayed in chord symbols.
 export const QUALITIES = {
   maj7: '△',

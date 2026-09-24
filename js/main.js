@@ -55,7 +55,7 @@ let mode = load(MODE_KEY) === 'learn' ? 'learn' : 'practice';
 let pick = load(PICK_KEY) === 'random' ? 'random' : 'weak';
 let length = LENGTHS.includes(Number(load(LENGTH_KEY) ?? 20)) ? Number(load(LENGTH_KEY) ?? 20) : 20;
 // Default to the first rung of the ladder, not the everything-mix.
-let exerciseId = load(EXERCISE_KEY) || 'L1';
+let exerciseId = load(EXERCISE_KEY) || 'chord-maj7';
 let custom = loadJSON(CUSTOM_KEY, { qualities: ['maj7'], degrees: ['3', '7'] });
 
 const currentExercise = () => resolveExercise(exerciseId, custom);
@@ -189,11 +189,12 @@ connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 
 // --- Levels (D6): the ladder on the stage, custom builder in the pane ---
 
-// "△ 3 7 · 7 3 7": which degrees on which qualities.
+// "△: 3 7 · 7: 3 7": which degrees on which qualities (the colon keeps a
+// dominant "7" apart from the degree 7).
 function describe(cells) {
   const byQ = new Map();
   for (const { quality, degree } of cells) byQ.set(quality, [...(byQ.get(quality) || []), degreeLabel(degree)]);
-  return [...byQ].map(([q, ds]) => `${QUALITY_TEXT[q]} ${ds.join(' ')}`).join(' · ') || 'nothing selected';
+  return [...byQ].map(([q, ds]) => `${QUALITY_TEXT[q]}: ${ds.join(' ')}`).join(' · ') || 'nothing selected';
 }
 
 function selectExercise(id) {
@@ -215,7 +216,8 @@ async function showLevels() {
       h += `<div class="tier">${tier}</div><div class="lvls">`;
     }
     h += `<button class="lvl${l.id === exerciseId ? ' active' : ''}" data-level="${l.id}">` +
-         `<b>${l.id}</b><span>${l.name}</span><i>${starText(stars.get(l.id) || 0)}</i></button>`;
+         `<b>${l.num}</b><span>${l.name}</span><em>${l.degrees}</em>` +
+         `<i>${starText(stars.get(l.id) || 0)}</i></button>`;
   }
   h += `</div><div class="tier">Your own</div><div class="lvls">` +
        `<button class="lvl${exerciseId === 'custom' ? ' active' : ''}" data-level="custom">` +
