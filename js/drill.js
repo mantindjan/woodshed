@@ -100,7 +100,7 @@ export function drillNote(midi) {
   s.notes.push([midi, ms]);
   const played = writtenPc(midi, s.calib);
   if (played === s.q.target) {
-    // Right: brass burst from the disc, and the reaction time (feature #7).
+    // Right: brass burst from the disc, and the reaction time (D2).
     s.times.push(ms);
     flash('good');
     burst(false);
