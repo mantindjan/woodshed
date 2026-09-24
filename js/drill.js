@@ -17,6 +17,7 @@ import { createModel, pickWeighted, FAST_MS, GOOD_MS, SLOW_MS } from './weakspot
 const CHORD_SECONDS = 1.4;     // pad length per question (prototype value)
 const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
 const PAUSE_WRONG_MS = 1500;   // practice miss: time to read the right answer
+const FLOAT_GAP_PX = 6;        // floating note starts this far above the disc
 const DEGREES = ['3', '5', '7'];
 const QUALITY_IDS = Object.keys(QUALITIES);
 const SCHEMA_VERSION = 1;
@@ -186,9 +187,11 @@ function floatNote(text) {
   const el = document.createElement('div');
   el.className = 'float-note';
   el.textContent = text;
-  el.style.left = `${disc.left - drill.left + disc.width / 2}px`;
-  el.style.top = `${disc.top - drill.top + disc.height / 2}px`;
   $('.drill').append(el);
+  // Start just above the disc's top edge, not its centre: light text over
+  // the brass disc is hard to read, and it looks like part of the disc.
+  el.style.left = `${disc.left - drill.left + disc.width / 2}px`;
+  el.style.top = `${disc.top - drill.top - el.offsetHeight / 2 - FLOAT_GAP_PX}px`;
 
   const sway = 4 + Math.random() * 5;           // px either side
   const cycles = 0.5 + Math.random() * 0.5;     // wobbles on the way up

@@ -2,7 +2,7 @@
 //
 // A cell is a chord quality × degree ("the 3 of m7"); inside each cell, each
 // root is tracked too. Every FIRST attempt scores 0–1: wrong = 0, right in
-// under FAST_MS (0.5 s) = 1, sliding down to SLOW_FLOOR at SLOW_MS (1.5 s,
+// under FAST_MS (1 s) = 1, sliding down to SLOW_FLOOR at SLOW_MS (2 s,
 // where the "slow" label starts) or slower — so "right but slow" counts as
 // partly weak (the cells worth serving once speed matters). A cell's `recent` is an exponential moving average of those
 // scores (α = 0.15: roughly the last 15 answers dominate), so old mistakes
@@ -12,17 +12,18 @@
 // = 0.6 + 4 × (1 − recent), +0.8 while a cell has fewer than 6 answers; a
 // never-tried cell gets 2.2. Nothing ever drops to zero, so mastered cells
 // still come round. Pick a cell by tickets, then a root inside it the same
-// way. Weights from docs/handover/SOLVED.md; speed scoring agreed 2026-09-24
-// (tiers: < 0.5 blazing, < 1.0 good, < 1.5 to improve, else slow).
+// way. Weights from docs/handover/SOLVED.md; speed tiers from the boss after
+// playing, 2026-09-24: < 1 s blazing, < 1.5 good, < 2 to improve, else slow
+// (his fastest real answers, seeing + hearing + fingering, are ~1.1 s).
 //
 // Everything is derived from the raw event log (docs/data.md), so changing
 // any constant here recomputes the whole history.
 
 import { pc } from './music.js';
 
-export const FAST_MS = 500;      // "blazing": full marks
-export const GOOD_MS = 1000;     // "good" tier ends here
-export const SLOW_MS = 1500;     // "slow" tier: from here a right answer scores SLOW_FLOOR
+export const FAST_MS = 1000;     // "blazing": full marks
+export const GOOD_MS = 1500;     // "good" tier ends here
+export const SLOW_MS = 2000;     // "slow" tier: from here a right answer scores SLOW_FLOOR
 const SLOW_FLOOR = 0.6;
 const ALPHA = 0.15;
 const UNTRIED = 2.2;
