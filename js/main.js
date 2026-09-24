@@ -117,7 +117,12 @@ function onStatus({ state, names, error }) {
   const text = {
     unsupported: 'No Web MIDI here — use Chrome on Android or desktop.',
     denied: `MIDI permission refused — allow it via the icon left of the address bar, then reload. (${error})`,
-    failed: `MIDI failed — ${error}`,
+    // Chrome caches this failure until it's fully restarted, so Connect
+    // can't fix it; the text says what does. (Every entry here is evaluated
+    // on every call, and `error` is only set for failures — hence `?.`.)
+    failed: error?.startsWith('InvalidStateError')
+      ? 'Android’s MIDI service didn’t start. Force-stop Chrome (Settings → Apps → Chrome), replug the horn, reopen. Still broken? Restart the phone.'
+      : `MIDI failed — ${error}`,
     none: 'No horn connected.',
     connected: `Horn: ${names.join(', ')}`,
   }[state];
