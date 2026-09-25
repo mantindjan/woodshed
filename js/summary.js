@@ -13,10 +13,12 @@
 import { allEvents } from './events.js';
 import { createModel } from './weakspots.js';
 import { starsByExercise } from './levels.js';
+import { createKeyModel, scaleStarsByExercise } from './scalelevels.js';
 
 const KEY = 'woodshed.summary';
-// Bump when weakspots.js scoring or levels.js star rules change.
-const VERSION = 1;
+// Bump when weakspots.js / scalelevels.js scoring or star rules change.
+// v2: adds `keys` (the scales' weak-key model) and scale stars (E1 step 2).
+const VERSION = 2;
 
 function read() {
   try {
@@ -29,8 +31,10 @@ function write(s) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage full/blocked */ }
 }
 
-// {weak: [[key, {n, recent}], …], stars: {exerciseId: 0–3}}, rebuilding it
-// from events first if needed.
+// {weak: [[key, {n, recent}], …] (degrees), keys: [[key, {n, recent}], …]
+// (scales), stars: {exerciseId: 0–3} for both games' exercises — ids never
+// clash (levels.js vs scalelevels.js)}, rebuilding it from events first if
+// needed.
 export async function getSummary() {
   return read() || rebuildSummary();
 }
@@ -38,14 +42,16 @@ export async function getSummary() {
 export async function rebuildSummary() {
   const events = await allEvents();
   const model = createModel();
-  events.forEach(e => model.add(e));
+  const keys = createKeyModel();
+  events.forEach(e => { model.add(e); keys.add(e); });
   const old = (() => {
     try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; }
   })();
   const stars = {};
   for (const [id, n] of starsByExercise(events)) stars[id] = n;
+  for (const [id, n] of scaleStarsByExercise(events)) stars[id] = n;
   for (const [id, n] of Object.entries(old.stars || {})) stars[id] = Math.max(stars[id] || 0, n);
-  const s = { v: VERSION, weak: [...model.stats], stars };
+  const s = { v: VERSION, weak: [...model.stats], keys: [...keys.stats], stars };
   write(s);
   return s;
 }
@@ -56,7 +62,13 @@ export function saveWeak(model) {
   if (s) write({ ...s, weak: [...model.stats] });
 }
 
-// After a practice round: keep the best stars per exercise.
+// After every scale run: persist the session's live key model.
+export function saveKeys(model) {
+  const s = read();
+  if (s) write({ ...s, keys: [...model.stats] });
+}
+
+// After a practice round / session: keep the best stars per exercise.
 export function saveStars(exerciseId, stars) {
   const s = read();
   if (s && stars > (s.stars[exerciseId] || 0)) write({ ...s, stars: { ...s.stars, [exerciseId]: stars } });

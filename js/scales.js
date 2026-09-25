@@ -4,13 +4,17 @@
 // Flow per run: waiting (blow any note of the scale — that's where the run
 // starts) → count-in (4 clicks) → running (scale notes in EIGHTHS — two per
 // click at the set bpm — from the start note to the edge of the range, low
-// B♭ / high F♯) → summary → next run (a new key if Random) … until Stop.
+// B♭ / high F♯) → summary → next run, in the next key of the exercise (drawn
+// toward weak keys or evenly, scalelevels.js) … until Stop. A Start-to-Stop
+// session is one `round` in the events; it earns stars (E1 step 2).
 //
 // Judging: a note is HIT if it's the right written pitch (octave included)
 // within the window around its time — ±150 ms, narrowed at fast tempos so
 // neighbouring notes' windows never overlap; early/late is shown and graded
 // but isn't an error. A wrong pitch in the window, or nothing by the end of it, is a
-// MISS. After `misses` misses the run stops ("start again").
+// MISS. Practice: after `misses` misses the run stops ("start again").
+// Learn: the run always goes to the end, and a missed disc shows the note's
+// name as it leaves — the answer on a miss, as the degree drill's learn mode.
 //
 // Pitch: written = MIDI − calibOffset, where calibOffset = the MIDI note the
 // horn sends for written middle C (C5 = 72) minus 72 (main.js calibration).
@@ -22,6 +26,8 @@
 import { SCALES, SAX_RANGE, NOTES, pc } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
+import { pickScaleKey, sessionStars } from './scalelevels.js';
+import { saveKeys, saveStars } from './summary.js';
 
 const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
 const COUNT_IN = 4;            // clicks before the first note
@@ -47,21 +53,25 @@ let wakeLock = null;
 
 export const scalesRunning = () => s !== null;
 
-// opts: {scale: 'major'|'penta', key: 0–11 | 'random', direction: 'up'|'down',
-// bpm, misses, calib, calibOffset}. onEnd() when stopped.
+// opts: {exercise: {id, scale, keys}, direction: 'up'|'down', mode: 'learn'|
+// 'practice', pick: 'weak'|'random', model (the weak-key model, from the
+// cached summary), bpm, misses, calib, calibOffset}. onEnd() when stopped.
 export function startScales(opts, onEnd) {
   initAudio();
   requestPersistence();
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
-  s = { ...opts, onEnd, session: Date.now().toString(36), run: null, timers: [] };
-  nextRun(opts.key === 'random' ? null : opts.key);
+  s = { ...opts, scale: opts.exercise.scale, keys: opts.exercise.keys, onEnd,
+        session: Date.now().toString(36), run: null, timers: [],
+        // Session tally for stars: runs, notes hit / expected, runs stopped.
+        tally: { runs: 0, hits: 0, total: 0, stopped: 0 } };
+  nextRun();
   resize();
   raf = requestAnimationFrame(frame);
 }
 
 export function stopScales() {
   if (!s) return;
-  const { onEnd } = s;
+  const { onEnd, tally, mode, exercise } = s;
   s.timers.forEach(clearTimeout);
   cancelAnimationFrame(raf);
   stopAll();
@@ -70,14 +80,15 @@ export function stopScales() {
   s = null;
   message('');
   draw(null);
+  // Stars come from practice sessions only (learn never stops a run).
+  if (mode === 'practice') saveStars(exercise.id, sessionStars(tally.runs, tally.hits, tally.total, tally.stopped));
   onEnd();
 }
 
-// A new run in `key` (or a random key different from the last).
-function nextRun(key) {
-  const prev = s.run?.key;
-  let k = key;
-  while (k === null || k === undefined || (s.key === 'random' && k === prev)) k = Math.floor(Math.random() * 12);
+// A new run: the next key of the exercise, weighted toward weak ones or
+// even, never the same twice in a row when there's a choice.
+function nextRun() {
+  const k = pickScaleKey(s.model, { scale: s.scale, direction: s.direction, keys: s.keys, pick: s.pick, prev: s.run?.key });
   s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0 };
   topBar();
   message(`Blow any note of <b>${NOTES[k]} ${SCALES[s.scale].name.toLowerCase()}</b> to start — ` +
@@ -87,7 +98,7 @@ function nextRun(key) {
 function topBar() {
   const r = s?.run;
   $('#scaleTitle').textContent = r ? `${NOTES[r.key]} ${SCALES[s.scale].name.toLowerCase()} ${s.direction === 'up' ? '↑' : '↓'}` : '';
-  $('#scaleInfo').textContent = r ? `${s.bpm} bpm · misses ${r.misses}/${s.misses}` : '';
+  $('#scaleInfo').textContent = r ? `${s.bpm} bpm · misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
 }
 
 function message(html) {
@@ -158,7 +169,7 @@ function miss() {
   const r = s.run;
   r.misses++;
   topBar();
-  if (r.misses >= s.misses) endRun(true);
+  if (s.mode === 'practice' && r.misses >= s.misses) endRun(true);
 }
 
 // Called from frames: notes whose window has passed unplayed are misses.
@@ -187,13 +198,13 @@ function endRun(stopped) {
   const hits = r.expected.filter(e => e.status === 'hit');
   const offs = hits.map(e => e.off);
   const mean = offs.length ? Math.round(offs.reduce((a, b) => a + b, 0) / offs.length) : null;
-  addEvent({
+  const event = {
     v: SCHEMA_VERSION,
     t: Date.now() - Math.round(performance.now() - r.t0),   // wall clock of the start note
     round: s.session,
     game: 'scales',
-    mode: 'practice',
-    exercise: `${s.scale}-${s.direction}`,
+    mode: s.mode,
+    exercise: s.exercise.id,          // level id or 'custom' (scalelevels.js)
     scale: s.scale,
     keyWritten: r.key,
     direction: s.direction,
@@ -207,12 +218,20 @@ function endRun(stopped) {
     expected: r.expected.map(e => [e.w, Math.round(e.t - r.t0), e.deg, e.status, e.off]),
     notes: r.notes,                   // every note-on: [raw MIDI, ms after the start note]
     stopped,
-  });
+  };
+  addEvent(event);
+  // The key model adapts within the session; the summary keeps it for next time.
+  s.model.add(event);
+  saveKeys(s.model);
+  s.tally.runs++;
+  s.tally.hits += hits.length;
+  s.tally.total += r.expected.length;
+  if (stopped) s.tally.stopped++;
   const lateness = mean === null ? '' : mean > 15 ? ` · ${mean} ms late on average` : mean < -15 ? ` · ${-mean} ms early on average` : ' · right on the beat';
   message(stopped
     ? `<b>${r.misses} misses — start again.</b> ${hits.length} of ${r.expected.length} hit.`
     : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`);
-  s.timers.push(setTimeout(() => { if (s) nextRun(s.key === 'random' ? null : s.key); }, SUMMARY_MS));
+  s.timers.push(setTimeout(() => { if (s) nextRun(); }, SUMMARY_MS));
 }
 
 // --- Drawing ---
@@ -281,8 +300,10 @@ function draw(r) {
     g.strokeStyle = COLORS[e.status];
     g.stroke();
     g.fillStyle = e.status === 'pending' ? '#ffe2a8' : '#1a1206';
-    g.font = `800 ${root ? 18 : 16}px system-ui, sans-serif`;
-    g.fillText(e.deg, x, y + 1);
+    // Learn mode: a missed disc leaves showing the note it wanted.
+    const showName = s.mode === 'learn' && (e.status === 'wrong' || e.status === 'miss');
+    g.font = `800 ${showName ? 13 : root ? 18 : 16}px system-ui, sans-serif`;
+    g.fillText(showName ? NOTES[pc(e.w)] : e.deg, x, y + 1);
     // Early/late tick for hits: a small bar left (early) or right (late).
     if (e.status === 'hit' && Math.abs(e.off) > 30) {
       g.fillStyle = '#ffe2a8';
