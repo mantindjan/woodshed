@@ -15,7 +15,9 @@ export const FORMAT = 1;
 // The sync repo address travels (harmless alone); the sync TOKEN never does
 // — backup files sit in Downloads/Drive.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
-                  'woodshed.exercise', 'woodshed.custom', 'woodshed.syncRepo'];
+                  'woodshed.exercise', 'woodshed.custom',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.scale', 'woodshed.dir',
+                  'woodshed.key', 'woodshed.bpm', 'woodshed.misses', 'woodshed.syncRepo'];
 
 // Identity of an event across devices: one question = one appearance time
 // within one round. IndexedDB's own ids differ per device, so aren't used.

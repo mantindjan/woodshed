@@ -7,7 +7,9 @@
 // between written (display, judging) and concert (the pad).
 
 import { connectMidi } from './midi.js';
-import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, degreeLabel, writtenPc } from './music.js';
+import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, NOTES, WRITTEN_MIDDLE_C, degreeLabel, writtenPc } from './music.js';
+import { startScales, stopScales, scaleNote, scalesRunning } from './scales.js';
+import { mountTempo } from './tempo.js';
 import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
 import { downloadBackup, loadBackup, countEvents } from './backup.js';
@@ -24,6 +26,13 @@ const PICK_KEY = 'woodshed.pick';
 const LENGTH_KEY = 'woodshed.length';
 const EXERCISE_KEY = 'woodshed.exercise';
 const CUSTOM_KEY = 'woodshed.custom';
+const OFFSET_KEY = 'woodshed.calibOffset';   // horn MIDI − written, from middle C
+const GAME_KEY = 'woodshed.game';
+const SCALE_KEY = 'woodshed.scale';
+const DIR_KEY = 'woodshed.dir';
+const KEY_KEY = 'woodshed.key';
+const BPM_KEY = 'woodshed.bpm';
+const MISSES_KEY = 'woodshed.misses';
 
 // Question-count choices; 0 = endless (until Stop).
 const LENGTHS = [10, 20, 50, 100, 0];
@@ -52,6 +61,14 @@ function loadJSON(key, fallback) {
 }
 
 let calib = load(CALIB_KEY) === null ? null : Number(load(CALIB_KEY));
+// Octave-aware calibration (E1): older calibrations only know the pitch
+// class, which the degree drill needs; scales need the octave too.
+let calibOffset = load(OFFSET_KEY) === null ? null : Number(load(OFFSET_KEY));
+let game = load(GAME_KEY) === 'scales' ? 'scales' : 'degrees';
+let scale = load(SCALE_KEY) === 'penta' ? 'penta' : 'major';
+let dir = load(DIR_KEY) === 'down' ? 'down' : 'up';
+let keyChoice = load(KEY_KEY) === null || load(KEY_KEY) === 'random' ? 'random' : Number(load(KEY_KEY));
+let misses = [1, 2, 3, 5].includes(Number(load(MISSES_KEY))) ? Number(load(MISSES_KEY)) : 3;
 let calibrating = false;
 let mode = load(MODE_KEY) === 'learn' ? 'learn' : 'practice';
 let pick = load(PICK_KEY) === 'random' ? 'random' : 'weak';
@@ -63,11 +80,14 @@ let custom = loadJSON(CUSTOM_KEY, { qualities: ['maj7'], degrees: ['3', '7'] });
 const currentExercise = () => resolveExercise(exerciseId, custom, describe);
 
 // --- Tabs: each selects a pane (right) and a view (left stage). ---
-const VIEW_FOR = { play: 'play', levels: 'levels', stats: 'stats', horn: 'horn' };
+// Play's view depends on the game: the question stage or the scale lane.
+const viewFor = tab => (tab === 'play' ? (game === 'scales' ? 'scales' : 'play') : tab);
+let currentTab = 'play';
 function showTab(tab) {
+  currentTab = tab;
   $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.pane').forEach(p => { p.hidden = p.dataset.pane !== tab; });
-  $$('.view').forEach(v => { v.hidden = v.id !== `view-${VIEW_FOR[tab]}`; });
+  $$('.view').forEach(v => { v.hidden = v.id !== `view-${viewFor(tab)}`; });
   if (tab === 'levels') showLevels();
   if (tab === 'stats') showStats();
   if (tab === 'horn') showCount();
@@ -76,12 +96,19 @@ $$('.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.data
 
 // --- Play pane ---
 function showHint() {
-  if (calibrating) hintEl.textContent = 'Play a written C.';
-  else if (calib === null) hintEl.textContent = 'Not calibrated — tap Calibrate and play a written C.';
+  if (calibrating) hintEl.textContent = 'Play middle C — the C in the third space of the staff.';
+  else if (calib === null) hintEl.textContent = 'Not calibrated — tap Calibrate and play middle C.';
+  else if (game === 'scales' && calibOffset === null) hintEl.textContent = 'Recalibrate on middle C for scales — the octave matters.';
   else hintEl.textContent = 'Calibrated · redo after changing the horn’s voice.';
 }
 
 function showSettings() {
+  document.body.dataset.game = game;
+  $$('[data-game]').forEach(b => b.classList.toggle('active', b.dataset.game === game));
+  $$('[data-scale]').forEach(b => b.classList.toggle('active', b.dataset.scale === scale));
+  $$('[data-dir]').forEach(b => b.classList.toggle('active', b.dataset.dir === dir));
+  $$('[data-key]').forEach(b => b.classList.toggle('active', b.dataset.key === String(keyChoice)));
+  $$('[data-misses]').forEach(b => b.classList.toggle('active', Number(b.dataset.misses) === misses));
   $$('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   $$('[data-pick]').forEach(b => b.classList.toggle('active', b.dataset.pick === pick));
   $$('[data-length]').forEach(b => b.classList.toggle('active', Number(b.dataset.length) === length));
@@ -92,13 +119,16 @@ function showSettings() {
   for (const [sel, t] of [['#exerciseLabel', title], ['#exerciseName', title], ['#idleName', title]]) $(sel).textContent = t;
   for (const sel of ['#exerciseDegrees', '#stageDegrees', '#idleWhat']) $(sel).textContent = ex.degrees;
   // An empty custom pick can't be played.
-  startBtn.disabled = ex.cells.length === 0;
+  startBtn.disabled = game === 'degrees' && ex.cells.length === 0;
+  showHint();
 }
 
 function setCalibrating(on) {
   calibrating = on;
   calibBtn.classList.toggle('active', on);
   showHint();
+  // The prompt can sit below the fold of a long pane (Scales): bring it up.
+  if (on) hintEl.scrollIntoView({ block: 'nearest' });
 }
 
 function onNote(midi) {
@@ -106,13 +136,17 @@ function onNote(midi) {
   if (calibrating) {
     calib = midi % 12;
     save(CALIB_KEY, String(calib));
+    // Played on middle C (written C5), so the octave is known too.
+    calibOffset = midi - WRITTEN_MIDDLE_C;
+    save(OFFSET_KEY, String(calibOffset));
     setCalibrating(false);
     noteEl.innerHTML = noteHTML(0);
     return;
   }
   if (calib === null) noteEl.textContent = '?';
   else noteEl.innerHTML = noteHTML(writtenPc(midi, calib));
-  drillNote(midi);
+  if (scalesRunning()) scaleNote(midi);
+  else drillNote(midi);
 }
 
 function onStatus({ state, names, error }) {
@@ -169,13 +203,38 @@ function onRoundEnd(result) {
 }
 
 startBtn.addEventListener('click', () => {
-  // The drill judges in written pitch, which needs calibration first.
-  if (calib === null) { setCalibrating(true); return; }
+  // Both games judge in written pitch, which needs calibration first;
+  // scales also need the octave (a middle-C calibration).
+  if (calib === null || (game === 'scales' && calibOffset === null)) { setCalibrating(true); return; }
   if (calibrating) setCalibrating(false);
   showRunning(true);
-  startRound(mode, calib, onRoundEnd, { length, pick, exercise: currentExercise() });
+  if (game === 'scales') {
+    startScales({ scale, key: keyChoice, direction: dir, bpm: tempo.get(), misses, calib, calibOffset },
+                () => { showRunning(false); runSync(); });
+  } else {
+    startRound(mode, calib, onRoundEnd, { length, pick, exercise: currentExercise() });
+  }
 });
-stopBtn.addEventListener('click', () => { if (isRunning()) stopRound(); });
+stopBtn.addEventListener('click', () => {
+  if (scalesRunning()) stopScales();
+  else if (isRunning()) stopRound();
+});
+
+// --- Game switch and scale settings (E1) ---
+$$('[data-game]').forEach(b => b.addEventListener('click', () => {
+  game = b.dataset.game; save(GAME_KEY, game); showSettings(); showTab(currentTab);
+}));
+$('#keys').innerHTML = '<button data-key="random">Random</button>' +
+  NOTES.map((n, k) => `<button data-key="${k}">${n}</button>`).join('');
+$$('[data-key]').forEach(b => b.addEventListener('click', () => {
+  keyChoice = b.dataset.key === 'random' ? 'random' : Number(b.dataset.key);
+  save(KEY_KEY, String(keyChoice)); showSettings();
+}));
+$$('[data-scale]').forEach(b => b.addEventListener('click', () => { scale = b.dataset.scale; save(SCALE_KEY, scale); showSettings(); }));
+$$('[data-dir]').forEach(b => b.addEventListener('click', () => { dir = b.dataset.dir; save(DIR_KEY, dir); showSettings(); }));
+$$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Number(b.dataset.misses); save(MISSES_KEY, String(misses)); showSettings(); }));
+// B3: tempo control, remembered.
+const tempo = mountTempo($('#tempo'), { value: Number(load(BPM_KEY)) || 80, onChange: v => save(BPM_KEY, String(v)) });
 
 $$('[data-mode]').forEach(b => b.addEventListener('click', () => {
   mode = b.dataset.mode; save(MODE_KEY, mode); showSettings();
@@ -359,6 +418,7 @@ $('#loadBackup').addEventListener('change', async e => {
 
 showHint();
 showSettings();
+showTab('play');   // applies the stage for the remembered game
 showSyncStatus();
 connectMidi(onNote, onStatus);
 runSync();   // pull anything new, push anything pending (A9)

@@ -191,6 +191,44 @@
   .chips button { padding: 4px 9px; font-size: 13px; border-radius: 14px; color: var(--dim); }
   .chips button.active { border-color: var(--brass); }
 
+  /* Game switch; each game's controls show only when it's selected. */
+  .seg.game button { font-weight: 600; }
+  .g-degrees, .g-scales { display: flex; flex-direction: column; gap: 9px; }
+  .g-degrees > *, .g-scales > * { flex-shrink: 0; }
+  body[data-game="scales"] .g-degrees, body[data-game="degrees"] .g-scales { display: none; }
+  .row2 { display: flex; gap: 6px; }
+  .row2 .seg { flex: 1; }
+  .row2 .seg button { font-size: 12px; padding-left: 2px; padding-right: 2px; white-space: nowrap; }
+  .keys { gap: 3px; }
+  .keys button { padding: 3px 7px; font-size: 12px; min-width: 32px; }
+  .misses { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .misses .label { margin: 0; white-space: nowrap; }
+  .misses .chips { flex-wrap: nowrap; }
+  .misses .chips button { padding: 3px 9px; }
+
+  /* Tempo control (B3): relative drag strip + nudges (tempo.js). */
+  .tempo { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; gap: 5px 8px; align-items: center; }
+  .tempo .bpm { grid-row: span 2; text-align: center; min-width: 58px; }
+  .tempo .bpm-val { display: block; font: 800 24px/1 system-ui, sans-serif; color: #ffe2a8; font-variant-numeric: tabular-nums; }
+  .tempo .bpm small { font-size: 10px; color: var(--dim); }
+  .scrub { position: relative; height: 26px; border-radius: 7px; background: #181818; border: 1px solid var(--line);
+           overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none; }
+  .scrub::after { content: ''; position: absolute; left: 50%; top: 5px; bottom: 5px; width: 2px;
+                  transform: translateX(-50%); background: var(--brass); opacity: .75; border-radius: 2px; }
+  .scrubticks { position: absolute; inset: 0; background-image: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 14px); }
+  .scrub.dragging { border-color: var(--brass); background: rgba(217,164,65,.08); }
+  .nudge { display: flex; gap: 4px; }
+  .nudge button { flex: 1; padding: 3px 0; font-size: 12px; color: var(--brass); font-variant-numeric: tabular-nums; }
+
+  /* Scales view: the lane canvas with a message layer over it. */
+  .lane-wrap { position: relative; flex: 1; min-height: 0; }
+  #lane { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #scaleMsg { position: absolute; left: 25%; right: 0; top: 50%; transform: translateY(-50%);
+              text-align: center; font-size: 16px; color: var(--ink); padding: 0 12px; }
+  #scaleMsg[hidden] { display: none; }
+  #scaleMsg b { color: #ffe2a8; }
+  .scale-info { text-align: right; font-variant-numeric: tabular-nums; }
+
   /* Exercise card: what's being asked; tap to change it. */
   #exerciseBtn { display: flex; justify-content: space-between; align-items: center; gap: 8px;
                  text-align: left; padding: 8px 10px; background: #181818; }
@@ -315,6 +353,16 @@
         <div id="feedback"></div>
       </div>
     </div>
+    <!-- Scales (E1): the lane. -->
+    <div class="view" id="view-scales" hidden>
+      <div class="stage-top">
+        <span id="scaleTitle"></span><span></span><span id="scaleInfo" class="scale-info"></span>
+      </div>
+      <div class="lane-wrap">
+        <canvas id="lane"></canvas>
+        <div id="scaleMsg" hidden></div>
+      </div>
+    </div>
     <!-- Levels: the ladder (D6). -->
     <div class="view" id="view-levels" hidden><div id="ladder"></div></div>
     <!-- Stats: the heatmap (D4). -->
@@ -341,19 +389,32 @@
     </nav>
 
     <div class="pane" data-pane="play">
-      <button id="exerciseBtn"><span class="ex"><b id="exerciseLabel"></b><b id="exerciseDegrees" class="degs"></b></span><span class="chg">change ›</span></button>
-      <div class="seg">
-        <button data-mode="learn">Learn</button>
-        <button data-mode="practice">Practice</button>
+      <div class="seg game">
+        <button data-game="degrees">Degrees</button>
+        <button data-game="scales">Scales</button>
       </div>
-      <div class="seg">
-        <button data-pick="weak">Weak spots</button>
-        <button data-pick="random">Random</button>
+      <div class="g-scales">
+        <div class="row2">
+          <div class="seg"><button data-scale="major">Major</button><button data-scale="penta">Penta</button></div>
+          <div class="seg"><button data-dir="up">↑ Up</button><button data-dir="down">↓ Down</button></div>
+        </div>
+        <div class="chips keys" id="keys"></div>
+        <div id="tempo"></div>
+        <div class="misses"><span class="label">Restart after</span>
+          <div class="chips"><button data-misses="1">1</button><button data-misses="2">2</button><button data-misses="3">3</button><button data-misses="5">5</button></div>
+        </div>
       </div>
-      <div class="chips" id="lengths">
-        <button data-length="10">10</button><button data-length="20">20</button>
-        <button data-length="50">50</button><button data-length="100">100</button>
-        <button data-length="0">∞</button>
+      <div class="g-degrees">
+        <button id="exerciseBtn"><span class="ex"><b id="exerciseLabel"></b><b id="exerciseDegrees" class="degs"></b></span><span class="chg">change ›</span></button>
+        <div class="row2">
+          <div class="seg"><button data-mode="learn">Learn</button><button data-mode="practice">Practice</button></div>
+          <div class="seg"><button data-pick="weak">Weak spots</button><button data-pick="random">Random</button></div>
+        </div>
+        <div class="chips" id="lengths">
+          <button data-length="10">10</button><button data-length="20">20</button>
+          <button data-length="50">50</button><button data-length="100">100</button>
+          <button data-length="0">∞</button>
+        </div>
       </div>
       <button id="start">Start</button>
       <button id="stop" hidden>Stop</button>

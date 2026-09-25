@@ -25,7 +25,9 @@ const TOKEN_KEY = 'woodshed.syncToken';
 const STATE_KEY = 'woodshed.syncState';
 // Settings that travel in settings.json: everything but the sync credentials.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
-                  'woodshed.exercise', 'woodshed.custom'];
+                  'woodshed.exercise', 'woodshed.custom',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.scale', 'woodshed.dir',
+                  'woodshed.key', 'woodshed.bpm', 'woodshed.misses'];
 const SETTINGS_PATH = 'settings.json';
 export const WINDOW_DAYS = 90;
 const DAY_MS = 86400000;

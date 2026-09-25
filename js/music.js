@@ -73,3 +73,18 @@ export const writtenPc = (midi, calib) => pc(midi - calib);
 
 // Concert pitch class of a written pitch class.
 export const concertPc = (written, calib) => pc(written + calib);
+
+// Scales (E1), as semitone steps above the root with their degree labels.
+// Pentatonic = major pentatonic (minor pentatonic is its mode from the 6).
+export const SCALES = {
+  major: { name: 'Major', steps: [0, 2, 4, 5, 7, 9, 11], degrees: ['1', '2', '3', '4', '5', '6', '7'] },
+  penta: { name: 'Pentatonic', steps: [0, 2, 4, 7, 9], degrees: ['1', '2', '3', '5', '6'] },
+};
+
+// The saxophone's written range, low B♭ to high F♯ (MIDI numbers of the
+// WRITTEN pitch; middle-of-the-staff C = C5 = 72).
+export const SAX_RANGE = { low: 58, high: 90 };
+export const WRITTEN_MIDDLE_C = 72;
+
+// Name + octave of a written MIDI note, e.g. 58 → "B♭3".
+export const noteName = w => `${NOTES[pc(w)]}${Math.floor(w / 12) - 1}`;

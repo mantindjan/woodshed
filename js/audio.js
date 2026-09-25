@@ -7,7 +7,9 @@ import { VOICING } from './music.js';
 
 let ctx = null;
 let master = null;
-let voices = [];   // every live oscillator, so stopAll() can silence them
+let clickBus = null;   // metronome clicks: own bus, bypassing the pad's lowpass
+let noise = null;      // cached white-noise buffer for clicks
+let voices = [];   // every live source, so stopAll() can silence them
 
 // Must be called from a user gesture (tap), or Chrome keeps audio muted.
 export function initAudio() {
@@ -21,6 +23,18 @@ export function initAudio() {
     lp.Q.value = 0.4;
     master.connect(lp);
     lp.connect(ctx.destination);
+    // Clicks go straight out with their own compressor (SOLVED.md): routed
+    // through the master lowpass they were too quiet against the chords.
+    clickBus = ctx.createGain();
+    clickBus.gain.value = 2.6;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -6; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.001; comp.release.value = 0.05;
+    clickBus.connect(comp);
+    comp.connect(ctx.destination);
+    noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.2), ctx.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   if (ctx.state === 'suspended') ctx.resume();
 }
@@ -83,6 +97,38 @@ export function playPing(pitchConcertPc) {
     o.stop(t + 0.75);
     voices.push({ o, g });
   }
+}
+
+// The audio-clock time (s) matching a performance.now() time (ms), so
+// clicks can be scheduled exactly on beats measured in page time.
+export function audioTimeAt(perfMs) {
+  return ctx ? ctx.currentTime + (perfMs - performance.now()) / 1000 : 0;
+}
+
+// Metronome click (B4) at audio time `time`: a white-noise burst through a
+// bandpass — noise, not a sine, reads as a tick rather than a beep
+// (SOLVED.md). Accents sit higher and louder.
+export function click(time, accent = false) {
+  if (!ctx) return;
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = accent ? 2600 : 1900;
+  bp.Q.value = accent ? 6 : 5;
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 600;
+  const g = ctx.createGain();
+  src.connect(bp); bp.connect(hp); hp.connect(g); g.connect(clickBus);
+  const peak = accent ? 1.0 : 0.62;
+  const dur = accent ? 0.038 : 0.028;
+  g.gain.setValueAtTime(0, time);
+  g.gain.linearRampToValueAtTime(peak, time + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+  src.start(time);
+  src.stop(time + dur + 0.02);
+  voices.push({ o: src, g });
 }
 
 // Silence everything now. Called on every stop path, or notes hang.
