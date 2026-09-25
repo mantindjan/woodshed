@@ -15,9 +15,9 @@
 // but isn't an error. A wrong pitch in the window, or nothing by the end of
 // it, is a MISS. Practice: after `misses` misses the run stops ("start again").
 // Learn (boss, 2026-09-25): the same judging, shown the other way round, and
-// nothing ever stops. Before each run it names a start note ("low B♭ — B♭3")
-// and sounds the pattern's first PREVIEW notes at the tempo. Once the start
-// note is blown the whole run is drawn at once, still, as a SHEET (wrapped
+// nothing ever stops. Before each run it names a start note ("low B♭ — B♭3");
+// the player plays first — no preview sound (boss: a 4-note preview before
+// the start note was dropped the same day). Once the start note is blown the whole run is drawn at once, still, as a SHEET (wrapped
 // into rows); after the count-in a playhead sweeps across it left to right,
 // each note played lands as a mark where it was played (time × pitch), and
 // the end shows a tally: right notes and how many were on the beat.
@@ -36,7 +36,7 @@
 // degree discs (boss, 2026-09-25).
 
 import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
-import { initAudio, click, audioTimeAt, stopAll, playLine } from './audio.js';
+import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { pickScaleKey, sessionStars, PATTERNS } from './scalelevels.js';
 import { saveKeys, saveStars } from './summary.js';
@@ -47,8 +47,10 @@ const PER_BEAT = 2;            // eighths: two scale notes per click (boss, 2026
 const SUMMARY_MS = 1800;       // how long a run's summary shows before the next
 const SHEET_SUMMARY_MS = 4000; // learn: longer, to read the marks on the sheet
 const SHEET_ROW = 16;          // learn: most notes per sheet row
-const ON_BEAT_MS = 30;         // a hit this close counts "on the beat" (as the lane's early/late tick)
-const PREVIEW = 4;             // learn: notes of the pattern sounded before a run
+// A hit this close counts "on the beat"; beyond it the disc gets an
+// early/late tick. 30 ms was too tight on the horn (boss, 2026-09-25).
+const ON_BEAT_MS = 100;
+const MIN_RUN = 4;             // learn suggests a start with at least this many notes ahead
 const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // v3: `pattern` replaces `direction`. v4: learn runs add `hint` (and, that
 // evening only, `waits` from the dropped lane-hold learn). v5: learn = sheet.
@@ -76,7 +78,7 @@ const register = w => (w <= 65 ? 'low' : w <= 78 ? 'middle' : 'high');
 function suggestStart(scale, key, pattern) {
   const notes = scaleNotes(scale, key);
   const roots = notes.map((w, i) => ({ w, n: PATTERNS[pattern].indices(i, notes.length).length }))
-    .filter(x => pc(x.w - key) === 0 && x.n >= PREVIEW);
+    .filter(x => pc(x.w - key) === 0 && x.n >= MIN_RUN);
   if (!roots.length) return null;
   return PATTERNS[pattern].slope > 0 ? roots[0].w : roots[roots.length - 1].w;
 }
@@ -132,18 +134,10 @@ function nextRun() {
     message(`Blow any note of ${scaleName} to start — ${pattern}`);
     return;
   }
-  // Learn: name the start note and let the pattern's opening be heard.
-  s.run.hint = { start, preview: PREVIEW };
+  // Learn: name a start note; the sheet appears once it's blown.
+  s.run.hint = { start };
   message(`Start on <b>${register(start)} ${NOTES[pc(start)]}</b> (${noteName(start)}) — ${scaleName}, ${pattern}` +
           '<br><small>any scale note works too</small>');
-  const notes = scaleNotes(s.scale, k);
-  const idx = PATTERNS[s.pattern].indices(notes.indexOf(start), notes.length).slice(0, PREVIEW);
-  const r = s.run;
-  s.timers.push(setTimeout(() => {
-    if (s?.run === r && r.phase === 'waiting') {
-      playLine(idx.map(j => notes[j] + s.calibOffset), audioTimeAt(performance.now() + 30), 60 / s.bpm / PER_BEAT);
-    }
-  }, 350));
 }
 
 // The key stays on screen the whole run, big (boss: the 2-second message
@@ -209,7 +203,6 @@ function startRun(w, now, midi) {
             `start ${i + 2 >= notes.length ? 'lower' : 'higher'}.`);
     return;
   }
-  stopAll();                          // cut a preview still sounding
   const run = idx.map(j => notes[j]);
   const beat = 60000 / s.bpm;
   const step = beat / PER_BEAT;       // time between scale notes
@@ -290,7 +283,7 @@ function endRun(stopped) {
     notes: r.notes,                   // every note-on: [raw MIDI, ms after the start note]
     stopped,
   };
-  // Learn only: the suggested start {start: written MIDI, preview: notes sounded}.
+  // Learn only: the suggested start {start: written MIDI}.
   if (s.mode === 'learn') event.hint = r.hint;
   addEvent(event);
   // The key model adapts within the session; the summary keeps it for next time.

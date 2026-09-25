@@ -99,15 +99,6 @@ export function playPing(pitchConcertPc) {
   }
 }
 
-// A short line of notes (scale learn preview): `midis` are CONCERT MIDI
-// numbers at the horn's own pitch, from audio time `start`, `step` s apart.
-// The pad's sawtooth voice, so it's heard in the horn's register even on a
-// phone speaker (a low sine all but vanishes there).
-export function playLine(midis, start, step) {
-  if (!ctx) return;
-  midis.forEach((m, i) => playNote(m, start + i * step, 0.11, step * 0.8));
-}
-
 // The audio-clock time (s) matching a performance.now() time (ms), so
 // clicks can be scheduled exactly on beats measured in page time.
 export function audioTimeAt(perfMs) {
