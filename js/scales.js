@@ -14,18 +14,20 @@
 // neighbouring notes' windows never overlap; early/late is shown and graded
 // but isn't an error. A wrong pitch in the window, or nothing by the end of
 // it, is a MISS. Practice: after `misses` misses the run stops ("start again").
-// Learn (boss, 2026-09-25): signposts and a lane that waits. Before each
-// run it names a start note ("low B♭ — B♭3") and sounds the pattern's first
-// PREVIEW notes at the tempo. A miss never stops the run: the lane HOLDS on
-// the missed note, which shows its name, until the right note is played;
-// then the run rolls on, the next note one beat later. The first attempt
-// still sets the note's status (so stats stay honest); the waits are
-// recorded next to it.
+// Learn (boss, 2026-09-25): the same judging, shown the other way round, and
+// nothing ever stops. Before each run it names a start note ("low B♭ — B♭3")
+// and sounds the pattern's first PREVIEW notes at the tempo. Once the start
+// note is blown the whole run is drawn at once, still, as a SHEET (wrapped
+// into rows); after the count-in a playhead sweeps across it left to right,
+// each note played lands as a mark where it was played (time × pitch), and
+// the end shows a tally: right notes and how many were on the beat.
+// (A first cut held the lane on a miss; it froze unreliably when a note
+// slid past the line, and was dropped.)
 //
 // Pitch: written = MIDI − calibOffset, where calibOffset = the MIDI note the
 // horn sends for written middle C (C5 = 72) minus 72 (main.js calibration).
 //
-// Display: a canvas lane. Notes are degree discs (no note names), placed by
+// Display (practice): a canvas lane. Notes are degree discs (no note names), placed by
 // scale step and note slot, gliding toward the now line near the left. The
 // view drifts with the pattern's overall direction (its slope), so a linear
 // run arrives on a diagonal and broken thirds zigzag around it. Hits bloom
@@ -43,10 +45,14 @@ const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
 const COUNT_IN = 4;            // clicks before the first note
 const PER_BEAT = 2;            // eighths: two scale notes per click (boss, 2026-09-25)
 const SUMMARY_MS = 1800;       // how long a run's summary shows before the next
+const SHEET_SUMMARY_MS = 4000; // learn: longer, to read the marks on the sheet
+const SHEET_ROW = 16;          // learn: most notes per sheet row
+const ON_BEAT_MS = 30;         // a hit this close counts "on the beat" (as the lane's early/late tick)
 const PREVIEW = 4;             // learn: notes of the pattern sounded before a run
 const GLOW_MS = 650;           // how long a hit's bloom takes to settle
-// v3: `pattern` replaces `direction`. v4: learn runs add `hint` and `waits`.
-const SCHEMA_VERSION = 4;
+// v3: `pattern` replaces `direction`. v4: learn runs add `hint` (and, that
+// evening only, `waits` from the dropped lane-hold learn). v5: learn = sheet.
+const SCHEMA_VERSION = 5;
 
 const $ = sel => document.querySelector(sel);
 
@@ -117,7 +123,7 @@ export function stopScales() {
 // even, never the same twice in a row when there's a choice.
 function nextRun() {
   const k = pickScaleKey(s.model, { scale: s.scale, pattern: s.pattern, keys: s.keys, pick: s.pick, prev: s.run?.key });
-  s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0, hold: null, waits: [], hint: null };
+  s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0, hint: null };
   topBar();
   const scaleName = `<b>${NOTES[k]} ${SCALES[s.scale].name.toLowerCase()}</b>`;
   const pattern = PATTERNS[s.pattern].name.toLowerCase();
@@ -151,6 +157,7 @@ function topBar() {
 
 function message(html) {
   const el = $('#scaleMsg');
+  el.classList.remove('tally');
   el.innerHTML = html;
   el.hidden = !html;
 }
@@ -165,12 +172,6 @@ export function scaleNote(midi) {
   if (r.phase !== 'running' && r.phase !== 'countin') return;
   r.notes.push([midi, Math.round(now - r.t0)]);
   if (r.phase !== 'running') return;
-  if (r.hold) {
-    // Learn, lane held: only the held note moves it on.
-    if (w === r.hold.w) release(now);
-    else r.hold.tries++;
-    return;
-  }
   // The pending note whose beat is nearest, within the window.
   let best = null;
   for (const e of r.expected) {
@@ -185,7 +186,7 @@ export function scaleNote(midi) {
     best.hitAt = now;
   } else {
     best.status = 'wrong';
-    miss(best, now);
+    miss();
   }
   checkDone();
 }
@@ -213,6 +214,7 @@ function startRun(w, now, midi) {
   const beat = 60000 / s.bpm;
   const step = beat / PER_BEAT;       // time between scale notes
   r.t0 = now;
+  r.scaleNotes = notes;               // for placing played marks on the sheet
   r.beatMs = beat;
   r.step = step;                      // the lane moves one slot per note
   r.window = Math.min(MAX_WINDOW_MS, step * 0.45);
@@ -222,13 +224,9 @@ function startRun(w, now, midi) {
   r.base = idx.reduce((a, j, k) => a + j - r.slope * k, 0) / idx.length;
   r.notes = [[midi, 0]];
   // Count-in clicks on beats 1–4 after the start note; note j at beat 5 +
-  // j/2. Clicks keep going on every beat through the run. `t` is when a
-  // note is judged; `at` when it's drawn on the now line (they part only
-  // after a learn hold, see release()).
-  r.expected = run.map((nw, j) => {
-    const t = now + beat * (COUNT_IN + 1) + step * j;
-    return { w: nw, i: idx[j], deg: degreeOf(s.scale, r.key, nw), t, at: t, status: 'pending', off: null, hitAt: null };
-  });
+  // j/2. Clicks keep going on every beat through the run.
+  r.expected = run.map((nw, j) => ({ w: nw, i: idx[j], deg: degreeOf(s.scale, r.key, nw),
+                                      t: now + beat * (COUNT_IN + 1) + step * j, status: 'pending', off: null, hitAt: null }));
   const beats = COUNT_IN + Math.ceil(run.length / PER_BEAT);
   for (let b = 1; b <= beats; b++) click(audioTimeAt(now + beat * b), b === 1);
   r.phase = 'countin';
@@ -237,54 +235,22 @@ function startRun(w, now, midi) {
                            beat * (COUNT_IN + 1) - r.window - 1));
 }
 
-// A miss on note `e`. Practice counts it toward a restart; learn holds the
-// lane on it until it's played (release()).
-function miss(e, now) {
+// A miss. Practice counts it toward a restart; learn just carries on.
+function miss() {
   const r = s.run;
   r.misses++;
   topBar();
-  if (s.mode === 'practice') {
-    if (r.misses >= s.misses) endRun(true);
-    return;
-  }
-  // The lane freezes where it is (a little past the note once its window
-  // has closed) rather than jumping back onto it.
-  r.holdPos = lanePos(r, now);
-  r.hold = e;
-  e.heldAt = now;
-  e.tries = 0;
-  stopAll();                          // the clicks stop with the lane
-}
-
-// Learn: the held note was played. Log the wait, then re-time what's left:
-// the next note a beat from now, eighths after it, clicks back on the beats.
-function release(now) {
-  const r = s.run;
-  const e = r.hold;
-  const k0 = r.expected.indexOf(e);
-  r.waits.push({ note: k0, ms: Math.round(now - e.heldAt), tries: e.tries });
-  // Drawn as if it crossed the line where the lane froze, so it moves on
-  // from there without a jump.
-  e.at = now - (r.holdPos - k0) * r.step;
-  e.fixedAt = now;
-  r.hold = null;
-  r.expected.slice(k0 + 1).forEach((x, j) => {
-    x.t = x.at = now + r.beatMs + r.step * j;
-    if (j % PER_BEAT === 0) click(audioTimeAt(x.t), false);
-  });
-  checkDone();
+  if (s.mode === 'practice' && r.misses >= s.misses) endRun(true);
 }
 
 // Called from frames: notes whose window has passed unplayed are misses.
-// While learn holds the lane, time stands still for the notes ahead.
 function expire(now) {
   const r = s.run;
   if (r.phase !== 'running') return;
   for (const e of r.expected) {
-    if (r.hold) return;
     if (e.status === 'pending' && now > e.t + r.window) {
       e.status = 'miss';
-      miss(e, now);
+      miss();
       if (r.phase !== 'running') return;
     }
   }
@@ -293,7 +259,7 @@ function expire(now) {
 
 function checkDone() {
   const r = s?.run;
-  if (r && r.phase === 'running' && !r.hold && r.expected.every(e => e.status !== 'pending')) endRun(false);
+  if (r && r.phase === 'running' && r.expected.every(e => e.status !== 'pending')) endRun(false);
 }
 
 function endRun(stopped) {
@@ -319,17 +285,13 @@ function endRun(stopped) {
     calib: s.calib,
     calibOffset: s.calibOffset,
     startWritten: r.expected[0].w,
-    // Each expected note: [written pitch, ms after the start note, degree,
-    // first-attempt status, timing offset ms]. After a learn hold the later
-    // times are the re-timed ones.
+    // Each expected note: [written pitch, ms after the start note, degree, status, timing offset ms].
     expected: r.expected.map(e => [e.w, Math.round(e.t - r.t0), e.deg, e.status, e.off]),
     notes: r.notes,                   // every note-on: [raw MIDI, ms after the start note]
     stopped,
   };
-  // Learn only: the suggested start {start: written MIDI, preview: notes
-  // sounded} and each hold {note: index in expected, ms held, tries: wrong
-  // notes before the right one}.
-  if (s.mode === 'learn') Object.assign(event, { hint: r.hint, waits: r.waits });
+  // Learn only: the suggested start {start: written MIDI, preview: notes sounded}.
+  if (s.mode === 'learn') event.hint = r.hint;
   addEvent(event);
   // The key model adapts within the session; the summary keeps it for next time.
   s.model.add(event);
@@ -339,10 +301,18 @@ function endRun(stopped) {
   s.tally.total += r.expected.length;
   if (stopped) s.tally.stopped++;
   const lateness = mean === null ? '' : mean > 15 ? ` · ${mean} ms late on average` : mean < -15 ? ` · ${-mean} ms early on average` : ' · right on the beat';
-  message(stopped
-    ? `<b>${r.misses} misses — start again.</b> ${hits.length} of ${r.expected.length} hit.`
-    : `<b>${hits.length} / ${r.expected.length} hit</b>${s.mode === 'learn' ? ' first time' : ''}${lateness}`);
-  s.timers.push(setTimeout(() => { if (s) nextRun(); }, SUMMARY_MS));
+  if (s.mode === 'learn') {
+    // The tally sits under the sheet, which stays up to be read.
+    const onBeat = hits.filter(e => Math.abs(e.off) <= ON_BEAT_MS).length;
+    const drift = mean !== null && Math.abs(mean) > 15 ? lateness : '';   // "on the beat" is already said
+    message(`<b>${hits.length} / ${r.expected.length} right</b> · ${onBeat} on the beat${drift}`);
+    $('#scaleMsg').classList.add('tally');
+  } else {
+    message(stopped
+      ? `<b>${r.misses} misses — start again.</b> ${hits.length} of ${r.expected.length} hit.`
+      : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`);
+  }
+  s.timers.push(setTimeout(() => { if (s) nextRun(); }, s.mode === 'learn' ? SHEET_SUMMARY_MS : SUMMARY_MS));
 }
 
 // --- Drawing ---
@@ -364,18 +334,8 @@ function frame() {
   raf = requestAnimationFrame(frame);
 }
 
-// Where the lane should be, in note slots (note 0 on the now line = 0):
-// between the draw times (`at`) of the notes either side of now; frozen
-// during a learn hold.
-function lanePos(r, now) {
-  if (r.hold) return r.holdPos;
-  const ex = r.expected;
-  let k = -1;
-  while (k + 1 < ex.length && ex[k + 1].at <= now) k++;
-  if (k < 0) return (now - ex[0].at) / r.step;
-  if (k === ex.length - 1) return k + (now - ex[k].at) / r.step;
-  return k + (now - ex[k].at) / (ex[k + 1].at - ex[k].at);
-}
+// Position along the run in note slots at time `t` (note 0 due = 0).
+const slotAt = (r, t) => (t - r.expected[0].t) / r.step;
 
 const COLORS = { pending: '#d9a441', hit: '#ffe2a8', wrong: '#d65a5a', miss: '#6a3434' };
 
@@ -427,6 +387,8 @@ function draw(r) {
   const g = c.getContext('2d');
   const W = c.clientWidth, H = c.clientHeight;
   g.clearRect(0, 0, W, H);
+  if (r && r.expected.length) countIn(g, r, W);
+  if (s?.mode === 'learn') return drawSheet(g, r, W, H);
   const nowX = W * 0.22, cy = H * 0.5;
   // The now line.
   g.strokeStyle = 'rgba(217,164,65,.55)';
@@ -435,21 +397,9 @@ function draw(r) {
   if (!r || !r.expected.length) return;
 
   const now = performance.now();
-  const pos = lanePos(r, now);
+  const pos = slotAt(r, now);
   const pxBeat = Math.min(120, W * 0.2);
   const stepPx = Math.min(26, H / 14);
-  // Count-in: four dots, one filling per click.
-  if (r.phase === 'countin') {
-    const filled = Math.min(COUNT_IN, Math.floor((now - r.t0) / r.beatMs));
-    for (let b = 0; b < COUNT_IN; b++) {
-      const x = W * 0.6 + (b - (COUNT_IN - 1) / 2) * 30;
-      g.beginPath(); g.arc(x, 26, 8, 0, Math.PI * 2);
-      g.fillStyle = b < filled ? '#ffe2a8' : 'transparent';
-      g.fill();
-      g.lineWidth = 2; g.strokeStyle = 'rgba(255,226,168,.7)'; g.stroke();
-      if (b < filled) bloom(g, x, 26, 8, 0.4, now - (r.t0 + r.beatMs * (b + 1)));
-    }
-  }
   g.textAlign = 'center'; g.textBaseline = 'middle';
   r.expected.forEach((e, i) => {
     const d = i - pos;                        // note slots until this note
@@ -460,20 +410,9 @@ function draw(r) {
     const root = e.deg === '1';
     const rad = root ? 20 : 17;
     const fade = x < nowX - 10 ? Math.max(0, 1 - (nowX - x) / (nowX + 30)) : 1;
-    const held = r.hold === e;
     g.globalAlpha = fade;
-    if (e.status === 'hit') bloom(g, x, y, rad, 1 - Math.min(Math.abs(e.off), r.window) / r.window, now - e.hitAt);
-    if (e.fixedAt) bloom(g, x, y, rad, 0.3, now - e.fixedAt);   // learn: found after a hold
-    if (held) {
-      // Learn hold: a slow red pulse around the wanted note.
-      const p = 0.5 + 0.5 * Math.sin(now / 180);
-      g.save();
-      g.shadowColor = 'rgba(214,90,90,.9)';
-      g.shadowBlur = 18 + 18 * p;
-      g.beginPath(); g.arc(x, y, rad + 2 + 3 * p, 0, Math.PI * 2);
-      g.strokeStyle = 'rgba(255,140,120,.8)'; g.lineWidth = 2; g.stroke();
-      g.restore();
-    } else if (e.status === 'pending' && d > -0.5 && d < 1.5) {
+    if (e.status === 'hit') bloom(g, x, y, rad, accuracy(r, e), now - e.hitAt);
+    if (e.status === 'pending' && d > -0.5 && d < 1.5) {
       // The next note to play warms up as it reaches the line.
       g.save();
       g.shadowColor = 'rgba(217,164,65,.8)';
@@ -482,25 +421,134 @@ function draw(r) {
       g.strokeStyle = COLORS.pending; g.lineWidth = 2; g.stroke();
       g.restore();
     }
-    g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2);
-    const found = !!e.fixedAt;         // learn: played right after a hold
-    g.fillStyle = e.status === 'pending' ? '#1c1a14' : found ? '#8a6a3a' : COLORS[e.status];
-    g.fill();
-    g.lineWidth = root ? 3 : 2;
-    g.strokeStyle = found ? '#ffe2a8' : COLORS[e.status];
-    g.stroke();
-    g.fillStyle = e.status === 'pending' ? '#ffe2a8' : '#1a1206';
-    // Learn mode: a missed disc shows the note it wants.
-    const showName = s.mode === 'learn' && (e.status === 'wrong' || e.status === 'miss');
-    g.font = `800 ${showName ? 13 : root ? 18 : 16}px system-ui, sans-serif`;
-    g.fillText(showName ? NOTES[pc(e.w)] : e.deg, x, y + 1);
-    // Early/late tick for hits: a small bar left (early) or right (late).
-    if (e.status === 'hit' && Math.abs(e.off) > 30) {
-      g.fillStyle = '#ffe2a8';
-      g.fillRect(x + (e.off > 0 ? rad + 3 : -rad - 7), y - 2, 4, 4);
-    }
+    disc(g, e, x, y, rad, root, false);
     g.globalAlpha = 1;
   });
+}
+
+// 0–1: how close to the beat a hit was.
+const accuracy = (r, e) => 1 - Math.min(Math.abs(e.off), r.window) / r.window;
+
+// One degree disc, coloured by status. `named`: a wrong/missed disc shows
+// its note name instead (learn: the answer on a miss).
+function disc(g, e, x, y, rad, root, named) {
+  g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2);
+  g.fillStyle = e.status === 'pending' ? '#1c1a14' : COLORS[e.status];
+  g.fill();
+  g.lineWidth = root ? 3 : 2;
+  g.strokeStyle = COLORS[e.status];
+  g.stroke();
+  g.fillStyle = e.status === 'pending' ? '#ffe2a8' : '#1a1206';
+  const showName = named && (e.status === 'wrong' || e.status === 'miss');
+  const size = Math.round(rad * (showName ? 0.75 : root ? 0.9 : 0.95));
+  g.font = `800 ${size}px system-ui, sans-serif`;
+  g.fillText(showName ? NOTES[pc(e.w)] : e.deg, x, y + 1);
+  // Early/late tick for hits: a small bar left (early) or right (late).
+  if (e.status === 'hit' && Math.abs(e.off) > ON_BEAT_MS) {
+    g.fillStyle = '#ffe2a8';
+    g.fillRect(x + (e.off > 0 ? rad + 3 : -rad - 7), y - 2, 4, 4);
+  }
+}
+
+// Count-in: four dots across the top, one filling (and blooming) per click.
+function countIn(g, r, W) {
+  if (r.phase !== 'countin') return;
+  const now = performance.now();
+  const filled = Math.min(COUNT_IN, Math.floor((now - r.t0) / r.beatMs));
+  for (let b = 0; b < COUNT_IN; b++) {
+    const x = W * 0.6 + (b - (COUNT_IN - 1) / 2) * 30;
+    g.beginPath(); g.arc(x, 16, 8, 0, Math.PI * 2);
+    g.fillStyle = b < filled ? '#ffe2a8' : 'transparent';
+    g.fill();
+    g.lineWidth = 2; g.strokeStyle = 'rgba(255,226,168,.7)'; g.stroke();
+    if (b < filled) bloom(g, x, 16, 8, 0.4, now - (r.t0 + r.beatMs * (b + 1)));
+  }
+}
+
+// --- Learn: the sheet ---
+// The whole run laid out at once, in rows of up to SHEET_ROW notes (split
+// evenly), each row its own band with its notes placed by scale position.
+// A playhead sweeps each row in time; each note played is a mark at the
+// time and pitch it was played. Layout is computed once per run.
+function sheetLayout(r, W, H) {
+  if (r.sheet && r.sheet.W === W && r.sheet.H === H) return r.sheet;
+  const n = r.expected.length;
+  const rows = Math.ceil(n / SHEET_ROW);
+  const per = Math.ceil(n / rows);
+  const top = 34;                                   // under the count-in dots
+  const bandH = (H - top - 44) / rows;              // room for the tally below
+  const slot = (W - 24) / per;
+  const rad = Math.max(8, Math.min(16, slot * 0.4, bandH * 0.2));
+  const bands = [];
+  for (let k = 0; k < rows; k++) {
+    const a = k * per, b = Math.min(n, a + per);
+    const is = r.expected.slice(a, b).map(e => e.i);
+    const lo = Math.min(...is), hi = Math.max(...is);
+    const stepPx = Math.min(rad * 0.9, (bandH - 2 * rad - 4) / Math.max(1, hi - lo));
+    bands.push({ a, b, mid: (lo + hi) / 2, cy: top + bandH * (k + 0.5), stepPx });
+  }
+  r.sheet = { W, H, per, slot, rad, bands, bandH, left: 12 };
+  return r.sheet;
+}
+
+// Screen point for slot position `p` (fractional note index) at scale
+// position `i` (fractional too, for played marks between scale notes).
+function sheetPoint(L, p, i) {
+  const k = Math.max(0, Math.min(L.bands.length - 1, Math.floor((p + 0.5) / L.per)));
+  const band = L.bands[k];
+  return { x: L.left + (p - band.a + 0.5) * L.slot, y: band.cy - (i - band.mid) * band.stepPx, band };
+}
+
+// Fractional scale position of any written pitch: between the scale notes
+// around it, so a wrong note sits between the right ones.
+function scalePos(notes, w) {
+  if (w <= notes[0]) return (w - notes[0]) / 2;
+  for (let j = 0; j < notes.length - 1; j++) {
+    if (w <= notes[j + 1]) return j + (w - notes[j]) / (notes[j + 1] - notes[j]);
+  }
+  return notes.length - 1 + (w - notes[notes.length - 1]) / 2;
+}
+
+function drawSheet(g, r, W, H) {
+  if (!r || !r.expected.length) return;
+  const L = sheetLayout(r, W, H);
+  const now = performance.now();
+  // Played marks: a small diamond per note-on after the count-in, where it
+  // was played (time × pitch). Right pitch for the nearest note: gold, drawn
+  // UNDER the discs so it only peeks out when early or late; wrong pitch:
+  // red, drawn over them. Count-in notes aren't drawn.
+  const marks = r.notes.slice(1).map(([midi, ms]) => {
+    const p = slotAt(r, r.t0 + ms);
+    const w = midi - s.calibOffset;
+    const near = r.expected[Math.max(0, Math.min(r.expected.length - 1, Math.round(p)))];
+    return { p, w, right: w === near.w };
+  }).filter(m => m.p >= -0.5);
+  const drawMarks = right => marks.filter(m => m.right === right).forEach(m => {
+    const { x, y } = sheetPoint(L, Math.min(m.p, r.expected.length - 0.5), scalePos(r.scaleNotes, m.w));
+    g.fillStyle = right ? '#fff3d6' : '#ff6b6b';
+    g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 4, y); g.lineTo(x, y + 5); g.lineTo(x - 4, y); g.closePath(); g.fill();
+  });
+  drawMarks(true);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  r.expected.forEach((e, j) => {
+    const { x, y } = sheetPoint(L, j, e.i);
+    if (e.status === 'hit') bloom(g, x, y, L.rad, accuracy(r, e), now - e.hitAt);
+    g.globalAlpha = e.status === 'pending' ? 0.85 : 1;
+    disc(g, e, x, y, L.rad, e.deg === '1', true);
+    g.globalAlpha = 1;
+  });
+  drawMarks(false);
+  // Playhead: sweeps each row in turn, from the count-in until the end.
+  if (r.phase === 'countin' || r.phase === 'running') {
+    const p = Math.max(-0.5, Math.min(slotAt(r, now), r.expected.length - 0.5));
+    const { x, band } = sheetPoint(L, p, 0);
+    const half = L.bandH / 2;
+    g.save();
+    g.shadowColor = 'rgba(217,164,65,.9)'; g.shadowBlur = 12;
+    g.strokeStyle = 'rgba(255,226,168,.85)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(x, band.cy - half + 4); g.lineTo(x, band.cy + half - 4); g.stroke();
+    g.restore();
+  }
 }
 
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScales(); });
