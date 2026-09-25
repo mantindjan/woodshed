@@ -216,6 +216,10 @@
   .tempo .bpm-val { display: block; font: 800 24px/1 system-ui, sans-serif; color: #ffe2a8; font-variant-numeric: tabular-nums; }
   .tempo .bpm small { font-size: 10px; color: var(--dim); }
   .tempo .bpm em { display: block; font-style: normal; font-size: 10px; color: var(--dim); }
+  /* Auto | Fixed tempo toggle (scales, E4): lit brass on auto. */
+  .tempo .tmode { display: block; margin: 3px auto 0; padding: 1px 7px; font-size: 10px; letter-spacing: .08em;
+                  text-transform: uppercase; border-radius: 9px; color: var(--dim); }
+  .tempo .tmode.active { color: #ffe2a8; border-color: var(--brass); background: rgba(217,164,65,.16); }
   .scrub { position: relative; height: 26px; border-radius: 7px; background: #181818; border: 1px solid var(--line);
            overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none; }
   .scrub::after { content: ''; position: absolute; left: 50%; top: 5px; bottom: 5px; width: 2px;
@@ -235,7 +239,7 @@
   .scale-info { text-align: right; font-variant-numeric: tabular-nums; }
   /* The run's key, big and always there; the pattern beside it. */
   .scale-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #scaleKey { font: 800 22px/1 system-ui, sans-serif; color: #ffe2a8; }
+  #scaleKey, #scaleBpm { font: 800 22px/1 system-ui, sans-serif; color: #ffe2a8; }
   #scaleMsg small { font-size: 12px; color: var(--dim); }
   /* Learn: the run's tally sits under the sheet, which stays up to be read. */
   #scaleMsg.tally { top: auto; bottom: 8px; left: 0; transform: none; font-size: 15px; }
@@ -394,7 +398,8 @@
     <!-- Scales (E1): the lane. -->
     <div class="view" id="view-scales" data-view="play" data-for="scales" hidden>
       <div class="stage-top">
-        <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span><span></span><span id="scaleInfo" class="scale-info"></span>
+        <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span><span></span>
+        <span class="scale-info"><b id="scaleBpm"></b> <span id="scaleBpmNote"></span> · <span id="scaleInfo"></span></span>
       </div>
       <div class="lane-wrap">
         <canvas id="lane"></canvas>
@@ -504,6 +509,8 @@
       <div class="stat">Today <b id="sstatToday">0</b></div>
       <div class="stat">Notes hit <b id="sstatHit">–</b></div>
       <div class="stat">Clean runs <b id="sstatClean">–</b></div>
+      <div class="stat">Working tempo <b id="sstatWorking">–</b></div>
+      <div class="stat">Clean best <b id="sstatBest">–</b></div>
       <div>
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>

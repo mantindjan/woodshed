@@ -21,6 +21,7 @@ import { sync, syncConfig, setSyncConfig, syncState } from './sync.js';
 import { renderHeatmap } from './heatmap.js';
 import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
 import { renderRangeMap } from './rangemap.js';
+import { createTempoModel, tempoKey, pipText } from './scaletempo.js';
 
 // Settings (localStorage, all carried by the backup file).
 const CALIB_KEY = 'woodshed.calib';
@@ -33,7 +34,8 @@ const OFFSET_KEY = 'woodshed.calibOffset';   // horn MIDI − written, from midd
 const GAME_KEY = 'woodshed.game';
 const SCALE_EX_KEY = 'woodshed.scaleExercise';   // scale level id or 'custom'
 const SCALE_CUSTOM_KEY = 'woodshed.scaleCustom'; // {scale, pattern, keys: [written pcs]}
-const BPM_KEY = 'woodshed.bpm';
+const BPM_KEY = 'woodshed.bpm';                  // the Fixed tempo
+const TEMPO_AUTO_KEY = 'woodshed.tempoAuto';     // 'auto' | 'fixed' (scales, E4)
 const MISSES_KEY = 'woodshed.misses';
 
 // Question-count choices; 0 = endless (until Stop).
@@ -75,6 +77,17 @@ const currentScaleExercise = () => resolveScaleExercise(scaleExerciseId, scaleCu
 // starts on the current exercise's level, then follows the picker.
 let mapLevel = null;
 let mapView = 'range';
+// Auto tempo (E4): on by default; applies to practice only (learn keeps the
+// Fixed tempo). The staircases live in the cached summary; kept here too so
+// the Play pane can show the next session's tempo without waiting.
+let tempoAuto = load(TEMPO_AUTO_KEY) !== 'fixed';
+let tempoModel = createTempoModel();
+const autoActive = () => tempoAuto && mode === 'practice';
+const scaleTempoKey = () => { const x = currentScaleExercise(); return tempoKey(x.scale, x.pattern); };
+async function loadTempo() {
+  tempoModel = createTempoModel((await getSummary()).tempo || []);
+  showSettings();
+}
 let misses = [1, 2, 3, 5].includes(Number(load(MISSES_KEY))) ? Number(load(MISSES_KEY)) : 3;
 let calibrating = false;
 let mode = load(MODE_KEY) === 'learn' ? 'learn' : 'practice';
@@ -135,6 +148,14 @@ function showSettings() {
   const sx = currentScaleExercise();
   $('#scaleExLabel').textContent = sx.num ? `${sx.num} · ${sx.title}` : `Custom · ${sx.title} · ${sx.keysLabel}`;
   $('#scaleExKeys').textContent = PATTERNS[sx.pattern].chip;
+  // Tempo: on Auto the strip shows where this level's session starts and
+  // can't be dragged; on Fixed (or in learn) it's the remembered tempo.
+  if (autoActive()) tempo.set(tempoModel.start(scaleTempoKey()), false);
+  else tempo.set(fixedBpm, false);
+  tempo.setEnabled(!autoActive());   // every button in the block — the toggle is set after
+  $('#tempoMode').textContent = tempoAuto ? 'auto' : 'fixed';
+  $('#tempoMode').classList.toggle('active', tempoAuto);
+  $('#tempoMode').disabled = mode === 'learn';
   // An empty custom pick can't be played.
   startBtn.disabled = game === 'degrees' ? ex.cells.length === 0 : sx.keys.length === 0;
   showHint();
@@ -229,8 +250,9 @@ startBtn.addEventListener('click', async () => {
     // The weak-key model continues from the cached summary (A8): no history read.
     const model = createKeyModel((await getSummary()).keys || []);
     startScales({ exercise: currentScaleExercise(), mode, pick, model,
+                  tempoAuto: autoActive(), tempo: tempoModel,
                   bpm: tempo.get(), misses, calib, calibOffset },
-                () => { showRunning(false); showSettings(); runSync(); });
+                () => { showRunning(false); loadTempo(); runSync(); });
   } else {
     startRound(mode, calib, onRoundEnd, { length, pick, exercise: currentExercise() });
   }
@@ -243,12 +265,20 @@ stopBtn.addEventListener('click', () => {
 // --- Game switch and scale settings (E1) ---
 $$('button[data-game]').forEach(b => b.addEventListener('click', () => {
   game = b.dataset.game; save(GAME_KEY, game); showSettings();
+  if (game === 'scales') loadTempo();
   showTab(currentTab === 'horn' ? 'play' : currentTab);
 }));
 $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Number(b.dataset.misses); save(MISSES_KEY, String(misses)); showSettings(); }));
-// B3: tempo control, remembered.
-const tempo = mountTempo($('#tempo'), { value: Number(load(BPM_KEY)) || 80, note: '♪ eighths',
-                                        onChange: v => save(BPM_KEY, String(v)) });
+// B3: tempo control, remembered (the Fixed tempo).
+let fixedBpm = Number(load(BPM_KEY)) || 80;
+const tempo = mountTempo($('#tempo'), { value: fixedBpm,
+                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); } });
+// Auto | Fixed: one small toggle under the bpm (a full-width row pushed the
+// exercise card off the pane at 390 px). Notes are always eighths.
+$('#tempo .bpm').insertAdjacentHTML('beforeend', '<button id="tempoMode" class="tmode"></button>');
+$('#tempoMode').addEventListener('click', () => {
+  tempoAuto = !tempoAuto; save(TEMPO_AUTO_KEY, tempoAuto ? 'auto' : 'fixed'); showSettings();
+});
 
 $$('[data-mode], [data-smode]').forEach(b => b.addEventListener('click', () => {
   mode = b.dataset.mode || b.dataset.smode; save(MODE_KEY, mode); showSettings();
@@ -346,13 +376,13 @@ function selectScaleExercise(id) {
   showScaleLevels();
 }
 
-// One block per scale, its levels as pills (number · pattern · stars), then
-// the custom pick — the same shape as the degree ladder.
+// One block per scale, its levels as pills (number · pattern · tempo pips),
+// then the custom pick — the same shape as the degree ladder. A pip per
+// tier of the tempo scale (60 72 84 96 112 126) the clean best has reached.
 async function showScaleLevels() {
-  const { stars } = await getSummary();
-  const starText = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  await loadTempo();                 // the cached summary may have been rebuilt
   const pill = l => `<button class="lvl${l.id === scaleExerciseId ? ' active' : ''}" data-slevel="${l.id}">` +
-    `<b>${l.num}</b><span>${l.name}</span><i>${starText(stars[l.id] || 0)}</i></button>`;
+    `<b>${l.num}</b><span>${l.name}</span><i>${pipText(tempoModel.best(tempoKey(l.scale, l.pattern)))}</i></button>`;
   let h = '';
   for (const sc of SCALE_ORDER) {
     h += `<div class="tier">${SCALES[sc].name}</div><div class="lrow">` +
@@ -370,7 +400,8 @@ async function showScaleLevels() {
   $('#scaleLevelInfo').innerHTML = '<b></b><span class="degs keys"></span><span class="lvkeys"></span>';
   $('#scaleLevelInfo b').textContent = ex.num ? `${ex.num} · ${ex.title} · ${ex.name}` : `${ex.title} · ${ex.name} · Custom`;
   $('#scaleLevelInfo .degs').textContent = PATTERNS[ex.pattern].shape;
-  $('#scaleLevelInfo .lvkeys').textContent = ex.keysLabel;
+  const best = tempoModel.best(tempoKey(ex.scale, ex.pattern));
+  $('#scaleLevelInfo .lvkeys').textContent = `${ex.keysLabel} · clean best ${best ? `${best} bpm` : '–'}`;
   showScaleCustom();
 }
 
@@ -427,6 +458,10 @@ function drawRangeMap() {
   $('#sstatToday').textContent = runs.filter(e => e.t >= dayStart).length;
   $('#sstatHit').textContent = notes.length ? `${Math.round(100 * hit / notes.length)}%` : '–';
   $('#sstatClean').textContent = last.length ? `${clean} / ${last.length}` : '–';
+  const tk = tempoKey(l.scale, l.pattern);
+  const working = tempoModel.working(tk), best = tempoModel.best(tk);
+  $('#sstatWorking').textContent = working === null ? '–' : `${working} bpm`;
+  $('#sstatBest').textContent = best ? `${best} bpm` : '–';
 }
 // The picker lists every level: "S3 · Major · Thirds up · ascending".
 $('#mapLevel').innerHTML = SCALE_LEVELS.map(l => `<option value="${l.id}">${l.num} · ${l.title} · ${l.name}</option>`).join('');
@@ -447,6 +482,7 @@ async function showScaleStats() {
     mapLevel = (SCALE_LEVELS.find(l => l.scale === ex.scale && l.pattern === ex.pattern) || SCALE_LEVELS[0]).id;
   }
   scaleEvents = (await allEvents()).filter(e => e.game === 'scales' && e.expected);
+  await loadTempo();
   drawRangeMap();
 }
 
@@ -501,7 +537,8 @@ async function runSync() {
   showSyncStatus(res);
   // A fresh install got its settings back: reload so they take effect.
   if (res.settingsRestored) location.reload();
-  else if (res.added && !$('#view-stats').hidden) showStats();
+  if (res.added && game === 'scales') loadTempo();     // runs from elsewhere move the staircases
+  if (res.added && !$('#view-stats').hidden) showStats();
   else if (res.added && !$('#view-scale-stats').hidden) showScaleStats();
 }
 
@@ -547,6 +584,7 @@ showHint();
 showSettings();
 showTab('play');   // applies the stage for the remembered game
 showSyncStatus();
+if (game === 'scales') loadTempo();   // the auto-tempo staircases, from the cached summary
 connectMidi(onNote, onStatus);
 runSync();   // pull anything new, push anything pending (A9)
 

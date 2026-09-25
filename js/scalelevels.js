@@ -1,5 +1,6 @@
-// Scale levels (E1 step 2): the ladder, custom picks, the weak-key model
-// and stars — the scale game's own versions of levels.js / weakspots.js.
+// Scale levels (E1 step 2): the ladder, custom picks and the weak-key model
+// — the scale game's own versions of levels.js / weakspots.js (its marks
+// come from auto tempo, scaletempo.js).
 // Kept separate on purpose (CLAUDE.md: shared logic is extracted when a
 // second game needs it, not before): a scale run is judged per note across
 // a range, not as one answer, so almost none of the degree formulas apply.
@@ -138,32 +139,5 @@ export function pickScaleKey(model, { scale, pattern, keys, pick, prev }, rand =
   return pool[pool.length - 1];
 }
 
-// --- Stars ---
-// Per exercise, from its best practice session of ≥ MIN_RUNS runs: the
-// share of all expected notes hit across the session. ★ ≥ 70 % · ★★ ≥ 85 %
-// · ★★★ ≥ 95 % with no run stopped for misses. Opening bids (2026-09-25).
-export const MIN_RUNS = 5;
-export function sessionStars(runs, hits, total, stopped) {
-  if (runs < MIN_RUNS || !total) return 0;
-  const rate = hits / total;
-  return rate >= 0.95 && !stopped ? 3 : rate >= 0.85 ? 2 : rate >= 0.7 ? 1 : 0;
-}
-
-// Stars per scale exercise id from events (the summary rebuild).
-export function scaleStarsByExercise(events) {
-  const sessions = new Map();   // round → {exercise, runs, hits, total, stopped}
-  for (const e of events) {
-    if (e.game !== 'scales' || e.mode !== 'practice' || !e.exercise || !e.expected) continue;
-    const s = sessions.get(e.round) || { exercise: e.exercise, runs: 0, hits: 0, total: 0, stopped: 0 };
-    s.runs++;
-    s.hits += e.expected.filter(x => x[3] === 'hit').length;
-    s.total += e.expected.length;
-    if (e.stopped) s.stopped++;
-    sessions.set(e.round, s);
-  }
-  const best = new Map();
-  for (const s of sessions.values()) {
-    best.set(s.exercise, Math.max(best.get(s.exercise) || 0, sessionStars(s.runs, s.hits, s.total, s.stopped)));
-  }
-  return best;
-}
+// Scale levels have no hit-rate stars: their marks come from auto tempo
+// (scaletempo.js — pips per tier of clean best).

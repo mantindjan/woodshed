@@ -7,7 +7,9 @@
 // notes per click at the set bpm — from the start note to the edge of the
 // range, low B♭ / high F♯) → summary → next run, in the next key of the
 // exercise (drawn toward weak keys or evenly, scalelevels.js) … until Stop.
-// A Start-to-Stop session is one `round` in the events; it earns stars.
+// A Start-to-Stop session is one `round` in the events. On Auto tempo
+// (practice) each run's outcome moves the tempo for the next (scaletempo.js);
+// the tempo is always on screen, big, with an arrow when it just moved.
 //
 // Judging: a note is HIT if it's the right written pitch (octave included)
 // within the window around its time — ±150 ms, narrowed at fast tempos so
@@ -38,8 +40,9 @@
 import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
-import { pickScaleKey, sessionStars, PATTERNS } from './scalelevels.js';
-import { saveKeys, saveStars } from './summary.js';
+import { pickScaleKey, PATTERNS } from './scalelevels.js';
+import { tempoKey } from './scaletempo.js';
+import { saveKeys, saveTempo } from './summary.js';
 
 const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
 const COUNT_IN = 4;            // clicks before the first note
@@ -54,7 +57,8 @@ const MIN_RUN = 4;             // learn suggests a start with at least this many
 const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // v3: `pattern` replaces `direction`. v4: learn runs add `hint` (and, that
 // evening only, `waits` from the dropped lane-hold learn). v5: learn = sheet.
-const SCHEMA_VERSION = 5;
+// v6: `tempoAuto` (was the bpm set by the auto-tempo staircase).
+const SCHEMA_VERSION = 6;
 
 const $ = sel => document.querySelector(sel);
 
@@ -90,16 +94,15 @@ let wakeLock = null;
 export const scalesRunning = () => s !== null;
 
 // opts: {exercise: {id, scale, pattern, keys}, mode: 'learn'|'practice',
-// pick: 'weak'|'random', model (the weak-key model, from the
-// cached summary), bpm, misses, calib, calibOffset}. onEnd() when stopped.
+// pick: 'weak'|'random', model (the weak-key model, from the cached
+// summary), tempoAuto (practice on Auto tempo), tempo (the staircase model),
+// bpm (the first run's), misses, calib, calibOffset}. onEnd() when stopped.
 export function startScales(opts, onEnd) {
   initAudio();
   requestPersistence();
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
   s = { ...opts, scale: opts.exercise.scale, pattern: opts.exercise.pattern, keys: opts.exercise.keys, onEnd,
-        session: Date.now().toString(36), run: null, timers: [],
-        // Session tally for stars: runs, notes hit / expected, runs stopped.
-        tally: { runs: 0, hits: 0, total: 0, stopped: 0 } };
+        session: Date.now().toString(36), run: null, timers: [], moved: 0 };
   nextRun();
   resize();
   raf = requestAnimationFrame(frame);
@@ -107,7 +110,7 @@ export function startScales(opts, onEnd) {
 
 export function stopScales() {
   if (!s) return;
-  const { onEnd, tally, mode, exercise } = s;
+  const { onEnd } = s;
   s.timers.forEach(clearTimeout);
   cancelAnimationFrame(raf);
   stopAll();
@@ -116,8 +119,6 @@ export function stopScales() {
   s = null;
   message('');
   draw(null);
-  // Stars come from practice sessions only (learn never stops a run).
-  if (mode === 'practice') saveStars(exercise.id, sessionStars(tally.runs, tally.hits, tally.total, tally.stopped));
   onEnd();
 }
 
@@ -146,7 +147,11 @@ function topBar() {
   const r = s?.run;
   $('#scaleKey').textContent = r ? `${NOTES[r.key]} ${SCALES[s.scale].name.toLowerCase()}` : '';
   $('#scalePattern').textContent = r ? PATTERNS[s.pattern].chip.toLowerCase() : '';
-  $('#scaleInfo').textContent = r ? `${s.bpm} bpm · misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
+  // Tempo big on the right (boss: "make sure the tempo is printed on
+  // screen"); ↑/↓ when Auto just moved it, "auto" while it's in charge.
+  $('#scaleBpm').textContent = r ? s.bpm : '';
+  $('#scaleBpmNote').textContent = !r ? '' : `${s.moved > 0 ? '↑ ' : s.moved < 0 ? '↓ ' : ''}bpm${s.tempoAuto ? ' auto' : ''}`;
+  $('#scaleInfo').textContent = r ? `misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
 }
 
 function message(html) {
@@ -273,6 +278,7 @@ function endRun(stopped) {
     keyWritten: r.key,
     pattern: s.pattern,               // scalelevels.js PATTERNS id
     bpm: s.bpm,
+    tempoAuto: !!s.tempoAuto,         // bpm set by the auto-tempo staircase (scaletempo.js)
     perBeat: PER_BEAT,                // scale notes per click (2 = eighths)
     allowedMisses: s.misses,
     calib: s.calib,
@@ -289,10 +295,18 @@ function endRun(stopped) {
   // The key model adapts within the session; the summary keeps it for next time.
   s.model.add(event);
   saveKeys(s.model);
-  s.tally.runs++;
-  s.tally.hits += hits.length;
-  s.tally.total += r.expected.length;
-  if (stopped) s.tally.stopped++;
+  // Auto tempo: this run moves the tempo for the next.
+  let tempoNote = '';
+  if (s.tempoAuto) {
+    s.tempo.add(event);
+    saveTempo(s.tempo);
+    const key = tempoKey(s.scale, s.pattern);
+    const next = s.tempo.next(key);
+    s.moved = Math.sign(next - s.bpm);
+    tempoNote = s.moved > 0 ? `<br>Tempo up → <b>${next}</b>` : s.moved < 0 ? `<br>Tempo down → <b>${next}</b>`
+      : `<br><small>clean ${s.tempo.streak(key)} of 3 at ${next}</small>`;
+    s.bpm = next;
+  }
   const lateness = mean === null ? '' : mean > 15 ? ` · ${mean} ms late on average` : mean < -15 ? ` · ${-mean} ms early on average` : ' · right on the beat';
   if (s.mode === 'learn') {
     // The tally sits under the sheet, which stays up to be read.
@@ -301,9 +315,9 @@ function endRun(stopped) {
     message(`<b>${hits.length} / ${r.expected.length} right</b> · ${onBeat} on the beat${drift}`);
     $('#scaleMsg').classList.add('tally');
   } else {
-    message(stopped
+    message((stopped
       ? `<b>${r.misses} misses — start again.</b> ${hits.length} of ${r.expected.length} hit.`
-      : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`);
+      : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`) + tempoNote);
   }
   s.timers.push(setTimeout(() => { if (s) nextRun(); }, s.mode === 'learn' ? SHEET_SUMMARY_MS : SUMMARY_MS));
 }

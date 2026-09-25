@@ -13,12 +13,14 @@
 import { allEvents } from './events.js';
 import { createModel } from './weakspots.js';
 import { starsByExercise } from './levels.js';
-import { createKeyModel, scaleStarsByExercise } from './scalelevels.js';
+import { createKeyModel } from './scalelevels.js';
+import { createTempoModel } from './scaletempo.js';
 
 const KEY = 'woodshed.summary';
 // Bump when weakspots.js / scalelevels.js scoring or star rules change.
 // v2: adds `keys` (the scales' weak-key model) and scale stars (E1 step 2).
-const VERSION = 2;
+// v3: scale stars dropped for `tempo` (the auto-tempo staircases, E4).
+const VERSION = 3;
 
 function read() {
   try {
@@ -32,8 +34,8 @@ function write(s) {
 }
 
 // {weak: [[key, {n, recent}], …] (degrees), keys: [[key, {n, recent}], …]
-// (scales), stars: {exerciseId: 0–3} for both games' exercises — ids never
-// clash (levels.js vs scalelevels.js)}, rebuilding it from events first if
+// (scales), tempo: [[scale|pattern, staircase], …] (scales, scaletempo.js),
+// stars: {exerciseId: 0–3} (degrees)}, rebuilding it from events first if
 // needed.
 export async function getSummary() {
   return read() || rebuildSummary();
@@ -43,15 +45,15 @@ export async function rebuildSummary() {
   const events = await allEvents();
   const model = createModel();
   const keys = createKeyModel();
-  events.forEach(e => { model.add(e); keys.add(e); });
+  const tempo = createTempoModel();
+  events.forEach(e => { model.add(e); keys.add(e); tempo.add(e); });
   const old = (() => {
     try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; }
   })();
   const stars = {};
   for (const [id, n] of starsByExercise(events)) stars[id] = n;
-  for (const [id, n] of scaleStarsByExercise(events)) stars[id] = n;
   for (const [id, n] of Object.entries(old.stars || {})) stars[id] = Math.max(stars[id] || 0, n);
-  const s = { v: VERSION, weak: [...model.stats], keys: [...keys.stats], stars };
+  const s = { v: VERSION, weak: [...model.stats], keys: [...keys.stats], tempo: [...tempo.stats], stars };
   write(s);
   return s;
 }
@@ -68,7 +70,13 @@ export function saveKeys(model) {
   if (s) write({ ...s, keys: [...model.stats] });
 }
 
-// After a practice round / session: keep the best stars per exercise.
+// After every scale run on Auto tempo: persist the staircases.
+export function saveTempo(model) {
+  const s = read();
+  if (s) write({ ...s, tempo: [...model.stats] });
+}
+
+// After a practice round: keep the best stars per exercise.
 export function saveStars(exerciseId, stars) {
   const s = read();
   if (s && stars > (s.stars[exerciseId] || 0)) write({ ...s, stars: { ...s.stars, [exerciseId]: stars } });
