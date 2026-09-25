@@ -54,8 +54,10 @@ const cellKey = (quality, degree) => `${quality}|${degree}`;
 const rootKey = (quality, degree, root) => `${quality}|${degree}|${root}`;
 
 // Running stats per cell and per cell+root. Feed events oldest first.
-export function createModel() {
-  const stats = new Map();   // key → {n, recent}
+// `initial`: saved stats ([[key, {n, recent}], …]) to continue from — the
+// cached summary (A8), so a round starts without reading history.
+export function createModel(initial = []) {
+  const stats = new Map(initial.map(([k, v]) => [k, { ...v }]));   // key → {n, recent}
 
   function bump(key, score) {
     const st = stats.get(key);

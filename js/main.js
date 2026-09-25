@@ -12,7 +12,9 @@ import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
 import { downloadBackup, loadBackup, countEvents } from './backup.js';
 import { allEvents } from './events.js';
-import { LEVELS, UNIT_TITLES, exercise as resolveExercise, customCells, matchLevel, setsOf, starsByExercise } from './levels.js';
+import { LEVELS, UNIT_TITLES, exercise as resolveExercise, customCells, matchLevel, setsOf } from './levels.js';
+import { getSummary } from './summary.js';
+import { sync, syncConfig, setSyncConfig, syncState } from './sync.js';
 import { renderHeatmap } from './heatmap.js';
 
 // Settings (localStorage, all carried by the backup file).
@@ -145,6 +147,7 @@ function showRunning(running) {
 
 function onRoundEnd(result) {
   showRunning(false);
+  runSync();   // push this round's answers (A9); quiet if not set up
   showSettings();
   $('#chord').textContent = '';
   $('#degree').textContent = '';
@@ -207,10 +210,10 @@ function selectExercise(id) {
 // The ladder: one block per unit, one row per quality, the levels as flat
 // pills along it (degrees + stars), numbered in ladder order.
 async function showLevels() {
-  const stars = starsByExercise(await allEvents());
+  const { stars } = await getSummary();   // cached (A8): no history read
   const starText = n => '★'.repeat(n) + '☆'.repeat(3 - n);
   const pill = l => `<button class="lvl${l.id === exerciseId ? ' active' : ''}" data-level="${l.id}">` +
-    `<b>${l.num}</b><span>${l.degrees}</span><i>${starText(stars.get(l.id) || 0)}</i></button>`;
+    `<b>${l.num}</b><span>${l.degrees}</span><i>${starText(stars[l.id] || 0)}</i></button>`;
   let h = '';
   for (const [unit, title] of UNIT_TITLES) {
     h += `<div class="tier">${title}</div>`;
@@ -290,6 +293,40 @@ async function showStats() {
   $('#statMedian').textContent = times.length ? `${(times[times.length >> 1] / 1000).toFixed(2)} s` : '–';
 }
 
+// --- ⚙ Sync (A9) ---
+function showSyncStatus(res) {
+  const el = $('#syncStatus');
+  const st = syncState();
+  const { repo } = syncConfig();
+  if (!repo) {
+    el.textContent = 'Off — add a private repo and a token to back up automatically.';
+    el.className = 'small-note';
+    return;
+  }
+  const bad = res ? !res.ok : !!st.error;
+  const when = st.last ? new Date(st.last).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'never';
+  el.textContent = bad ? (res?.message || st.error) : `Synced ${when}${res && (res.added || res.uploaded)
+    ? ` · ${res.uploaded} file${res.uploaded === 1 ? '' : 's'} up, ${res.added} answer${res.added === 1 ? '' : 's'} down` : ''}.`;
+  el.className = bad ? 'small-note bad' : 'small-note';
+}
+
+async function runSync() {
+  const res = await sync();
+  if (res.off) return;
+  showSyncStatus(res);
+  // A fresh install got its settings back: reload so they take effect.
+  if (res.settingsRestored) location.reload();
+  else if (res.added && !$('#view-stats').hidden) showStats();
+}
+
+$('#syncRepo').value = syncConfig().repo;
+$('#syncToken').value = syncConfig().token;
+$('#syncSave').addEventListener('click', () => {
+  setSyncConfig($('#syncRepo').value, $('#syncToken').value);
+  $('#syncStatus').textContent = 'Syncing…';
+  runSync();
+});
+
 // --- ⚙ Backup (A7) ---
 const menuMsg = $('#menuMsg');
 function say(text, bad = false) {
@@ -322,7 +359,9 @@ $('#loadBackup').addEventListener('change', async e => {
 
 showHint();
 showSettings();
+showSyncStatus();
 connectMidi(onNote, onStatus);
+runSync();   // pull anything new, push anything pending (A9)
 
 // Offline support and fresh files after deploys; see sw.js.
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');

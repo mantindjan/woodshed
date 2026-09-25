@@ -95,10 +95,20 @@ export function exercise(id, custom, describe) {
            name: `${l.num} · ${l.name} · ${l.degrees}`, cells: l.cells };
 }
 
-// Stars per exercise id from the event log: the best PRACTICE round of at
-// least MIN_ROUND questions. ★ ≥ 70% right first time, ★★ ≥ 85%,
+// Stars for one practice round: ★ ≥ 70% right first time, ★★ ≥ 85%,
 // ★★★ ≥ 95% with a median right answer under 1.5 s (the "good" edge).
-const MIN_ROUND = 10;
+// Rounds shorter than MIN_ROUND don't earn stars.
+export const MIN_ROUND = 10;
+export function roundStars(n, ok, times) {
+  if (n < MIN_ROUND) return 0;
+  const acc = ok / n;
+  const t = [...times].sort((a, b) => a - b);
+  const median = t.length ? t[t.length >> 1] : Infinity;
+  return acc >= 0.95 && median < 1500 ? 3 : acc >= 0.85 ? 2 : acc >= 0.7 ? 1 : 0;
+}
+
+// Stars per exercise id from events: the best practice round on each.
+// Used to rebuild the cached summary; day to day, stars come from it.
 export function starsByExercise(events) {
   const rounds = new Map();   // round id → {exercise, n, ok, times}
   for (const e of events) {
@@ -110,12 +120,7 @@ export function starsByExercise(events) {
   }
   const best = new Map();
   for (const r of rounds.values()) {
-    if (r.n < MIN_ROUND) continue;
-    const acc = r.ok / r.n;
-    const t = [...r.times].sort((a, b) => a - b);
-    const median = t.length ? t[t.length >> 1] : Infinity;
-    const stars = acc >= 0.95 && median < 1500 ? 3 : acc >= 0.85 ? 2 : acc >= 0.7 ? 1 : 0;
-    best.set(r.exercise, Math.max(best.get(r.exercise) || 0, stars));
+    best.set(r.exercise, Math.max(best.get(r.exercise) || 0, roundStars(r.n, r.ok, r.times)));
   }
   return best;
 }

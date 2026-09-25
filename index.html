@@ -268,6 +268,9 @@
   #note { font: 120px/1 'RealBook', Georgia, serif; color: var(--brass); min-height: 1em; }
   #raw { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; min-height: 1.4em; }
   .note-help { font-size: 12px; color: var(--dim); max-width: 340px; }
+  .pane input { font: inherit; font-size: 13px; color: var(--ink); background: #181818;
+                border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
+  #syncStatus.bad { color: #ff9b9b; }
   #menuMsg { font-size: 12px; }
   #menuMsg:empty { display: none; }
   #menuMsg.bad { color: #ff9b9b; }
@@ -322,7 +325,7 @@
     <!-- Horn check. -->
     <div class="view" id="view-horn" hidden>
       <div class="label">You played</div>
-      <div id="note">—</div>
+      <div id="note"></div>
       <div id="raw"></div>
       <p class="note-help">Blow any note to check the horn. Calibrate by playing a written C;
         redo it after changing the horn's voice.</p>
@@ -385,6 +388,11 @@
     </div>
 
     <div class="pane" data-pane="horn" hidden>
+      <div class="label">Sync · GitHub</div>
+      <input id="syncRepo" placeholder="you/woodshed-data" autocomplete="off" spellcheck="false">
+      <input id="syncToken" type="password" placeholder="token (github_pat_…)" autocomplete="off">
+      <button id="syncSave">Save &amp; sync</button>
+      <div id="syncStatus" class="small-note"></div>
       <div class="label">Backup</div>
       <div id="menuCount" class="small-note">…</div>
       <button id="saveBackup">Save backup</button>

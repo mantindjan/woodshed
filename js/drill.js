@@ -12,7 +12,9 @@
 import { NOTES, DEG_SEMI, degreeLabel, pc, writtenPc, concertPc } from './music.js';
 import { chordHTML } from './notation.js';
 import { initAudio, playChord, playPing, stopAll } from './audio.js';
-import { addEvent, allEvents, requestPersistence } from './events.js';
+import { addEvent, requestPersistence } from './events.js';
+import { getSummary, saveWeak, saveStars } from './summary.js';
+import { roundStars } from './levels.js';
 import { createModel, pickWeighted, FAST_MS, GOOD_MS, SLOW_MS } from './weakspots.js';
 import { points, comboMult } from './scoring.js';
 
@@ -85,16 +87,15 @@ export async function startRound(mode, calib, onEnd, { length = 20, pick = 'weak
     index: 0, answered: 0, firstTry: 0, q: null,
     score: 0, streak: 0, bestStreak: 0,   // D5: practice only
     times: [],        // ms from chord to correct note, per answered question
-    model: null,      // weak-spot model, built from the whole event log
+    model: null,      // weak-spot model, from the cached summary (A8)
+    useWeak: pick === 'weak',   // Random still updates the model, just doesn't pick by it
     accepting: false, timer: null,
   };
   s = round;
-  if (pick === 'weak') {
-    const model = createModel();
-    for (const e of await allEvents()) model.add(e);
-    if (s !== round) return;          // stopped while loading
-    round.model = model;
-  }
+  // The cached summary, not the whole history: instant however long it is.
+  const { weak } = await getSummary();
+  if (s !== round) return;            // stopped while loading
+  round.model = createModel(weak);
   showScore();
   ask();
 }
@@ -109,7 +110,7 @@ function showScore() {
 
 function ask() {
   clearTimeout(s.revealTimer);
-  s.q = pickQuestion(s.q, s.model, s.exercise.cells);
+  s.q = pickQuestion(s.q, s.useWeak ? s.model : null, s.exercise.cells);
   s.index++;
   const { root, quality, degree } = s.q;
   $('#progress').textContent = `${s.index} / ${s.length || '∞'}`;
@@ -303,13 +304,21 @@ function finish(ok, pauseMs) {
   };
   addEvent(event);
   s.answered++;
-  // The weak-spot model learns within the round too.
-  if (s.model) s.model.add(event);
+  // The weak-spot model learns within the round too, and the cached
+  // summary keeps up so the next round starts from here.
+  s.model.add(event);
+  saveWeak(s.model);
 
   s.timer = setTimeout(s.length && s.index >= s.length ? endRound : ask, pauseMs);
 }
 
+// A practice round of MIN_ROUND+ answers earns stars for its exercise.
+function recordStars() {
+  if (s.mode === 'practice') saveStars(s.exercise.id, roundStars(s.answered, s.firstTry, s.times));
+}
+
 function endRound() {
+  recordStars();
   const result = summary();
   const { onEnd } = s;
   cleanup();
@@ -320,6 +329,7 @@ function endRound() {
 // saved; a summary is shown if at least one was answered.
 export function stopRound() {
   if (!s) return;
+  recordStars();
   const result = s.answered ? summary() : null;
   const { onEnd } = s;
   cleanup();

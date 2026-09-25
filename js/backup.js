@@ -8,11 +8,14 @@
 // them. A file that isn't a Woodshed backup changes nothing.
 
 import { addEvents, allEvents } from './events.js';
+import { invalidateSummary } from './summary.js';
 
 export const FORMAT = 1;
 // localStorage keys carried in the backup (see main.js).
+// The sync repo address travels (harmless alone); the sync TOKEN never does
+// — backup files sit in Downloads/Drive.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
-                  'woodshed.exercise', 'woodshed.custom'];
+                  'woodshed.exercise', 'woodshed.custom', 'woodshed.syncRepo'];
 
 // Identity of an event across devices: one question = one appearance time
 // within one round. IndexedDB's own ids differ per device, so aren't used.
@@ -65,7 +68,10 @@ export async function loadBackup(text) {
     const key = eventKey(e);
     if (!have.has(key)) { fresh.push(e); have.add(key); }
   }
-  if (fresh.length) await addEvents(fresh);
+  if (fresh.length) {
+    await addEvents(fresh);
+    invalidateSummary();   // the cache doesn't cover them yet
+  }
 
   for (const [k, v] of Object.entries(data.settings || {})) {
     if (SETTINGS.includes(k)) {
