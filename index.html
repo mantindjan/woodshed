@@ -191,8 +191,14 @@
   .chips button { padding: 4px 9px; font-size: 13px; border-radius: 14px; color: var(--dim); }
   .chips button.active { border-color: var(--brass); }
 
-  /* Game switch; each game's controls show only when it's selected. */
-  .seg.game button { font-weight: 600; }
+  /* Game switch + ⚙ on top; each game's controls show only when selected. */
+  .topbar { display: flex; gap: 6px; }
+  .topbar .seg { flex: 1; }
+  .seg.game button { font-weight: 600; padding: 6px 0; }
+  .gear { flex: none; padding: 4px 11px; font-size: 16px; color: var(--dim); }
+  .gear.active { border-color: var(--brass); color: var(--brass); }
+  .view.soon { justify-content: center; align-items: center; text-align: center; color: var(--dim); gap: 4px; }
+  .view.soon p { max-width: 380px; font-size: 14px; margin: 0; }
   .g-degrees, .g-scales { display: flex; flex-direction: column; gap: 9px; }
   .g-degrees > *, .g-scales > * { flex-shrink: 0; }
   body[data-game="scales"] .g-degrees, body[data-game="degrees"] .g-scales { display: none; }
@@ -211,6 +217,7 @@
   .tempo .bpm { grid-row: span 2; text-align: center; min-width: 58px; }
   .tempo .bpm-val { display: block; font: 800 24px/1 system-ui, sans-serif; color: #ffe2a8; font-variant-numeric: tabular-nums; }
   .tempo .bpm small { font-size: 10px; color: var(--dim); }
+  .tempo .bpm em { display: block; font-style: normal; font-size: 10px; color: var(--dim); }
   .scrub { position: relative; height: 26px; border-radius: 7px; background: #181818; border: 1px solid var(--line);
            overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none; }
   .scrub::after { content: ''; position: absolute; left: 50%; top: 5px; bottom: 5px; width: 2px;
@@ -331,7 +338,7 @@
 <main>
   <section class="stage">
     <!-- Play: the question. -->
-    <div class="view" id="view-play">
+    <div class="view" id="view-play" data-view="play" data-for="degrees">
       <div class="stage-top">
         <span><span id="exerciseName"></span> <b id="stageDegrees" class="degs"></b></span>
         <span id="progress"></span>
@@ -354,7 +361,7 @@
       </div>
     </div>
     <!-- Scales (E1): the lane. -->
-    <div class="view" id="view-scales" hidden>
+    <div class="view" id="view-scales" data-view="play" data-for="scales" hidden>
       <div class="stage-top">
         <span id="scaleTitle"></span><span></span><span id="scaleInfo" class="scale-info"></span>
       </div>
@@ -364,14 +371,21 @@
       </div>
     </div>
     <!-- Levels: the ladder (D6). -->
-    <div class="view" id="view-levels" hidden><div id="ladder"></div></div>
+    <div class="view" id="view-levels" data-view="levels" data-for="degrees" hidden><div id="ladder"></div></div>
+    <!-- Scales levels and stats: E1 steps 2 and 3. -->
+    <div class="view soon" id="view-scale-levels" data-view="levels" data-for="scales" hidden>
+      <h2>Scale levels</h2><p>Coming next (E1 step 2): levels per scale and key area, keys weighted toward your weak ones, and a learn mode.</p>
+    </div>
+    <div class="view soon" id="view-scale-stats" data-view="stats" data-for="scales" hidden>
+      <h2>Scale stats</h2><p>Coming (E1 step 3): per scale and key, how clean each part of the range is — low B♭ to high F♯. Every run is already being recorded for it.</p>
+    </div>
     <!-- Stats: the heatmap (D4). -->
-    <div class="view" id="view-stats" hidden>
+    <div class="view" id="view-stats" data-view="stats" data-for="degrees" hidden>
       <h2>Recent answers · quality × degree</h2>
       <div id="heatmap"></div>
     </div>
     <!-- Horn check. -->
-    <div class="view" id="view-horn" hidden>
+    <div class="view" id="view-horn" data-view="horn" hidden>
       <div class="label">You played</div>
       <div id="note"></div>
       <div id="raw"></div>
@@ -381,18 +395,21 @@
   </section>
 
   <section class="panel">
-    <nav class="tabs">
-      <button data-tab="play" class="active">Play</button>
-      <button data-tab="levels">Levels</button>
-      <button data-tab="stats">Stats</button>
-      <button data-tab="horn" aria-label="Horn and backup">⚙</button>
-    </nav>
-
-    <div class="pane" data-pane="play">
+    <!-- The game first; its own Play · Levels · Stats under it. ⚙ is shared. -->
+    <div class="topbar">
       <div class="seg game">
         <button data-game="degrees">Degrees</button>
         <button data-game="scales">Scales</button>
       </div>
+      <button class="gear" data-tab="horn" aria-label="Horn, sync and backup">⚙</button>
+    </div>
+    <nav class="tabs">
+      <button data-tab="play" class="active">Play</button>
+      <button data-tab="levels">Levels</button>
+      <button data-tab="stats">Stats</button>
+    </nav>
+
+    <div class="pane" data-pane="play">
       <div class="g-scales">
         <div class="row2">
           <div class="seg"><button data-scale="major">Major</button><button data-scale="penta">Penta</button></div>
@@ -426,7 +443,7 @@
       <div id="hint"></div>
     </div>
 
-    <div class="pane" data-pane="levels" hidden>
+    <div class="pane" data-pane="levels" data-for="degrees" hidden>
       <div id="levelInfo"></div>
       <div class="label">Custom</div>
       <div class="chips" id="customQualities"></div>
@@ -435,7 +452,13 @@
       <button id="playLevel">Play this ›</button>
     </div>
 
-    <div class="pane" data-pane="stats" hidden>
+    <div class="pane" data-pane="levels" data-for="scales" hidden>
+      <div class="small-note">Scale levels aren't built yet — pick scale, key and direction on Play.</div>
+    </div>
+    <div class="pane" data-pane="stats" data-for="scales" hidden>
+      <div class="small-note">Scale stats aren't built yet — every run is recorded for them.</div>
+    </div>
+    <div class="pane" data-pane="stats" data-for="degrees" hidden>
       <div class="stat">Answers <b id="statAnswers">0</b></div>
       <div class="stat">Today <b id="statToday">0</b></div>
       <div class="stat">Right first time <b id="statAcc">–</b></div>

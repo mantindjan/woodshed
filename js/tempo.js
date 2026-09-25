@@ -8,10 +8,11 @@ const TICK_PX = 14;      // spacing of the strip's tick marks
 
 // Build the control inside `el`. onChange(bpm) fires on every change.
 // Returns {get, set}.
-export function mountTempo(el, { min = 30, max = 300, value = 80, onChange = () => {} } = {}) {
+// `note`: optional small line under the bpm (e.g. "♪ eighths").
+export function mountTempo(el, { min = 30, max = 300, value = 80, note = '', onChange = () => {} } = {}) {
   el.classList.add('tempo');
   el.innerHTML =
-    '<div class="bpm"><b class="bpm-val"></b><small> bpm</small></div>' +
+    `<div class="bpm"><b class="bpm-val"></b><small> bpm</small>${note ? `<em>${note}</em>` : ''}</div>` +
     '<div class="scrub"><div class="scrubticks"></div></div>' +
     '<div class="nudge">' +
     ['-5', '-1', '+1', '+5'].map(n => `<button data-n="${n}">${n.replace('-', '−')}</button>`).join('') +

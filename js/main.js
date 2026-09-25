@@ -80,19 +80,23 @@ let custom = loadJSON(CUSTOM_KEY, { qualities: ['maj7'], degrees: ['3', '7'] });
 const currentExercise = () => resolveExercise(exerciseId, custom, describe);
 
 // --- Tabs: each selects a pane (right) and a view (left stage). ---
-// Play's view depends on the game: the question stage or the scale lane.
-const viewFor = tab => (tab === 'play' ? (game === 'scales' ? 'scales' : 'play') : tab);
+// A view or pane shows when it's for this tab and (if game-specific) the
+// current game: each game has its own Play · Levels · Stats; ⚙ is shared.
+// data-for, not data-game: that attribute is reserved for the game buttons.
+const forGame = el => !el.dataset.for || el.dataset.for === game;
 let currentTab = 'play';
 function showTab(tab) {
   currentTab = tab;
-  $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  $$('.pane').forEach(p => { p.hidden = p.dataset.pane !== tab; });
-  $$('.view').forEach(v => { v.hidden = v.id !== `view-${viewFor(tab)}`; });
-  if (tab === 'levels') showLevels();
-  if (tab === 'stats') showStats();
+  $$('button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  $$('.pane').forEach(p => { p.hidden = !(p.dataset.pane === tab && forGame(p)); });
+  // Views use data-view, not data-tab: sharing the tab buttons' attribute
+  // made `[data-tab=…]` match hidden views too.
+  $$('.view').forEach(v => { v.hidden = !(v.dataset.view === tab && forGame(v)); });
+  if (game === 'degrees' && tab === 'levels') showLevels();
+  if (game === 'degrees' && tab === 'stats') showStats();
   if (tab === 'horn') showCount();
 }
-$$('.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$$('button[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
 // --- Play pane ---
 function showHint() {
@@ -104,7 +108,7 @@ function showHint() {
 
 function showSettings() {
   document.body.dataset.game = game;
-  $$('[data-game]').forEach(b => b.classList.toggle('active', b.dataset.game === game));
+  $$('button[data-game]').forEach(b => b.classList.toggle('active', b.dataset.game === game));
   $$('[data-scale]').forEach(b => b.classList.toggle('active', b.dataset.scale === scale));
   $$('[data-dir]').forEach(b => b.classList.toggle('active', b.dataset.dir === dir));
   $$('[data-key]').forEach(b => b.classList.toggle('active', b.dataset.key === String(keyChoice)));
@@ -174,7 +178,7 @@ function showRunning(running) {
   $('#idle').hidden = running;
   startBtn.hidden = running;
   stopBtn.hidden = !running;
-  $$('.pane[data-pane="play"] button, .tabs button').forEach(b => {
+  $$('.pane[data-pane="play"] button, button[data-tab], button[data-game]').forEach(b => {
     if (b !== stopBtn) b.disabled = running;
   });
 }
@@ -221,8 +225,9 @@ stopBtn.addEventListener('click', () => {
 });
 
 // --- Game switch and scale settings (E1) ---
-$$('[data-game]').forEach(b => b.addEventListener('click', () => {
-  game = b.dataset.game; save(GAME_KEY, game); showSettings(); showTab(currentTab);
+$$('button[data-game]').forEach(b => b.addEventListener('click', () => {
+  game = b.dataset.game; save(GAME_KEY, game); showSettings();
+  showTab(currentTab === 'horn' ? 'play' : currentTab);
 }));
 $('#keys').innerHTML = '<button data-key="random">Random</button>' +
   NOTES.map((n, k) => `<button data-key="${k}">${n}</button>`).join('');
@@ -234,7 +239,8 @@ $$('[data-scale]').forEach(b => b.addEventListener('click', () => { scale = b.da
 $$('[data-dir]').forEach(b => b.addEventListener('click', () => { dir = b.dataset.dir; save(DIR_KEY, dir); showSettings(); }));
 $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Number(b.dataset.misses); save(MISSES_KEY, String(misses)); showSettings(); }));
 // B3: tempo control, remembered.
-const tempo = mountTempo($('#tempo'), { value: Number(load(BPM_KEY)) || 80, onChange: v => save(BPM_KEY, String(v)) });
+const tempo = mountTempo($('#tempo'), { value: Number(load(BPM_KEY)) || 80, note: '♪ eighths',
+                                        onChange: v => save(BPM_KEY, String(v)) });
 
 $$('[data-mode]').forEach(b => b.addEventListener('click', () => {
   mode = b.dataset.mode; save(MODE_KEY, mode); showSettings();

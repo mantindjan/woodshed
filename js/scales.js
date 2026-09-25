@@ -2,13 +2,14 @@
 // range, in time, hitting each note as it reaches the "now" line.
 //
 // Flow per run: waiting (blow any note of the scale — that's where the run
-// starts) → count-in (4 clicks) → running (one scale note per beat, from
-// the start note to the edge of the range, low B♭ / high F♯) → summary →
-// next run (a new key if Random) … until Stop.
+// starts) → count-in (4 clicks) → running (scale notes in EIGHTHS — two per
+// click at the set bpm — from the start note to the edge of the range, low
+// B♭ / high F♯) → summary → next run (a new key if Random) … until Stop.
 //
 // Judging: a note is HIT if it's the right written pitch (octave included)
-// within ±WINDOW_MS of its beat; early/late is shown and graded but isn't
-// an error. A wrong pitch in the window, or nothing by the end of it, is a
+// within the window around its time — ±150 ms, narrowed at fast tempos so
+// neighbouring notes' windows never overlap; early/late is shown and graded
+// but isn't an error. A wrong pitch in the window, or nothing by the end of it, is a
 // MISS. After `misses` misses the run stops ("start again").
 //
 // Pitch: written = MIDI − calibOffset, where calibOffset = the MIDI note the
@@ -22,8 +23,9 @@ import { SCALES, SAX_RANGE, NOTES, pc } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 
-const WINDOW_MS = 150;         // hit window either side of the beat (as G2)
+const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
 const COUNT_IN = 4;            // clicks before the first note
+const PER_BEAT = 2;            // eighths: two scale notes per click (boss, 2026-09-25)
 const SUMMARY_MS = 1800;       // how long a run's summary shows before the next
 const SCHEMA_VERSION = 2;
 
@@ -109,7 +111,7 @@ export function scaleNote(midi) {
   for (const e of r.expected) {
     if (e.status !== 'pending') continue;
     const d = Math.abs(now - e.t);
-    if (d <= WINDOW_MS && (!best || d < Math.abs(now - best.t))) best = e;
+    if (d <= r.window && (!best || d < Math.abs(now - best.t))) best = e;
   }
   if (!best) return;                  // between beats: just recorded
   if (w === best.w) {
@@ -135,17 +137,21 @@ function startRun(w, now, midi) {
   const i = notes.indexOf(w);
   const run = s.direction === 'up' ? notes.slice(i) : notes.slice(0, i + 1).reverse();
   const beat = 60000 / s.bpm;
+  const step = beat / PER_BEAT;       // time between scale notes
   r.t0 = now;
-  r.beat = beat;
+  r.beat = step;                      // the lane moves one slot per note
+  r.window = Math.min(MAX_WINDOW_MS, step * 0.45);
   r.notes = [[midi, 0]];
-  // Count-in clicks on beats 1–4 after the start note; note i on beat 5 + i.
+  // Count-in clicks on beats 1–4 after the start note; note j at beat 5 +
+  // j/2. Clicks keep going on every beat through the run.
   r.expected = run.map((nw, j) => ({ w: nw, deg: degreeOf(s.scale, r.key, nw),
-                                      t: now + beat * (COUNT_IN + 1 + j), status: 'pending', off: null }));
-  for (let b = 1; b <= COUNT_IN + run.length; b++) click(audioTimeAt(now + beat * b), b <= COUNT_IN && b === 1);
+                                      t: now + beat * (COUNT_IN + 1) + step * j, status: 'pending', off: null }));
+  const beats = COUNT_IN + Math.ceil(run.length / PER_BEAT);
+  for (let b = 1; b <= beats; b++) click(audioTimeAt(now + beat * b), b === 1);
   r.phase = 'countin';
   message('');
   s.timers.push(setTimeout(() => { if (s?.run === r) r.phase = 'running'; },
-                           beat * (COUNT_IN + 1) - WINDOW_MS - 1));
+                           beat * (COUNT_IN + 1) - r.window - 1));
 }
 
 function miss() {
@@ -160,7 +166,7 @@ function expire(now) {
   const r = s.run;
   if (r.phase !== 'running') return;
   for (const e of r.expected) {
-    if (e.status === 'pending' && now > e.t + WINDOW_MS) {
+    if (e.status === 'pending' && now > e.t + r.window) {
       e.status = 'miss';
       miss();
       if (r.phase !== 'running') return;
@@ -192,6 +198,7 @@ function endRun(stopped) {
     keyWritten: r.key,
     direction: s.direction,
     bpm: s.bpm,
+    perBeat: PER_BEAT,                // scale notes per click (2 = eighths)
     allowedMisses: s.misses,
     calib: s.calib,
     calibOffset: s.calibOffset,
@@ -249,7 +256,7 @@ function draw(r) {
   const dir = s.direction === 'up' ? 1 : -1;
   // Count-in numbers.
   if (r.phase === 'countin' && pos < 0) {
-    const n = Math.ceil(-pos);
+    const n = Math.ceil(-pos / PER_BEAT);   // pos is in notes; count in beats
     if (n >= 1 && n <= COUNT_IN) {
       g.fillStyle = 'rgba(255,226,168,.9)';
       g.font = '800 64px system-ui, sans-serif';
