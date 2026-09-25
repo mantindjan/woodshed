@@ -1,11 +1,12 @@
-// Scale runner (E1, step 1): play a scale up or down across the horn's
-// range, in time, hitting each note as it reaches the "now" line.
+// Scale runner (E1): play a scale in a pattern (linear up/down, broken
+// thirds, scalelevels.js PATTERNS) across the horn's range, in time,
+// hitting each note as it reaches the "now" line.
 //
 // Flow per run: waiting (blow any note of the scale — that's where the run
-// starts) → count-in (4 clicks) → running (scale notes in EIGHTHS — two per
-// click at the set bpm — from the start note to the edge of the range, low
-// B♭ / high F♯) → summary → next run, in the next key of the exercise (drawn
-// toward weak keys or evenly, scalelevels.js) … until Stop. A Start-to-Stop
+// starts) → count-in (4 clicks) → running (the pattern in EIGHTHS — two
+// notes per click at the set bpm — from the start note to the edge of the
+// range, low B♭ / high F♯) → summary → next run, in the next key of the
+// exercise (drawn toward weak keys or evenly, scalelevels.js) … until Stop. A Start-to-Stop
 // session is one `round` in the events; it earns stars (E1 step 2).
 //
 // Judging: a note is HIT if it's the right written pitch (octave included)
@@ -20,20 +21,21 @@
 // horn sends for written middle C (C5 = 72) minus 72 (main.js calibration).
 //
 // Display: a canvas lane. Notes are degree discs (no note names), placed by
-// pitch step and beat, gliding toward the now line near the left: going up
-// they arrive from the upper right, going down from the lower right.
+// scale step and note slot, gliding toward the now line near the left. The
+// view drifts with the pattern's overall direction (its slope), so a linear
+// run arrives on a diagonal and broken thirds zigzag around it.
 
 import { SCALES, SAX_RANGE, NOTES, pc } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
-import { pickScaleKey, sessionStars } from './scalelevels.js';
+import { pickScaleKey, sessionStars, PATTERNS } from './scalelevels.js';
 import { saveKeys, saveStars } from './summary.js';
 
 const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
 const COUNT_IN = 4;            // clicks before the first note
 const PER_BEAT = 2;            // eighths: two scale notes per click (boss, 2026-09-25)
 const SUMMARY_MS = 1800;       // how long a run's summary shows before the next
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;       // v3: `pattern` replaces `direction`
 
 const $ = sel => document.querySelector(sel);
 
@@ -53,14 +55,14 @@ let wakeLock = null;
 
 export const scalesRunning = () => s !== null;
 
-// opts: {exercise: {id, scale, keys}, direction: 'up'|'down', mode: 'learn'|
-// 'practice', pick: 'weak'|'random', model (the weak-key model, from the
+// opts: {exercise: {id, scale, pattern, keys}, mode: 'learn'|'practice',
+// pick: 'weak'|'random', model (the weak-key model, from the
 // cached summary), bpm, misses, calib, calibOffset}. onEnd() when stopped.
 export function startScales(opts, onEnd) {
   initAudio();
   requestPersistence();
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
-  s = { ...opts, scale: opts.exercise.scale, keys: opts.exercise.keys, onEnd,
+  s = { ...opts, scale: opts.exercise.scale, pattern: opts.exercise.pattern, keys: opts.exercise.keys, onEnd,
         session: Date.now().toString(36), run: null, timers: [],
         // Session tally for stars: runs, notes hit / expected, runs stopped.
         tally: { runs: 0, hits: 0, total: 0, stopped: 0 } };
@@ -88,16 +90,16 @@ export function stopScales() {
 // A new run: the next key of the exercise, weighted toward weak ones or
 // even, never the same twice in a row when there's a choice.
 function nextRun() {
-  const k = pickScaleKey(s.model, { scale: s.scale, direction: s.direction, keys: s.keys, pick: s.pick, prev: s.run?.key });
+  const k = pickScaleKey(s.model, { scale: s.scale, pattern: s.pattern, keys: s.keys, pick: s.pick, prev: s.run?.key });
   s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0 };
   topBar();
   message(`Blow any note of <b>${NOTES[k]} ${SCALES[s.scale].name.toLowerCase()}</b> to start — ` +
-          `${s.direction === 'up' ? 'going up ↑' : 'going down ↓'}`);
+          `${PATTERNS[s.pattern].name.toLowerCase()}`);
 }
 
 function topBar() {
   const r = s?.run;
-  $('#scaleTitle').textContent = r ? `${NOTES[r.key]} ${SCALES[s.scale].name.toLowerCase()} ${s.direction === 'up' ? '↑' : '↓'}` : '';
+  $('#scaleTitle').textContent = r ? `${NOTES[r.key]} ${SCALES[s.scale].name.toLowerCase()} · ${PATTERNS[s.pattern].name.toLowerCase()}` : '';
   $('#scaleInfo').textContent = r ? `${s.bpm} bpm · misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
 }
 
@@ -144,18 +146,29 @@ function startRun(w, now, midi) {
             '. Blow a scale note to start.');
     return;
   }
-  // From the start note to the edge of the range, in the chosen direction.
+  // From the start note to the edge of the range, in the level's pattern.
+  // Broken thirds need two scale notes of room beyond the start note.
   const i = notes.indexOf(w);
-  const run = s.direction === 'up' ? notes.slice(i) : notes.slice(0, i + 1).reverse();
+  const idx = PATTERNS[s.pattern].indices(i, notes.length);
+  if (!idx.length) {
+    message(`No room for ${PATTERNS[s.pattern].name.toLowerCase()} from ${NOTES[pc(w)]} there — ` +
+            `start ${i + 2 >= notes.length ? 'lower' : 'higher'}.`);
+    return;
+  }
+  const run = idx.map(j => notes[j]);
   const beat = 60000 / s.bpm;
   const step = beat / PER_BEAT;       // time between scale notes
   r.t0 = now;
   r.beat = step;                      // the lane moves one slot per note
   r.window = Math.min(MAX_WINDOW_MS, step * 0.45);
+  // Lane drift: the least-squares line through (slot, scale position) at the
+  // pattern's slope — the discs are drawn relative to it (see draw()).
+  r.slope = PATTERNS[s.pattern].slope;
+  r.base = idx.reduce((a, j, k) => a + j - r.slope * k, 0) / idx.length;
   r.notes = [[midi, 0]];
   // Count-in clicks on beats 1–4 after the start note; note j at beat 5 +
   // j/2. Clicks keep going on every beat through the run.
-  r.expected = run.map((nw, j) => ({ w: nw, deg: degreeOf(s.scale, r.key, nw),
+  r.expected = run.map((nw, j) => ({ w: nw, i: idx[j], deg: degreeOf(s.scale, r.key, nw),
                                       t: now + beat * (COUNT_IN + 1) + step * j, status: 'pending', off: null }));
   const beats = COUNT_IN + Math.ceil(run.length / PER_BEAT);
   for (let b = 1; b <= beats; b++) click(audioTimeAt(now + beat * b), b === 1);
@@ -207,7 +220,7 @@ function endRun(stopped) {
     exercise: s.exercise.id,          // level id or 'custom' (scalelevels.js)
     scale: s.scale,
     keyWritten: r.key,
-    direction: s.direction,
+    pattern: s.pattern,               // scalelevels.js PATTERNS id
     bpm: s.bpm,
     perBeat: PER_BEAT,                // scale notes per click (2 = eighths)
     allowedMisses: s.misses,
@@ -272,7 +285,6 @@ function draw(r) {
   const pos = (now - r.expected[0].t) / r.beat;
   const pxBeat = Math.min(120, W * 0.2);
   const stepPx = Math.min(26, H / 14);
-  const dir = s.direction === 'up' ? 1 : -1;
   // Count-in numbers.
   if (r.phase === 'countin' && pos < 0) {
     const n = Math.ceil(-pos / PER_BEAT);   // pos is in notes; count in beats
@@ -285,9 +297,10 @@ function draw(r) {
   }
   g.textAlign = 'center'; g.textBaseline = 'middle';
   r.expected.forEach((e, i) => {
-    const d = i - pos;                        // beats until this note
+    const d = i - pos;                        // note slots until this note
     const x = nowX + d * pxBeat;
-    const y = cy - dir * d * stepPx;          // up: arrives from upper right
+    // Height = scale position above the drift line at the current slot.
+    const y = cy - (e.i - (r.base + r.slope * pos)) * stepPx;
     if (x < -30 || x > W + 30) return;
     const root = e.deg === '1';
     const rad = root ? 20 : 17;

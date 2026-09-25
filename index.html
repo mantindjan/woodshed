@@ -282,9 +282,19 @@
   .levelinfo b { display: block; font-size: 15px; }
   .levelinfo .degs { font-size: 22px; }
   .levelinfo .degs.keys { font-size: 17px; line-height: 1.3; }
+  .levelinfo .lvkeys { display: block; font-size: 12px; color: var(--dim); margin-top: 2px; }
+  /* Scale custom builder: the six patterns two to a row. */
+  .chips.patterns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; }
+  .chips.patterns button { font-size: 12px; padding: 4px 3px; white-space: nowrap; border-radius: 8px; }
+  /* Scale card: level over pattern — "Thirds down · descending" doesn't
+     fit beside "S6 · Major". */
+  #scaleExBtn .ex { flex-direction: column; align-items: flex-start; gap: 1px; }
+  #scaleExKeys { font-size: 15px; max-width: 100%; }
+  #scaleExLabel { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }  /* custom: long key lists */
 
-  /* Range map (E1 step 3, rangemap.js): 13 rows × 33 written pitches. */
-  .rm-grid { display: grid; grid-template-columns: 28px repeat(33, 1fr); gap: 2px; }
+  /* Range map (E1 step 3, rangemap.js): 13 rows × 33 written pitches, or ×
+     the scale's degrees; the level picker + view switch sit under it. */
+  .rm-grid { display: grid; gap: 2px; }   /* columns set inline: 33 pitches or the degrees */
   .rm-head { font-size: 9px; color: var(--dim); text-align: left; white-space: nowrap; overflow: visible; }
   .rm-row { font-size: 11px; color: var(--ink); align-self: center; font-variant-numeric: tabular-nums; }
   .rm-row.all { color: var(--brass); font-weight: 700; }
@@ -293,6 +303,11 @@
   .rm-cell.na { background: #121212; cursor: default; }
   .rm-cell.selected { outline: 2px solid #ffe2a8; outline-offset: 1px; }
   .rm-cap { font-size: 12px; color: var(--dim); margin-top: 8px; min-height: 16px; }
+  #rangemap { flex: 1; min-height: 0; overflow-y: auto; }
+  .rm-bar { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-shrink: 0; }
+  .rm-bar select { flex: 1; min-width: 0; background: #181818; color: #ffe2a8; border: 1px solid var(--line);
+                   border-radius: 8px; padding: 6px 8px; font: 600 14px system-ui, sans-serif; }
+  .rm-bar .seg { flex: 0 0 170px; }
   #customHint { font-size: 11px; color: var(--dim); }
 
   /* Stats: heatmap on the stage. */
@@ -388,6 +403,11 @@
     <div class="view" id="view-scale-stats" data-view="stats" data-for="scales" hidden>
       <h2 id="rangeTitle">Recent runs · key × note, low B♭ to high F♯</h2>
       <div id="rangemap"></div>
+      <!-- Which level's runs the map shows, and by note or by degree. -->
+      <div class="rm-bar">
+        <select id="mapLevel" aria-label="Level"></select>
+        <div class="seg"><button data-mv="range">Range</button><button data-mv="degrees">Degrees</button></div>
+      </div>
     </div>
     <!-- Stats: the heatmap (D4). -->
     <div class="view" id="view-stats" data-view="stats" data-for="degrees" hidden>
@@ -428,7 +448,6 @@
           <div class="seg"><button data-smode="learn">Learn</button><button data-smode="practice">Practice</button></div>
           <div class="seg"><button data-spick="weak">Weak keys</button><button data-spick="random">Random</button></div>
         </div>
-        <div class="seg"><button data-dir="up">↑ Up</button><button data-dir="down">↓ Down</button></div>
         <div id="tempo"></div>
         <div class="misses"><span class="label">Restart after</span>
           <div class="chips"><button data-misses="1">1</button><button data-misses="2">2</button><button data-misses="3">3</button><button data-misses="5">5</button></div>
@@ -469,12 +488,12 @@
       <div id="scaleLevelInfo" class="levelinfo"></div>
       <div class="label">Custom</div>
       <div class="seg"><button data-cs="major">Major</button><button data-cs="penta">Pentatonic</button></div>
+      <div class="chips patterns" id="customPatterns"></div>
       <div class="chips keys" id="customKeys"></div>
-      <div id="scaleCustomHint">Pick a scale and the keys to run it in.</div>
+      <div id="scaleCustomHint">Pick a scale, a pattern and the keys to run it in.</div>
       <button id="playScaleLevel">Play this ›</button>
     </div>
     <div class="pane" data-pane="stats" data-for="scales" hidden>
-      <div class="seg"><button data-ms="major">Major</button><button data-ms="penta">Pentatonic</button></div>
       <div class="stat">Runs <b id="sstatRuns">0</b></div>
       <div class="stat">Today <b id="sstatToday">0</b></div>
       <div class="stat">Notes hit <b id="sstatHit">–</b></div>
@@ -483,8 +502,9 @@
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">Each cell: the last 10 times that note came up in that key — hit on the beat
-        is green, late or early fades it, wrong or missed is red. "All" pools every key.</div>
+      <div class="small-note">For the level picked under the map. Each cell: the last 10 times that note
+        (20 for a degree) came up in that key — hit on the beat is green, late or early fades it, wrong or
+        missed is red. "All" pools every key.</div>
     </div>
     <div class="pane" data-pane="stats" data-for="degrees" hidden>
       <div class="stat">Answers <b id="statAnswers">0</b></div>

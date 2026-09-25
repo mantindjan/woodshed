@@ -19,7 +19,7 @@ import { LEVELS, UNIT_TITLES, exercise as resolveExercise, customCells, matchLev
 import { getSummary } from './summary.js';
 import { sync, syncConfig, setSyncConfig, syncState } from './sync.js';
 import { renderHeatmap } from './heatmap.js';
-import { SCALE_LEVELS, SCALE_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel } from './scalelevels.js';
+import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
 import { renderRangeMap } from './rangemap.js';
 
 // Settings (localStorage, all carried by the backup file).
@@ -31,9 +31,8 @@ const EXERCISE_KEY = 'woodshed.exercise';
 const CUSTOM_KEY = 'woodshed.custom';
 const OFFSET_KEY = 'woodshed.calibOffset';   // horn MIDI − written, from middle C
 const GAME_KEY = 'woodshed.game';
-const DIR_KEY = 'woodshed.dir';
 const SCALE_EX_KEY = 'woodshed.scaleExercise';   // scale level id or 'custom'
-const SCALE_CUSTOM_KEY = 'woodshed.scaleCustom'; // {scale, keys: [written pcs]}
+const SCALE_CUSTOM_KEY = 'woodshed.scaleCustom'; // {scale, pattern, keys: [written pcs]}
 const BPM_KEY = 'woodshed.bpm';
 const MISSES_KEY = 'woodshed.misses';
 
@@ -68,13 +67,14 @@ let calib = load(CALIB_KEY) === null ? null : Number(load(CALIB_KEY));
 // class, which the degree drill needs; scales need the octave too.
 let calibOffset = load(OFFSET_KEY) === null ? null : Number(load(OFFSET_KEY));
 let game = load(GAME_KEY) === 'scales' ? 'scales' : 'degrees';
-let dir = load(DIR_KEY) === 'down' ? 'down' : 'up';
-// Scales start on the first rung too (major, home keys).
+// Scales start on the first rung too (major, linear up).
 let scaleExerciseId = load(SCALE_EX_KEY) || SCALE_LEVELS[0].id;
-let scaleCustom = loadJSON(SCALE_CUSTOM_KEY, { scale: 'major', keys: [0] });
+let scaleCustom = loadJSON(SCALE_CUSTOM_KEY, { scale: 'major', pattern: 'up', keys: [0] });
 const currentScaleExercise = () => resolveScaleExercise(scaleExerciseId, scaleCustom);
-// Which scale the range map shows; starts on the exercise's, then follows taps.
-let mapScale = null;
+// Which level the range map shows (a level id) and how ('range' | 'degrees');
+// starts on the current exercise's level, then follows the picker.
+let mapLevel = null;
+let mapView = 'range';
 let misses = [1, 2, 3, 5].includes(Number(load(MISSES_KEY))) ? Number(load(MISSES_KEY)) : 3;
 let calibrating = false;
 let mode = load(MODE_KEY) === 'learn' ? 'learn' : 'practice';
@@ -118,7 +118,6 @@ function showHint() {
 function showSettings() {
   document.body.dataset.game = game;
   $$('button[data-game]').forEach(b => b.classList.toggle('active', b.dataset.game === game));
-  $$('[data-dir]').forEach(b => b.classList.toggle('active', b.dataset.dir === dir));
   // The miss limit only applies in practice: learn never restarts a run.
   $$('[data-misses]').forEach(b => { b.classList.toggle('active', Number(b.dataset.misses) === misses); b.disabled = mode === 'learn'; });
   // Learn/Practice and Weak/Random are one setting shared by both games.
@@ -131,11 +130,11 @@ function showSettings() {
   const title = ex.num ? `${ex.num} · ${ex.title}` : ex.title;
   for (const [sel, t] of [['#exerciseLabel', title], ['#exerciseName', title], ['#idleName', title]]) $(sel).textContent = t;
   for (const sel of ['#exerciseDegrees', '#stageDegrees', '#idleWhat']) $(sel).textContent = ex.degrees;
-  // The scale exercise the same way: "S3 · Major" + its keys in brass (the
-  // area's name is on the Levels tab; with it the keys didn't fit the card).
+  // The scale exercise the same way: "S3 · Major" + its pattern in brass;
+  // a custom pick adds its keys to the label (levels are always all 12).
   const sx = currentScaleExercise();
-  $('#scaleExLabel').textContent = sx.num ? `${sx.num} · ${sx.title}` : `Custom · ${sx.title}`;
-  $('#scaleExKeys').textContent = sx.keysLabel;
+  $('#scaleExLabel').textContent = sx.num ? `${sx.num} · ${sx.title}` : `Custom · ${sx.title} · ${sx.keysLabel}`;
+  $('#scaleExKeys').textContent = PATTERNS[sx.pattern].chip;
   // An empty custom pick can't be played.
   startBtn.disabled = game === 'degrees' ? ex.cells.length === 0 : sx.keys.length === 0;
   showHint();
@@ -229,7 +228,7 @@ startBtn.addEventListener('click', async () => {
   if (game === 'scales') {
     // The weak-key model continues from the cached summary (A8): no history read.
     const model = createKeyModel((await getSummary()).keys || []);
-    startScales({ exercise: currentScaleExercise(), direction: dir, mode, pick, model,
+    startScales({ exercise: currentScaleExercise(), mode, pick, model,
                   bpm: tempo.get(), misses, calib, calibOffset },
                 () => { showRunning(false); showSettings(); runSync(); });
   } else {
@@ -246,7 +245,6 @@ $$('button[data-game]').forEach(b => b.addEventListener('click', () => {
   game = b.dataset.game; save(GAME_KEY, game); showSettings();
   showTab(currentTab === 'horn' ? 'play' : currentTab);
 }));
-$$('[data-dir]').forEach(b => b.addEventListener('click', () => { dir = b.dataset.dir; save(DIR_KEY, dir); showSettings(); }));
 $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Number(b.dataset.misses); save(MISSES_KEY, String(misses)); showSettings(); }));
 // B3: tempo control, remembered.
 const tempo = mountTempo($('#tempo'), { value: Number(load(BPM_KEY)) || 80, note: '♪ eighths',
@@ -348,7 +346,7 @@ function selectScaleExercise(id) {
   showScaleLevels();
 }
 
-// One block per scale, its levels as pills (number · keys · stars), then
+// One block per scale, its levels as pills (number · pattern · stars), then
 // the custom pick — the same shape as the degree ladder.
 async function showScaleLevels() {
   const { stars } = await getSummary();
@@ -363,14 +361,16 @@ async function showScaleLevels() {
   const cx = resolveScaleExercise('custom', scaleCustom);
   h += `<div class="tier">Your own</div><div class="lrow">` +
        `<button class="lvl${scaleExerciseId === 'custom' ? ' active' : ''}" data-slevel="custom">` +
-       `<span>${cx.title} · ${cx.keysLabel}</span></button></div>`;
+       `<span>${cx.title} · ${cx.name.toLowerCase()} · ${cx.keysLabel}</span></button></div>`;
   $('#scaleLadder').innerHTML = h;
   $$('#scaleLadder [data-slevel]').forEach(b => b.addEventListener('click', () => selectScaleExercise(b.dataset.slevel)));
 
   const ex = currentScaleExercise();
-  $('#scaleLevelInfo').innerHTML = '<b></b><span class="degs keys"></span>';
-  $('#scaleLevelInfo b').textContent = ex.num ? `${ex.num} · ${ex.title} · ${ex.name}` : `${ex.title} · Custom`;
-  $('#scaleLevelInfo .degs').textContent = ex.keysLabel;
+  // Name, then how the pattern starts (in degrees) and the keys.
+  $('#scaleLevelInfo').innerHTML = '<b></b><span class="degs keys"></span><span class="lvkeys"></span>';
+  $('#scaleLevelInfo b').textContent = ex.num ? `${ex.num} · ${ex.title} · ${ex.name}` : `${ex.title} · ${ex.name} · Custom`;
+  $('#scaleLevelInfo .degs').textContent = PATTERNS[ex.pattern].shape;
+  $('#scaleLevelInfo .lvkeys').textContent = ex.keysLabel;
   showScaleCustom();
 }
 
@@ -379,18 +379,21 @@ async function showScaleLevels() {
 // keeps its chips as tapped (an empty pick must not forget the scale).
 function showScaleCustom() {
   const ex = currentScaleExercise();
-  const sets = scaleExerciseId === 'custom' ? scaleCustom : { scale: ex.scale, keys: ex.keys };
+  const sets = { scale: ex.scale, pattern: ex.pattern, keys: ex.keys };
   $$('[data-cs]').forEach(b => b.classList.toggle('active', b.dataset.cs === sets.scale));
+  $('#customPatterns').innerHTML = PATTERN_ORDER.map(p =>
+    `<button data-cp="${p}" class="${p === sets.pattern ? 'active' : ''}">${PATTERNS[p].chip}</button>`).join('');
   $('#customKeys').innerHTML = NOTES.map((n, k) =>
     `<button data-ck="${k}" class="${sets.keys.includes(k) ? 'active' : ''}">${n}</button>`).join('');
   const n = sets.keys.length;
-  $('#scaleCustomHint').textContent = n ? `${SCALES[sets.scale].name} in ${n} key${n === 1 ? '' : 's'}` : 'Pick at least one key.';
+  $('#scaleCustomHint').textContent = n ? `${SCALES[sets.scale].name}, ${PATTERNS[sets.pattern].name.toLowerCase()}, in ${n} key${n === 1 ? '' : 's'}` : 'Pick at least one key.';
   const change = next => {
-    const level = matchScaleLevel(next.scale, next.keys);
+    const level = matchScaleLevel(next.scale, next.pattern, next.keys);
     if (!level) { scaleCustom = next; save(SCALE_CUSTOM_KEY, JSON.stringify(scaleCustom)); }
     selectScaleExercise(level ? level.id : 'custom');
   };
   $$('[data-cs]').forEach(b => { b.onclick = () => change({ ...sets, scale: b.dataset.cs }); });
+  $$('#customPatterns [data-cp]').forEach(b => b.addEventListener('click', () => change({ ...sets, pattern: b.dataset.cp })));
   $$('#customKeys [data-ck]').forEach(b => b.addEventListener('click', () => {
     const k = Number(b.dataset.ck);
     change({ ...sets, keys: sets.keys.includes(k) ? sets.keys.filter(x => x !== k) : [...sets.keys, k] });
@@ -399,36 +402,52 @@ function showScaleCustom() {
 $('#scaleExBtn').addEventListener('click', () => showTab('levels'));
 $('#playScaleLevel').addEventListener('click', () => showTab('play'));
 
-// --- Scale stats (E1 step 3): the range map ---
+// --- Scale stats (E1 step 3): the range map, per level ---
+// The map and the pane figures cover one level: runs of its scale ×
+// pattern, whichever exercise they came from (a custom run in C counts
+// for the level too — events are musical, not per game mode).
 let rangeSelected = null;
-let rangeEvents = [];
+let scaleEvents = [];           // every scale run in the local window
+const levelRuns = l => scaleEvents.filter(e => e.scale === l.scale && runPattern(e) === l.pattern);
 function drawRangeMap() {
-  $$('[data-ms]').forEach(b => b.classList.toggle('active', b.dataset.ms === mapScale));
-  $('#rangeTitle').textContent = `Recent ${SCALES[mapScale].name.toLowerCase()} runs · key × note, low B♭ to high F♯`;
-  renderRangeMap($('#rangemap'), rangeEvents, mapScale, rangeSelected);
+  const l = SCALE_LEVELS.find(x => x.id === mapLevel);
+  $('#mapLevel').value = mapLevel;
+  $$('[data-mv]').forEach(b => b.classList.toggle('active', b.dataset.mv === mapView));
+  $('#rangeTitle').textContent = mapView === 'range'
+    ? 'Recent runs · key × note, low B♭ to high F♯' : 'Recent runs · key × degree, all octaves';
+  const runs = levelRuns(l);
+  renderRangeMap($('#rangemap'), runs, l.scale, mapView, rangeSelected);
+  // Pane figures: the level's last 20 runs.
+  const dayStart = new Date().setHours(0, 0, 0, 0);
+  const last = runs.slice(-20);
+  const notes = last.flatMap(e => e.expected.filter(x => x[3] !== 'pending'));
+  const hit = notes.filter(x => x[3] === 'hit').length;
+  const clean = last.filter(e => e.expected.every(x => x[3] === 'hit')).length;
+  $('#sstatRuns').textContent = runs.length;
+  $('#sstatToday').textContent = runs.filter(e => e.t >= dayStart).length;
+  $('#sstatHit').textContent = notes.length ? `${Math.round(100 * hit / notes.length)}%` : '–';
+  $('#sstatClean').textContent = last.length ? `${clean} / ${last.length}` : '–';
 }
+// The picker lists every level: "S3 · Major · Thirds up · ascending".
+$('#mapLevel').innerHTML = SCALE_LEVELS.map(l => `<option value="${l.id}">${l.num} · ${l.title} · ${l.name}</option>`).join('');
+$('#mapLevel').addEventListener('change', e => { mapLevel = e.target.value; rangeSelected = null; drawRangeMap(); });
+$$('[data-mv]').forEach(b => b.addEventListener('click', () => { mapView = b.dataset.mv; rangeSelected = null; drawRangeMap(); }));
 $('#rangemap').addEventListener('click', e => {
   const cell = e.target.closest('[data-cell]');
   const key = cell ? cell.dataset.cell : null;
   rangeSelected = key && key !== rangeSelected ? key : null;
   drawRangeMap();
 });
-$$('[data-ms]').forEach(b => b.addEventListener('click', () => { mapScale = b.dataset.ms; rangeSelected = null; drawRangeMap(); }));
 
 async function showScaleStats() {
-  if (!mapScale) mapScale = currentScaleExercise().scale;
-  const events = (await allEvents()).filter(e => e.game === 'scales' && e.expected);
-  rangeEvents = events;
+  // First visit: the level being played (a custom pick maps to the level
+  // with its scale × pattern, if the ladder has one).
+  if (!mapLevel) {
+    const ex = currentScaleExercise();
+    mapLevel = (SCALE_LEVELS.find(l => l.scale === ex.scale && l.pattern === ex.pattern) || SCALE_LEVELS[0]).id;
+  }
+  scaleEvents = (await allEvents()).filter(e => e.game === 'scales' && e.expected);
   drawRangeMap();
-  const dayStart = new Date().setHours(0, 0, 0, 0);
-  const last = events.slice(-20);
-  const notes = last.flatMap(e => e.expected.filter(x => x[3] !== 'pending'));
-  const hit = notes.filter(x => x[3] === 'hit').length;
-  const clean = last.filter(e => e.expected.every(x => x[3] === 'hit')).length;
-  $('#sstatRuns').textContent = events.length;
-  $('#sstatToday').textContent = events.filter(e => e.t >= dayStart).length;
-  $('#sstatHit').textContent = notes.length ? `${Math.round(100 * hit / notes.length)}%` : '–';
-  $('#sstatClean').textContent = last.length ? `${clean} / ${last.length}` : '–';
 }
 
 // --- Stats (D4) ---
