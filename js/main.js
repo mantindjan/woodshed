@@ -129,6 +129,18 @@ function showHint() {
   else if (calib === null) hintEl.textContent = 'Not calibrated — tap Calibrate and play middle C.';
   else if (game === 'scales' && calibOffset === null) hintEl.textContent = 'Recalibrate on middle C for scales — the octave matters.';
   else hintEl.textContent = 'Calibrated · redo after changing the horn’s voice.';
+  showHornWarn();
+}
+
+// The horn controls live in ⚙; Play only says when something needs fixing,
+// and a tap goes there.
+function showHornWarn() {
+  const el = $('#hornWarn');
+  const problem = statusEl.dataset.state !== 'connected' ? 'Horn not connected'
+    : calib === null ? 'Horn not calibrated'
+    : game === 'scales' && calibOffset === null ? 'Recalibrate on middle C for scales' : '';
+  el.hidden = !problem;
+  el.textContent = problem ? `● ${problem} — fix in ⚙ ›` : '';
 }
 
 function showSettings() {
@@ -164,8 +176,11 @@ function showSettings() {
   showHint();
 }
 
+// Set when Start sent the player to ⚙ to calibrate: back to Play after.
+let backToPlay = false;
 function setCalibrating(on) {
   calibrating = on;
+  if (!on) backToPlay = false;
   calibBtn.classList.toggle('active', on);
   showHint();
   // The prompt can sit below the fold of a long pane (Scales): bring it up.
@@ -181,8 +196,10 @@ function onNote(midi) {
     // Played on middle C (written C5), so the octave is known too.
     calibOffset = midi - WRITTEN_MIDDLE_C;
     save(OFFSET_KEY, String(calibOffset));
+    const back = backToPlay;
     setCalibrating(false);
     noteEl.innerHTML = noteHTML(0);
+    if (back) showTab('play');
     return;
   }
   if (calib === null) noteEl.textContent = '?';
@@ -206,6 +223,7 @@ function onStatus({ state, names, error }) {
   }[state];
   statusEl.textContent = text;
   statusEl.dataset.state = state;
+  showHornWarn();
   // The connect button is only useful when a retry could change something.
   connectBtn.hidden = state === 'connected' || state === 'unsupported';
 }
@@ -247,7 +265,12 @@ function onRoundEnd(result) {
 startBtn.addEventListener('click', async () => {
   // Both games judge in written pitch, which needs calibration first;
   // scales also need the octave (a middle-C calibration).
-  if (calib === null || (game === 'scales' && calibOffset === null)) { setCalibrating(true); return; }
+  if (calib === null || (game === 'scales' && calibOffset === null)) {
+    showTab('horn');
+    setCalibrating(true);
+    backToPlay = true;
+    return;
+  }
   if (calibrating) setCalibrating(false);
   showRunning(true);
   if (game === 'scales') {
@@ -297,6 +320,7 @@ $$('[data-length]').forEach(b => b.addEventListener('click', () => {
 $('#exerciseBtn').addEventListener('click', () => showTab('levels'));
 calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a second tap cancels
 connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
+$('#hornWarn').addEventListener('click', () => showTab('horn'));
 
 // --- Levels (D6): the ladder on the stage, custom builder in the pane ---
 

@@ -259,8 +259,9 @@
                   background: var(--brass); color: #1a1206; }
   #stop { background: #3a2222; color: #ff9b9b; }
 
-  /* Horn line at the bottom of Play. */
-  .hornline { margin-top: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  /* Horn line at the top of ⚙ (moved from Play, boss 2026-09-25: setup,
+     not practice; Play was crammed). */
+  .hornline { display: flex; align-items: center; gap: 8px; font-size: 12px; }
   /* Wraps rather than truncating: error states carry the fix in the text. */
   #status { flex: 1; color: var(--dim); }
   #status::before { content: '●'; margin-right: 5px; color: #7a3a3a; }
@@ -269,10 +270,10 @@
   .hornline button { flex: none; padding: 4px 9px; font-size: 12px; }
   .hornline button.active { border-color: var(--brass); color: var(--brass); }
   #hint { font-size: 11px; color: var(--dim); margin-top: -4px; }
-  /* Not connected: the horn line and hint jump to the top of Play, so the
-     problem (and its fix, in the error text) is the first thing seen. */
-  .pane:has(#status:not([data-state="connected"])) .hornline { order: -2; margin-top: 0; }
-  .pane:has(#status:not([data-state="connected"])) #hint { order: -1; }
+  /* Play's one-line warning when the horn needs attention; taps to ⚙. */
+  #hornWarn { flex-shrink: 0; text-align: left; font-size: 12px; padding: 6px 9px; color: #ffb4a8;
+              border-color: #6a3434; background: rgba(214,90,90,.1); }
+  #hornWarn[hidden] { display: none; }
 
   /* Levels: the ladder on the stage, grouped by tier. */
   #ladder { overflow-y: auto; padding-right: 4px; }
@@ -457,6 +458,9 @@
     </nav>
 
     <div class="pane" data-pane="play">
+      <!-- Only when the horn needs attention (not connected / calibrated);
+           the controls themselves live in ⚙. -->
+      <button id="hornWarn" hidden></button>
       <div class="g-scales">
         <button id="scaleExBtn" class="excard"><span class="ex"><b id="scaleExLabel"></b><b id="scaleExKeys" class="degs"></b></span><span class="chg">change ›</span></button>
         <div class="row2">
@@ -484,12 +488,6 @@
       </div>
       <button id="start">Start</button>
       <button id="stop" hidden>Stop</button>
-      <div class="hornline">
-        <span id="status">Connecting…</span>
-        <button id="connect" hidden>Connect</button>
-        <button id="calibrate">Calibrate</button>
-      </div>
-      <div id="hint"></div>
     </div>
 
     <div class="pane" data-pane="levels" data-for="degrees" hidden>
@@ -539,6 +537,13 @@
     </div>
 
     <div class="pane" data-pane="horn" hidden>
+      <div class="label">Horn</div>
+      <div class="hornline">
+        <span id="status">Connecting…</span>
+        <button id="connect" hidden>Connect</button>
+        <button id="calibrate">Calibrate</button>
+      </div>
+      <div id="hint"></div>
       <div class="label">Latency</div>
       <div id="latencyVal" class="small-note"></div>
       <button id="latencyBtn">Measure latency</button>
