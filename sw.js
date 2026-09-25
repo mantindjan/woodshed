@@ -18,7 +18,7 @@ const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
   'js/main.js', 'js/midi.js', 'js/music.js', 'js/audio.js', 'js/events.js', 'js/drill.js',
   'js/notation.js', 'js/weakspots.js', 'js/backup.js',
-  'js/levels.js', 'js/scoring.js', 'js/heatmap.js', 'js/summary.js', 'js/sync.js', 'js/scales.js', 'js/tempo.js', 'js/scalelevels.js', 'js/rangemap.js', 'js/scaletempo.js', 'fonts/realbook.woff2', 'fonts/symbols.woff2',
+  'js/levels.js', 'js/scoring.js', 'js/heatmap.js', 'js/summary.js', 'js/sync.js', 'js/scales.js', 'js/tempo.js', 'js/scalelevels.js', 'js/rangemap.js', 'js/scaletempo.js', 'js/latency.js', 'fonts/realbook.woff2', 'fonts/symbols.woff2',
   'fonts/REALBOOK-LICENSE.txt', 'fonts/DEJAVU-LICENSE.txt',
 ];
 

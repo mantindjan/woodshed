@@ -348,6 +348,10 @@
   #note { font: 120px/1 'RealBook', Georgia, serif; color: var(--brass); min-height: 1em; }
   #raw { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; min-height: 1.4em; }
   .note-help { font-size: 12px; color: var(--dim); max-width: 340px; }
+  #latencyRun[hidden] { display: none; }
+  #latencyDots { display: flex; gap: 10px; justify-content: center; margin: 8px 0 14px; }
+  #latencyDots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,226,168,.6); }
+  #latencyDots i.on { background: #ffe2a8; box-shadow: 0 0 12px rgba(255,200,110,.8); }
   .pane input { font: inherit; font-size: 13px; color: var(--ink); background: #181818;
                 border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
   #syncStatus.bad { color: #ff9b9b; }
@@ -427,6 +431,8 @@
     </div>
     <!-- Horn check. -->
     <div class="view" id="view-horn" data-view="horn" hidden>
+      <!-- Latency measuring (⚙): a dot per click answered or passed. -->
+      <div id="latencyRun" hidden><div class="label">Blow a note on each click</div><div id="latencyDots"></div></div>
       <div class="label">You played</div>
       <div id="note"></div>
       <div id="raw"></div>
@@ -533,6 +539,9 @@
     </div>
 
     <div class="pane" data-pane="horn" hidden>
+      <div class="label">Latency</div>
+      <div id="latencyVal" class="small-note"></div>
+      <button id="latencyBtn">Measure latency</button>
       <div class="label">Sync · GitHub</div>
       <input id="syncRepo" placeholder="you/woodshed-data" autocomplete="off" spellcheck="false">
       <input id="syncToken" type="password" placeholder="token (github_pat_…)" autocomplete="off">

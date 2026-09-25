@@ -26,6 +26,10 @@
 // (A first cut held the lane on a miss; it froze unreliably when a note
 // slid past the line, and was dropped.)
 //
+// Latency: every note-on is judged `latency` ms earlier than it arrived
+// (measured in ⚙, latency.js) — the click is heard late and the horn's
+// note arrives late; `notes` in the event stay raw.
+//
 // Pitch: written = MIDI − calibOffset, where calibOffset = the MIDI note the
 // horn sends for written middle C (C5 = 72) minus 72 (main.js calibration).
 //
@@ -58,7 +62,8 @@ const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // v3: `pattern` replaces `direction`. v4: learn runs add `hint` (and, that
 // evening only, `waits` from the dropped lane-hold learn). v5: learn = sheet.
 // v6: `tempoAuto` (was the bpm set by the auto-tempo staircase).
-const SCHEMA_VERSION = 6;
+// v7: `latency` (ms subtracted from note-ons before judging).
+const SCHEMA_VERSION = 7;
 
 const $ = sel => document.querySelector(sel);
 
@@ -96,7 +101,8 @@ export const scalesRunning = () => s !== null;
 // opts: {exercise: {id, scale, pattern, keys}, mode: 'learn'|'practice',
 // pick: 'weak'|'random', model (the weak-key model, from the cached
 // summary), tempoAuto (practice on Auto tempo), tempo (the staircase model),
-// bpm (the first run's), misses, calib, calibOffset}. onEnd() when stopped.
+// bpm (the first run's), misses, calib, calibOffset, latency (ms)}. onEnd()
+// when stopped.
 export function startScales(opts, onEnd) {
   initAudio();
   requestPersistence();
@@ -165,12 +171,14 @@ function message(html) {
 export function scaleNote(midi) {
   if (!s) return;
   const r = s.run;
-  const now = performance.now();
+  const arrived = performance.now();
   const w = midi - s.calibOffset;
-  if (r.phase === 'waiting') return startRun(w, now, midi);
+  // The start note only starts the clock: nothing to judge, so no correction.
+  if (r.phase === 'waiting') return startRun(w, arrived, midi);
   if (r.phase !== 'running' && r.phase !== 'countin') return;
-  r.notes.push([midi, Math.round(now - r.t0)]);
+  r.notes.push([midi, Math.round(arrived - r.t0)]);   // raw, as received
   if (r.phase !== 'running') return;
+  const now = arrived - s.latency;    // when it was played, relative to the heard click
   // The pending note whose beat is nearest, within the window.
   let best = null;
   for (const e of r.expected) {
@@ -278,6 +286,7 @@ function endRun(stopped) {
     keyWritten: r.key,
     pattern: s.pattern,               // scalelevels.js PATTERNS id
     bpm: s.bpm,
+    latency: s.latency,               // ms subtracted from note-ons before judging (offsets are after it)
     tempoAuto: !!s.tempoAuto,         // bpm set by the auto-tempo staircase (scaletempo.js)
     perBeat: PER_BEAT,                // scale notes per click (2 = eighths)
     allowedMisses: s.misses,
@@ -525,7 +534,7 @@ function drawSheet(g, r, W, H) {
   // UNDER the discs so it only peeks out when early or late; wrong pitch:
   // red, drawn over them. Count-in notes aren't drawn.
   const marks = r.notes.slice(1).map(([midi, ms]) => {
-    const p = slotAt(r, r.t0 + ms);
+    const p = slotAt(r, r.t0 + ms - s.latency);
     const w = midi - s.calibOffset;
     const near = r.expected[Math.max(0, Math.min(r.expected.length - 1, Math.round(p)))];
     return { p, w, right: w === near.w };

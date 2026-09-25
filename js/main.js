@@ -22,6 +22,7 @@ import { renderHeatmap } from './heatmap.js';
 import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
 import { renderRangeMap } from './rangemap.js';
 import { createTempoModel, tempoKey, pipText } from './scaletempo.js';
+import { startLatency, stopLatency, latencyNote, measuring } from './latency.js';
 
 // Settings (localStorage, all carried by the backup file).
 const CALIB_KEY = 'woodshed.calib';
@@ -36,6 +37,7 @@ const SCALE_EX_KEY = 'woodshed.scaleExercise';   // scale level id or 'custom'
 const SCALE_CUSTOM_KEY = 'woodshed.scaleCustom'; // {scale, pattern, keys: [written pcs]}
 const BPM_KEY = 'woodshed.bpm';                  // the Fixed tempo
 const TEMPO_AUTO_KEY = 'woodshed.tempoAuto';     // 'auto' | 'fixed' (scales, E4)
+const LATENCY_KEY = 'woodshed.latency';          // ms, measured in ⚙ (latency.js); absent = 0
 const MISSES_KEY = 'woodshed.misses';
 
 // Question-count choices; 0 = endless (until Stop).
@@ -117,6 +119,7 @@ function showTab(tab) {
   if (game === 'scales' && tab === 'levels') showScaleLevels();
   if (game === 'scales' && tab === 'stats') showScaleStats();
   if (tab === 'horn') showCount();
+  else if (measuring()) endLatencyRun();
 }
 $$('button[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
@@ -171,6 +174,7 @@ function setCalibrating(on) {
 
 function onNote(midi) {
   rawEl.textContent = `MIDI ${midi}`;
+  if (measuring()) { latencyNote(); return; }
   if (calibrating) {
     calib = midi % 12;
     save(CALIB_KEY, String(calib));
@@ -249,7 +253,7 @@ startBtn.addEventListener('click', async () => {
   if (game === 'scales') {
     // The weak-key model continues from the cached summary (A8): no history read.
     const model = createKeyModel((await getSummary()).keys || []);
-    startScales({ exercise: currentScaleExercise(), mode, pick, model,
+    startScales({ exercise: currentScaleExercise(), mode, pick, model, latency,
                   tempoAuto: autoActive(), tempo: tempoModel,
                   bpm: tempo.get(), misses, calib, calibOffset },
                 () => { showRunning(false); loadTempo(); runSync(); });
@@ -557,6 +561,40 @@ function say(text, bad = false) {
   menuMsg.textContent = text;
   menuMsg.className = bad ? 'bad' : '';
 }
+// --- ⚙ Latency ---
+let latency = Number(load(LATENCY_KEY)) || 0;
+function showLatency(extra = '') {
+  const set = load(LATENCY_KEY) !== null;
+  $('#latencyVal').textContent = extra || (set
+    ? `${latency} ms — notes are judged ${Math.abs(latency)} ms ${latency >= 0 ? 'earlier' : 'later'} than they arrive.`
+    : 'Not measured — notes are judged as they arrive.');
+}
+// The measuring view sits on the ⚙ stage: 8 dots, one lighting per click.
+function endLatencyRun() {
+  stopLatency();
+  $('#latencyRun').hidden = true;
+  $('#latencyBtn').disabled = false;
+}
+$('#latencyBtn').addEventListener('click', () => {
+  if (isRunning() || scalesRunning() || calibrating) return;
+  $('#latencyBtn').disabled = true;
+  $('#latencyRun').hidden = false;
+  $('#latencyDots').innerHTML = '<i></i>'.repeat(8);
+  showLatency('Listen: 4 clicks, then blow any note on each of the next 8.');
+  startLatency({
+    onProgress: n => $$('#latencyDots i').forEach((d, i) => d.classList.toggle('on', i < n)),
+    onDone: res => {
+      endLatencyRun();
+      if (res.error) { showLatency(res.error); return; }
+      latency = res.latency;
+      save(LATENCY_KEY, String(latency));
+      showLatency(`${latency} ms (spread ±${res.spread} ms over ${res.n} notes) — saved. ` +
+                  (res.spread > 40 ? 'Wide spread: measure again for a steadier number.' : ''));
+    },
+  });
+});
+showLatency();
+
 async function showCount() {
   const n = await countEvents();
   $('#menuCount').textContent = `${n} answer${n === 1 ? '' : 's'} stored on this device.`;
