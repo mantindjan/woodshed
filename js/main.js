@@ -270,8 +270,9 @@ $$('button[data-game]').forEach(b => b.addEventListener('click', () => {
 }));
 $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Number(b.dataset.misses); save(MISSES_KEY, String(misses)); showSettings(); }));
 // B3: tempo control, remembered (the Fixed tempo).
-let fixedBpm = Number(load(BPM_KEY)) || 80;
-const tempo = mountTempo($('#tempo'), { value: fixedBpm,
+let fixedBpm = Math.max(60, Number(load(BPM_KEY)) || 80);
+// Min 60, as auto tempo's floor (boss: "the minimal tempo should be 60").
+const tempo = mountTempo($('#tempo'), { min: 60, value: fixedBpm,
                                         onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); } });
 // Auto | Fixed: one small toggle under the bpm (a full-width row pushed the
 // exercise card off the pane at 390 px). Notes are always eighths.

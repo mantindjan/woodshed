@@ -32,7 +32,9 @@ const CLEAN_RUNS = 3;      // clean runs in a row to step up
 const STAY = 0.8;          // at or above: stay; below: step down
 const WARMUP = 0.9;        // a session starts 10 % under the working tempo
 const REVERSALS = 6;       // turning points averaged for the working tempo
-const MIN = 30, MAX = 300; // as the tempo control (tempo.js)
+// Floor 60 = the bottom of the tempo scale: auto never goes slower (boss,
+// 2026-09-25). No real ceiling; 300 is the tempo control's own cap.
+const MIN = 60, MAX = 300;
 
 export const tempoKey = (scale, pattern) => `${scale}|${pattern}`;
 
