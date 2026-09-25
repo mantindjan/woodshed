@@ -233,6 +233,10 @@
   #scaleMsg[hidden] { display: none; }
   #scaleMsg b { color: #ffe2a8; }
   .scale-info { text-align: right; font-variant-numeric: tabular-nums; }
+  /* The run's key, big and always there; the pattern beside it. */
+  .scale-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #scaleKey { font: 800 22px/1 system-ui, sans-serif; color: #ffe2a8; }
+  #scaleMsg small { font-size: 12px; color: var(--dim); }
 
   /* Exercise card: what's being asked; tap to change it. */
   .excard { display: flex; justify-content: space-between; align-items: center; gap: 8px;
@@ -388,7 +392,7 @@
     <!-- Scales (E1): the lane. -->
     <div class="view" id="view-scales" data-view="play" data-for="scales" hidden>
       <div class="stage-top">
-        <span id="scaleTitle"></span><span></span><span id="scaleInfo" class="scale-info"></span>
+        <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span><span></span><span id="scaleInfo" class="scale-info"></span>
       </div>
       <div class="lane-wrap">
         <canvas id="lane"></canvas>
