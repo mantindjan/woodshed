@@ -67,7 +67,9 @@ export function walk(spans, rnd = Math.random) {
 
 // --- Comping ---
 // Two-bar rhythm cells picked at random, laying out now and then —
-// predictable comping becomes a second metronome (IDEAS.md). Offsets in
+// predictable comping becomes a second metronome (IDEAS.md). Not too often
+// though: at ~30 % a chord held 4 bars could go without piano for a bar
+// or more (boss, 2026-09-26) — so 1 cell in 10, never twice running. Offsets in
 // beats (.5 = the swung upbeat), lengths in beats. Voicings: 3 5 7 of the
 // chord sounding at the hit — rootless, the bass has the root, and never a
 // 9 or 13 (the boss's rule) — the inversion nearest the last, E3–E4.
@@ -78,8 +80,8 @@ const CELLS = [
   [[1, 0.4], [3, 0.4], [5, 0.4], [7, 0.4]],      // 2 and 4
   [[2.5, 0.7], [5.5, 0.7]],                      // sparse
   [[0, 0.5], [1.5, 0.4], [4, 0.6], [6.5, 0.9]],
-  [],                                            // lay out
 ];
+const LAY_OUT = 0.1;
 export function voicing(c, prev) {
   const pcs = TONES[c.q].slice(1).map(s => pcOf(c.root + s));
   let best = null, bestCost = Infinity;
@@ -98,9 +100,11 @@ export function voicing(c, prev) {
 export function comp(spans, totalBeats, rnd = Math.random) {
   const hits = [];
   const at = beat => spans.find(c => beat >= c.start && beat < c.start + c.len) || spans[spans.length - 1];
-  let prev = null;
+  let prev = null, rested = false;
   for (let b = 0; b < totalBeats; b += 8) {
-    const cell = rnd() < 0.18 ? [] : pick(CELLS, rnd);
+    const rest = !rested && rnd() < LAY_OUT;
+    rested = rest;
+    const cell = rest ? [] : pick(CELLS, rnd);
     for (const [off, len] of cell) {
       const beat = b + off;
       if (beat >= totalBeats) continue;

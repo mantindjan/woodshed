@@ -35,6 +35,7 @@ let master = null;     // the ping
 let room = null;       // Rhodes in: → saturation → dry + reverb
 let verb = null;       // the room's convolver, for sends
 let clickBus = null;   // metronome clicks: own bus, bypassing everything else
+let out = null;        // everything but the click: a little headroom, then a limiter
 let bassBus = null, kitBus = null, compBus = null;   // the trio
 let noise = null;      // cached white-noise buffer (clicks)
 // Every live source, so stopAll() can silence them. A source leaves the set
@@ -50,6 +51,17 @@ function track(o, g) {
 export function initAudio() {
   if (!ctx) {
     ctx = new AudioContext();
+    // The output: 0.85 of headroom, then a hard limiter. Without it the
+    // trio's buses (bass with its drive, kit, comping, room) summed straight
+    // into the speaker and a loud Rhodes hit on top clipped — it crackled on
+    // the phone (boss, 2026-09-26).
+    out = ctx.createGain();
+    out.gain.value = 0.85;
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20;
+    lim.attack.value = 0.002; lim.release.value = 0.12;
+    out.connect(lim);
+    lim.connect(ctx.destination);
     master = ctx.createGain();
     master.gain.value = 0.8;
     const lp = ctx.createBiquadFilter();
@@ -57,7 +69,7 @@ export function initAudio() {
     lp.frequency.value = 5200;
     lp.Q.value = 0.4;
     master.connect(lp);
-    lp.connect(ctx.destination);
+    lp.connect(out);
     buildRoom();
     // Clicks go straight out with their own compressor (SOLVED.md): routed
     // through the master lowpass they were too quiet against the chords.
@@ -93,22 +105,22 @@ function buildRoom() {
   verb.buffer = ir;
   const dry = ctx.createGain(); dry.gain.value = 0.85;
   const wet = ctx.createGain(); wet.gain.value = 0.32;
-  sat.connect(dry); dry.connect(ctx.destination);
-  sat.connect(verb); verb.connect(wet); wet.connect(ctx.destination);
+  sat.connect(dry); dry.connect(out);
+  sat.connect(verb); verb.connect(wet); wet.connect(out);
   buildTrio();
 }
 
 // The trio's buses (as the prototype's mix): bass centre with the phone
 // trick and a little room, kit a touch left, comping a touch right.
 function buildTrio() {
-  const out = (level, sendLevel, pan) => {
+  const bus = (level, sendLevel, pan) => {
     const p = ctx.createStereoPanner(); p.pan.value = pan;
     const g = ctx.createGain(); g.gain.value = level;
-    p.connect(g); g.connect(ctx.destination);
+    p.connect(g); g.connect(out);
     const snd = ctx.createGain(); snd.gain.value = sendLevel; g.connect(snd); snd.connect(verb);
     return p;
   };
-  const bassOut = out(1.0, 0.08, 0);
+  const bassOut = bus(1.0, 0.08, 0);
   bassBus = ctx.createGain();
   const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 35;
   const peak = ctx.createBiquadFilter(); peak.type = 'peaking'; peak.frequency.value = 800; peak.Q.value = 0.9; peak.gain.value = 7;
@@ -118,8 +130,8 @@ function buildTrio() {
   const drv = ctx.createGain(); drv.gain.value = 0.35;
   bassBus.connect(hp); hp.connect(peak); peak.connect(bassOut);
   hp.connect(drive); drive.connect(drv); drv.connect(bassOut);
-  kitBus = out(0.9, 0.15, -0.2);
-  compBus = out(0.55, 0.35, 0.25);
+  kitBus = bus(0.9, 0.15, -0.2);
+  compBus = bus(0.55, 0.35, 0.25);
 }
 
 // --- Trio samples: loaded once, on first use (patterns' Start) ---
