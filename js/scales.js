@@ -136,6 +136,23 @@ export function startScales(opts, onEnd) {
   raf = requestAnimationFrame(frame);
 }
 
+// Auto tempo: the player overrules the current key's tempo by `delta`.
+// Before the run starts it plays at the new tempo; once it's under way the
+// change is for the key's next run (endRun applies it after the staircase).
+export function nudgeTempo(delta) {
+  if (!s?.tempoAuto || !s.run) return;
+  const key = tempoKey(s.scale, s.pattern, s.run.key);
+  if (s.run.phase === 'waiting') {
+    s.bpm = Math.max(60, Math.min(300, s.bpm + delta));
+    s.tempo.set(key, s.bpm, s.session);
+    saveTempo(s.tempo);
+    s.override = null;
+  } else {
+    s.override = Math.max(60, Math.min(300, (s.override ?? s.bpm) + delta));
+  }
+  topBar();
+}
+
 // Learn: skip to the next key now. A run in progress is dropped unlogged —
 // half a run is no evidence either way.
 export function nextKey() {
@@ -158,6 +175,7 @@ export function stopScales() {
   s = null;
   message('');
   $('#scaleNext').hidden = true;
+  $('#scaleNudge').hidden = true;
   draw(null);
   onEnd();
 }
@@ -202,7 +220,9 @@ function topBar() {
   // Tempo big on the right (boss: "make sure the tempo is printed on
   // screen"); ↑/↓ when Auto just moved it, "auto" while it's in charge.
   $('#scaleBpm').textContent = r ? s.bpm : '';
-  $('#scaleBpmNote').textContent = !r ? '' : `${s.moved > 0 ? '↑ ' : s.moved < 0 ? '↓ ' : ''}bpm${s.tempoAuto ? ' auto' : ''}`;
+  $('#scaleBpmNote').textContent = !r ? '' : `${s.moved > 0 ? '↑ ' : s.moved < 0 ? '↓ ' : ''}bpm${s.tempoAuto ? ' auto' : ''}` +
+    (s.override != null ? ` → ${s.override} next` : '');
+  $('#scaleNudge').hidden = !r || !s.tempoAuto;
   $('#scaleInfo').textContent = r ? `misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
 }
 
@@ -358,8 +378,9 @@ function endRun(stopped) {
   let tempoNote = '';
   if (s.tempoAuto) {
     s.tempo.add(event);
-    saveTempo(s.tempo);
     const key = tempoKey(s.scale, runPattern(event), r.key);
+    if (s.override != null) { s.tempo.set(key, s.override, s.session); s.override = null; }
+    saveTempo(s.tempo);
     const next = s.tempo.next(key);
     s.moved = Math.sign(next - s.bpm);
     const name = NOTES[r.key];
@@ -565,7 +586,8 @@ function sheetLayout(r, W, H) {
     const a = k * per, b = Math.min(n, a + per);
     const is = r.expected.slice(a, b).map(e => e.i);
     const lo = Math.min(...is), hi = Math.max(...is);
-    const stepPx = Math.min(rad * 0.9, (bandH - 2 * rad - 4) / Math.max(1, hi - lo));
+    // Room for the note name under the lowest disc and the "start" tag over the top.
+    const stepPx = Math.min(rad * 0.9, (bandH - 2 * rad - 22) / Math.max(1, hi - lo));
     bands.push({ a, b, mid: (lo + hi) / 2, cy: top + bandH * (k + 0.5), stepPx });
   }
   r.sheet = { W, H, per, slot, rad, bands, bandH, left: 12 };
@@ -615,7 +637,12 @@ function drawSheet(g, r, W, H) {
     const { x, y } = sheetPoint(L, j, e.i);
     if (e.status === 'hit') bloom(g, x, y, L.rad, accuracy(r, e), now - e.hitAt);
     g.globalAlpha = e.status === 'pending' ? 0.85 : 1;
-    disc(g, e, x, y, L.rad, e.deg === '1', true, j === 0);
+    disc(g, e, x, y, L.rad, e.deg === '1', false, j === 0);
+    // Learn: the note name under every degree (boss, 2026-09-26); the start
+    // disc already carries its name, so its degree goes under instead.
+    g.fillStyle = j === 0 ? START_COLOR : 'rgba(255,226,168,.6)';
+    g.font = `600 ${Math.max(9, Math.round(L.rad * 0.62))}px system-ui, sans-serif`;
+    g.fillText(j === 0 ? e.deg : NOTES[pc(e.w)], x, y + L.rad + 9);
     g.globalAlpha = 1;
   });
   drawMarks(false);

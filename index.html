@@ -242,6 +242,9 @@
   /* Learn: skip to the next key in the hardest-first order. */
   #scaleNext { padding: 3px 10px; font-size: 12px; color: var(--brass); }
   #scaleNext[hidden] { display: none; }
+  /* Auto tempo: overrule this key's tempo from the stage. */
+  #scaleNudge button { padding: 2px 7px; font-size: 11px; color: var(--brass); margin-right: 3px; }
+  #scaleNudge[hidden] { display: none; }
   #scaleKey, #scaleBpm { font: 800 22px/1 system-ui, sans-serif; color: #ffe2a8; }
   #scaleMsg small { font-size: 12px; color: var(--dim); }
   /* Learn: the run's tally sits under the sheet, which stays up to be read. */
@@ -410,7 +413,8 @@
       <div class="stage-top">
         <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span>
         <span><button id="scaleNext" hidden>Next key ›</button></span>
-        <span class="scale-info"><b id="scaleBpm"></b> <span id="scaleBpmNote"></span> · <span id="scaleInfo"></span></span>
+        <span class="scale-info"><span id="scaleNudge" hidden><button data-sn="-5">−5</button><button data-sn="5">+5</button></span>
+          <b id="scaleBpm"></b> <span id="scaleBpmNote"></span> · <span id="scaleInfo"></span></span>
       </div>
       <div class="lane-wrap">
         <canvas id="lane"></canvas>

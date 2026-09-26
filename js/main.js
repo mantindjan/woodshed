@@ -9,7 +9,7 @@
 
 import { connectMidi } from './midi.js';
 import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, NOTES, SCALES, WRITTEN_MIDDLE_C, degreeLabel, writtenPc } from './music.js';
-import { startScales, stopScales, scaleNote, scalesRunning, nextKey } from './scales.js';
+import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
@@ -329,6 +329,7 @@ calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a s
 connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 $('#hornWarn').addEventListener('click', () => showTab('horn'));
 $('#scaleNext').addEventListener('click', nextKey);
+$$('#scaleNudge [data-sn]').forEach(b => b.addEventListener('click', () => nudgeTempo(Number(b.dataset.sn))));
 
 // --- Levels (D6): the ladder on the stage, custom builder in the pane ---
 
