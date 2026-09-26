@@ -14,8 +14,11 @@
 // Judging: a note is HIT if it's the right written pitch (octave included)
 // within the window around its time — ±150 ms, narrowed at fast tempos so
 // neighbouring notes' windows never overlap; early/late is shown and graded
-// but isn't an error. A wrong pitch in the window, or nothing by the end of
-// it, is a MISS. Practice: after `misses` misses the run stops ("start again").
+// but isn't an error. The right pitch anywhere in the window wins: a wrong
+// note-on only counts (WRONG) if the window closes without the right one —
+// the horn often sends a brief in-between note while the fingers change
+// (data 2026-09-26: 51 "wrong" notes were a semitone-below glitch with the
+// right note 20–80 ms behind). Nothing by the end of the window is a MISS. Practice: after `misses` misses the run stops ("start again").
 // Learn (boss, 2026-09-25): the same judging, shown the other way round, and
 // nothing ever stops. Before each run it names a start note ("low B♭ — B♭3");
 // the player plays first — no preview sound (boss: a 4-note preview before
@@ -190,10 +193,10 @@ export function scaleNote(midi) {
   if (w === best.w) {
     best.status = 'hit';
     best.off = Math.round(now - best.t);
-    best.hitAt = now;
+    best.hitAt = arrived;             // page time, for the bloom
   } else {
-    best.status = 'wrong';
-    miss();
+    // Not final: the right pitch may still come inside the window (expire()).
+    best.wrongAt = best.wrongAt || now;
   }
   checkDone();
 }
@@ -249,13 +252,17 @@ function miss() {
   if (s.mode === 'practice' && r.misses >= s.misses) endRun(true);
 }
 
-// Called from frames: notes whose window has passed unplayed are misses.
+// Called from frames: a note whose window has closed without its pitch is
+// WRONG if something else was played in it, else a MISS. `now` is page
+// time; windows are in played time (note-ons minus the latency), so the
+// window closes `latency` later on the page clock — without that, late
+// notes were expired before they even arrived (fixed 2026-09-26).
 function expire(now) {
   const r = s.run;
   if (r.phase !== 'running') return;
   for (const e of r.expected) {
-    if (e.status === 'pending' && now > e.t + r.window) {
-      e.status = 'miss';
+    if (e.status === 'pending' && now - s.latency > e.t + r.window) {
+      e.status = e.wrongAt ? 'wrong' : 'miss';
       miss();
       if (r.phase !== 'running') return;
     }
