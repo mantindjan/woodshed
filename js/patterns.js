@@ -2,8 +2,8 @@
 // by. The stage shows no notes ahead (boss, 2026-09-26: "we want the player
 // to remember, to feel the pattern"): chord symbols scroll toward a fixed
 // now line along a staff, bars and the cell's subdivisions marked (4 → four
-// slots a bar, 6 → triplets), the pad sounds each chord and the click every
-// beat. Played notes leave marks behind the line — gold right, red wrong.
+// slots a bar, 6 → triplets); the Rhodes plays each chord and the drums
+// (ride + hi-hat, swung) keep time after a clicked count-in. Played notes leave marks behind the line — gold right, red wrong.
 // The pattern itself, heights included, is always shown at the top.
 //
 // A run = the exercise's keys in order (patternlib.js EXERCISES), the
@@ -22,7 +22,7 @@
 
 import { pc, degreeLabel } from './music.js';
 import { chordHTML } from './notation.js';
-import { initAudio, click, audioTimeAt, stopAll, scheduleChord } from './audio.js';
+import { initAudio, click, audioTimeAt, stopAll, scheduleChord, ride, hat, swingAt } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { EXERCISES, STAGES, SOLID, noteSemis } from './patternlib.js';
 
@@ -153,7 +153,7 @@ export function stopPatterns() {
 
 const reps = () => (s.mode === 'learn' ? STAGES[s.stage] : 1);
 
-// A run: count-in from now, the pad and clicks queued for the whole run.
+// A run: count-in from now; its sound is queued as it goes (schedule()).
 function nextRun() {
   const now = performance.now();
   const r = buildRun(s.pattern, s.exercise, reps(), s.bpm, now + 300);
@@ -172,12 +172,25 @@ function nextRun() {
   $('#pInfo').textContent = `${s.bpm} bpm`;
 }
 
-// Queue the clicks and chords that start within LOOKAHEAD_MS. Each chord
+// Queue the beats and chords that start within LOOKAHEAD_MS. The count-in
+// bar is clicks (so it's clear when to come in); from bar one, the drums
+// keep time: ride on every beat, the swung "and" of 2 and 4 on the ride,
+// the hi-hat foot on 2 and 4 (boss's pick, clip 7, 2026-09-26). Each chord
 // holds to the next one (no gap between them).
 function schedule(now) {
   const r = s.run;
+  const swing = swingAt(s.bpm);
   while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < now + LOOKAHEAD_MS) {
-    click(audioTimeAt(r.t0 + r.nextBeat * r.beat), r.nextBeat % BEATS === 0);
+    const b = r.nextBeat, t = r.t0 + b * r.beat;
+    if (b < BEATS) click(audioTimeAt(t), b === 0);
+    else {
+      const jit = () => Math.random() * 6;                       // a drummer isn't a grid
+      ride(audioTimeAt(t + jit()), b % 2 ? 0.95 : 1);
+      if (b % 2 === 1) {
+        ride(audioTimeAt(t + swing * r.beat + jit()), 0.62);
+        hat(audioTimeAt(t + jit()));
+      }
+    }
     r.nextBeat++;
   }
   while (r.nextChord < r.chords.length && r.chords[r.nextChord].t < now + LOOKAHEAD_MS) {

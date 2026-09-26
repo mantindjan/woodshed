@@ -1,14 +1,35 @@
-// The backing pad, synthesised (no samples). Sound design from
-// docs/handover/SOLVED.md: one sawtooth per voice → lowpass (freq × 3 + 600,
-// capped 2600) → gain → master → lowpass 5200. No detune and no LFO — a
-// backing pad wants stillness, anything moving competes with the player.
+// The app's sound, synthesised (no samples, nothing to download or cache).
+//
+// Chords: an FM electric piano (DX7-style Rhodes tine), in a generated
+// room — chosen by the boss by ear on 2026-09-26 over the old sawtooth pad
+// ("the other sounds like absolute shit"). Per note: a sine carrier with
+// two sine modulators, ratio 1 for the warm bark (brightness decaying over
+// ~0.45 s) and ratio 14 for the bell ping on the attack (~70 ms); the
+// amplitude strikes fast and decays, low notes ringing longer. Chord tones
+// only — bass root below, then 1 3 5 7 close (SOLVED.md: extensions were
+// tried and rejected as muddy; the boss said it again). Notes are rolled a
+// few ms apart, as no hand strikes five keys at once.
+//
+// Room: a ConvolverNode on an impulse made in code (stereo noise with a
+// decaying envelope, 2.4 s), after a gentle saturation that glues the
+// voices; dry 0.85 + wet 0.32.
+//
+// Drums (patterns): a synthesised ride — six inharmonic squares band-passed
+// high, plus a ping — and a hi-hat foot chick (short bright noise), on the
+// drum bus with a little of the room. Swing is set by tempo (swingAt).
+//
+// The metronome click keeps its own bus (SOLVED.md) and the right-answer
+// ping stays a sine echo an octave up.
 
 import { VOICING } from './music.js';
 
 let ctx = null;
-let master = null;
-let clickBus = null;   // metronome clicks: own bus, bypassing the pad's lowpass
-let noise = null;      // cached white-noise buffer for clicks
+let master = null;     // the ping
+let room = null;       // Rhodes in: → saturation → dry + reverb
+let verb = null;       // the room's convolver, for sends
+let drumBus = null;
+let clickBus = null;   // metronome clicks: own bus, bypassing everything else
+let noise = null;      // cached white-noise buffer (clicks, hi-hat)
 // Every live source, so stopAll() can silence them. A source leaves the set
 // when it ends — kept forever, a long session piled up thousands.
 let voices = new Set();
@@ -30,6 +51,7 @@ export function initAudio() {
     lp.Q.value = 0.4;
     master.connect(lp);
     lp.connect(ctx.destination);
+    buildRoom();
     // Clicks go straight out with their own compressor (SOLVED.md): routed
     // through the master lowpass they were too quiet against the chords.
     clickBus = ctx.createGain();
@@ -46,61 +68,128 @@ export function initAudio() {
   if (ctx.state === 'suspended') ctx.resume();
 }
 
-function playNote(midi, time, level, dur) {
-  const f = 440 * Math.pow(2, (midi - 69) / 12);
-  const flt = ctx.createBiquadFilter();
-  flt.type = 'lowpass';
-  flt.Q.value = 0.4;
-  flt.frequency.value = Math.min(f * 3 + 600, 2600);
-  const g = ctx.createGain();
-  const o = ctx.createOscillator();
-  o.type = 'sawtooth';
-  o.frequency.value = f;
-  o.connect(flt);
-  flt.connect(g);
-  g.connect(master);
-  // Envelope: 12 ms in, hold, 30 ms out.
-  g.gain.setValueAtTime(0, time);
-  g.gain.linearRampToValueAtTime(level, time + 0.012);
-  g.gain.setValueAtTime(level, time + dur);
-  g.gain.linearRampToValueAtTime(0, time + dur + 0.03);
-  o.start(time);
-  o.stop(time + dur + 0.08);
-  track(o, g);
+function buildRoom() {
+  room = ctx.createGain();
+  room.gain.value = 0.8;
+  const sat = ctx.createWaveShaper();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(1.4 * x) / Math.tanh(1.4); }
+  sat.curve = curve;
+  room.connect(sat);
+  const sr = ctx.sampleRate, len = Math.round(sr * 2.4);
+  const ir = ctx.createBuffer(2, len, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+  }
+  verb = ctx.createConvolver();
+  verb.buffer = ir;
+  const dry = ctx.createGain(); dry.gain.value = 0.85;
+  const wet = ctx.createGain(); wet.gain.value = 0.32;
+  sat.connect(dry); dry.connect(ctx.destination);
+  sat.connect(verb); verb.connect(wet); wet.connect(ctx.destination);
+  drumBus = ctx.createGain();
+  drumBus.connect(ctx.destination);
+  const send = ctx.createGain(); send.gain.value = 0.15;
+  drumBus.connect(send); send.connect(verb);
 }
 
-// Play a chord. rootConcertPc is a CONCERT pitch class; the root sits in
-// octave 3 (MIDI 48–59) so the bass lands in octave 2, as in the prototype.
+const rnd = (a, b) => a + Math.random() * (b - a);
+const freq = midi => 440 * Math.pow(2, (midi - 69) / 12);
+
+// One Rhodes note at audio time `t`, released at t + dur.
+function rhodesNote(midi, t, dur, vel, pan) {
+  const f = freq(midi);
+  const car = ctx.createOscillator(); car.frequency.value = f;
+  const m1 = ctx.createOscillator(); m1.frequency.value = f;
+  const m2 = ctx.createOscillator(); m2.frequency.value = f * 14;
+  const i1 = ctx.createGain(), i2 = ctx.createGain();
+  const bright = Math.max(0.4, 1.4 - (midi - 48) / 40);            // lower notes bark more
+  i1.gain.setValueAtTime(f * 2.4 * vel * bright, t); i1.gain.exponentialRampToValueAtTime(f * 0.35, t + 0.45);
+  i2.gain.setValueAtTime(f * 1.1 * vel * bright, t); i2.gain.exponentialRampToValueAtTime(f * 0.001, t + 0.07);
+  m1.connect(i1); i1.connect(car.frequency); m2.connect(i2); i2.connect(car.frequency);
+  const amp = ctx.createGain();
+  const decay = 1.2 + 2.2 * Math.max(0, (84 - midi) / 36);          // low notes ring longer
+  amp.gain.setValueAtTime(0, t);
+  amp.gain.linearRampToValueAtTime(0.16 * vel, t + 0.004);
+  amp.gain.setTargetAtTime(0.04 * vel, t + 0.004, decay);
+  amp.gain.setTargetAtTime(0, t + dur, 0.08);
+  const p = ctx.createStereoPanner(); p.pan.value = pan;
+  car.connect(amp); amp.connect(p); p.connect(room);
+  for (const o of [car, m1, m2]) { o.start(t); o.stop(t + dur + 0.6); track(o, amp); }
+}
+
+// A chord: bass root an octave down, then 1 3 5 7 close (VOICING's first
+// five). rootConcertPc is a CONCERT pitch class; the root sits in octave 3
+// (MIDI 48–59).
+function rhodesChord(rootConcertPc, quality, t, dur) {
+  VOICING[quality].slice(0, 5).forEach((semi, i) => {
+    rhodesNote(48 + rootConcertPc + semi, t + rnd(0, 0.012), dur, rnd(0.85, 1), i === 0 ? 0 : (i % 2 ? -0.35 : 0.35));
+  });
+}
+
+// Play a chord now (the degree drill: a new question cuts the last one).
 export function playChord(rootConcertPc, quality, dur) {
   if (!ctx) return;
   stopAll();
-  const t = ctx.currentTime + 0.02;
-  VOICING[quality].forEach((semi, i) => {
-    // Bass loudest, close voicing medium, top doublings quiet.
-    const level = i === 0 ? 0.13 : i <= 4 ? 0.085 : 0.05;
-    playNote(48 + rootConcertPc + semi, t, level, dur);
-  });
+  rhodesChord(rootConcertPc, quality, ctx.currentTime + 0.02, dur);
 }
 
 // A chord at audio time `time` for `dur` seconds, without silencing what's
-// already scheduled (the patterns lane queues a chord per key alongside its
-// clicks; playChord's stopAll would cut them).
+// already scheduled (the patterns lane queues chords alongside its drums).
 export function scheduleChord(rootConcertPc, quality, time, dur) {
   if (!ctx) return;
-  VOICING[quality].forEach((semi, i) => {
-    const level = i === 0 ? 0.13 : i <= 4 ? 0.085 : 0.05;
-    playNote(48 + rootConcertPc + semi, time, level, dur);
-  });
+  rhodesChord(rootConcertPc, quality, time, dur);
+}
+
+// --- Drums (patterns) ---
+// Where the swung "and" falls, as a fraction of the beat: near 3:1 at
+// ballads, 2:1 at medium, flattening toward straight eighths fast (IDEAS.md:
+// hard-code 2:1 and it feels leaden slow and frantic fast).
+export function swingAt(bpm) {
+  if (bpm <= 80) return 0.72;
+  if (bpm <= 160) return 0.72 - (bpm - 80) * (0.72 - 0.64) / 80;
+  if (bpm >= 280) return 0.54;
+  return 0.64 - (bpm - 160) * (0.64 - 0.54) / 120;
+}
+
+export function ride(t, vel = 1) {
+  if (!ctx) return;
+  const g = ctx.createGain();
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 8000; bp.Q.value = 0.7;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5000;
+  bp.connect(hp); hp.connect(g); g.connect(drumBus);
+  const lvl = 0.08 * vel;
+  for (const r of [2, 3, 4.16, 5.43, 6.79, 8.21]) {
+    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = 180 * r;
+    o.connect(bp); o.start(t); o.stop(t + 1.2); track(o, g);
+  }
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lvl, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(lvl * 0.25, t + 0.12); g.gain.exponentialRampToValueAtTime(0.0008, t + 1.1);
+  const p = ctx.createOscillator(); p.type = 'sine'; p.frequency.value = 3300;
+  const pg = ctx.createGain(); p.connect(pg); pg.connect(drumBus);
+  pg.gain.setValueAtTime(lvl * 0.25, t); pg.gain.exponentialRampToValueAtTime(0.0005, t + 0.5);
+  p.start(t); p.stop(t + 0.6); track(p, pg);
+}
+
+export function hat(t, vel = 1) {
+  if (!ctx) return;
+  const n = ctx.createBufferSource(); n.buffer = noise;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 9000; bp.Q.value = 1.2;
+  const g = ctx.createGain(); n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(drumBus);
+  g.gain.setValueAtTime(0.35 * vel, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  n.start(t); n.stop(t + 0.1); track(n, g);
 }
 
 // A soft, bell-like ping of one note on a right answer: a sine plus a quiet
 // octave partial, 5 ms attack, exponential fade. Sits an octave above the
-// pad's close voicing (MIDI 72–83) so it reads as an echo, not a new chord.
+// chord's close voicing (MIDI 72–83) so it reads as an echo, not a new chord.
 // pitchConcertPc is a CONCERT pitch class, so it matches the horn.
 export function playPing(pitchConcertPc) {
   if (!ctx) return;
   const t = ctx.currentTime + 0.01;
-  const f = 440 * Math.pow(2, (72 + pitchConcertPc - 69) / 12);
+  const f = freq(72 + pitchConcertPc);
   for (const [mult, level] of [[1, 0.16], [2, 0.04]]) {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
