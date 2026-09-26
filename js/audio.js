@@ -175,9 +175,12 @@ export function bassNote(midi, t, dur, vel = 1) {
   src.loop = true; src.loopStart = z.loop[0] / 44100; src.loopEnd = z.loop[1] / 44100;
   const g = ctx.createGain(); src.connect(g); g.connect(bassBus);
   // 0.31: the prototype's 0.35 less 2 dB ("tone the bass down slightly"),
-  // then +1 dB ("a tad louder") — boss, 2026-09-26.
-  g.gain.setValueAtTime(0.31 * vel, t); g.gain.setTargetAtTime(0, t + dur, 0.06);
-  src.start(t); src.stop(t + dur + 0.4); track(src, g);
+  // then +1 dB ("a tad louder") — boss, 2026-09-26. A 3 ms fade in: some
+  // zones don't start at zero, and a cold start clicked; stopped only once
+  // the release has faded.
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.31 * vel, t + 0.003);
+  g.gain.setTargetAtTime(0, t + dur, 0.06);
+  src.start(t); src.stop(t + dur + 0.6); track(src, g);
 }
 
 // A kit hit ('ride', 'hatfoot', 'kick', 'snare') at `t`.
@@ -214,14 +217,15 @@ function rhodesNote(midi, t, dur, vel, pan, dest = room) {
   amp.gain.setValueAtTime(0, t);
   amp.gain.linearRampToValueAtTime(0.16 * vel, t + 0.004);
   amp.gain.setTargetAtTime(0.04 * vel, t + 0.004, decay);
-  amp.gain.setTargetAtTime(0, t + dur, 0.08);
+  amp.gain.setTargetAtTime(0, t + dur, 0.06);         // down to ~0.005 % by the stop
   const p = ctx.createStereoPanner(); p.pan.value = pan;
   car.connect(amp); amp.connect(p); p.connect(dest);
-  // Stop what's no longer heard, to spare the phone's CPU (a crackle
-  // suspect): the bell modulator is gone after ~70 ms, the rest shortly
-  // after the release.
+  // The bell modulator is gone after ~70 ms: stop it (CPU). The carrier
+  // must only stop once the release has faded out — stopping it 0.35 s
+  // after release cut a still-audible tail on short loud hits: a click
+  // (found by rendering offline and scanning for jumps, 2026-09-26).
   for (const o of [car, m1, m2]) { o.start(t); track(o, amp); }
-  car.stop(t + dur + 0.35); m1.stop(t + dur + 0.35); m2.stop(t + 0.12);
+  car.stop(t + dur + 0.6); m1.stop(t + dur + 0.6); m2.stop(t + 0.12);
 }
 
 // A chord: bass root an octave down, then 1 3 5 7 close (VOICING's first
