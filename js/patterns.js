@@ -2,8 +2,8 @@
 // by. The stage shows no notes ahead (boss, 2026-09-26: "we want the player
 // to remember, to feel the pattern"): chord symbols scroll toward a fixed
 // now line along a staff, bars and the cell's subdivisions marked (4 → four
-// slots a bar, 6 → triplets); the Rhodes plays each chord and the drums
-// (ride + hi-hat, swung) keep time after a clicked count-in. Played notes leave marks behind the line — gold right, red wrong.
+// slots a bar, 6 → triplets); after a clicked count-in a jazz trio plays
+// the changes — walking bass, drums, Rhodes comping (trio.js, audio.js). Played notes leave marks behind the line — gold right, red wrong.
 // The pattern itself, heights included, is always shown at the top.
 //
 // A run = the exercise's keys in order (patternlib.js EXERCISES), the
@@ -22,7 +22,8 @@
 
 import { pc, degreeLabel } from './music.js';
 import { chordHTML } from './notation.js';
-import { initAudio, click, audioTimeAt, stopAll, scheduleChord, ride, hat, swingAt } from './audio.js';
+import { initAudio, click, audioTimeAt, stopAll, swingAt, bassNote, kitHit, compChord } from './audio.js';
+import { walk, comp, spansOf } from './trio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { EXERCISES, STAGES, SOLID, noteSemis } from './patternlib.js';
 
@@ -163,8 +164,13 @@ function nextRun() {
   r.phase = 'running';
   s.run = r;
   r.beats = Math.round((r.end - r.t0) / r.beat);
-  r.nextBeat = 0;                     // look-ahead: the next click / chord not yet queued
-  r.nextChord = 0;
+  r.nextBeat = 0;                     // look-ahead: the next beat / bass note / comp hit not yet queued
+  // The trio's parts for this run: a bar per span, so held chords walk.
+  const spans = spansOf(r.chords.map(c => ({ key: c.key, bars: c.bars })), s.pattern.quality, s.calib);
+  r.bass = walk(spans);
+  r.comp = comp(spans, spans.length * BEATS);
+  r.bassAt = 0;
+  r.compAt = 0;
   schedule(now);
   buildChords(r);
   message('');
@@ -172,30 +178,47 @@ function nextRun() {
   $('#pInfo').textContent = `${s.bpm} bpm`;
 }
 
-// Queue the beats and chords that start within LOOKAHEAD_MS. The count-in
-// bar is clicks (so it's clear when to come in); from bar one, the drums
-// keep time: ride on every beat, the swung "and" of 2 and 4 on the ride,
-// the hi-hat foot on 2 and 4 (boss's pick, clip 7, 2026-09-26). Each chord
-// holds to the next one (no gap between them).
+// Queue what sounds within LOOKAHEAD_MS. The count-in bar is clicks (so
+// it's clear when to come in); from bar one the trio plays (C3, the boss's
+// pick by ear, docs/trio/): the jazz kit — ride on the beats and the swung
+// and of 2 and 4, hi-hat foot on 2 and 4, a feathered kick, snare ghosts
+// and a push before each 4-bar phrase — the walking bass and the Rhodes
+// comping, both worked out for the run in nextRun (trio.js). Levels are
+// the prototype's. Beats are counted from bar one; T() gives page time,
+// swung on the upbeats.
 function schedule(now) {
   const r = s.run;
   const swing = swingAt(s.bpm);
-  while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < now + LOOKAHEAD_MS) {
-    const b = r.nextBeat, t = r.t0 + b * r.beat;
-    if (b < BEATS) click(audioTimeAt(t), b === 0);
+  const first = r.t0 + BEATS * r.beat;
+  const T = b => first + (Math.floor(b) + (b % 1 ? swing : 0)) * r.beat;
+  const jit = ms => Math.random() * ms;                          // a band isn't a grid
+  const horizon = now + LOOKAHEAD_MS;
+  while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < horizon) {
+    const b = r.nextBeat;
+    if (b < BEATS) click(audioTimeAt(r.t0 + b * r.beat), b === 0);
     else {
-      const jit = () => Math.random() * 6;                       // a drummer isn't a grid
-      ride(audioTimeAt(t + jit()), b % 2 ? 0.95 : 1);
-      if (b % 2 === 1) {
-        ride(audioTimeAt(t + swing * r.beat + jit()), 0.62);
-        hat(audioTimeAt(t + jit()));
+      const k = b - BEATS;                                        // beat of the tune
+      const at = x => audioTimeAt(x);
+      kitHit('ride', at(T(k) + jit(6)), (k % 2 ? 0.19 : 0.22) * (0.9 + Math.random() * 0.15));
+      kitHit('kick', at(T(k) + jit(6)), 0.12);
+      if (k % 2 === 1) {
+        kitHit('ride', at(T(k + 0.5) + jit(6)), 0.14);
+        kitHit('hatfoot', at(T(k) + jit(4)), 0.45);
       }
+      if (Math.random() < 0.12) kitHit('snare', at(T(k + 0.5)), 0.12);
+      if (k % 16 === 15 && Math.random() < 0.6) kitHit('snare', at(T(k + 0.5)), 0.3);
     }
     r.nextBeat++;
   }
-  while (r.nextChord < r.chords.length && r.chords[r.nextChord].t < now + LOOKAHEAD_MS) {
-    const c = r.chords[r.nextChord++];
-    scheduleChord(pc(c.key + s.calib), s.pattern.quality, audioTimeAt(c.t), (c.bars * BEATS * r.beat) / 1000);
+  while (r.bassAt < r.bass.length && T(r.bass[r.bassAt].beat) < horizon) {
+    const n = r.bass[r.bassAt++];
+    // Each note rings into the next; a touch more on 1 and 3.
+    const vel = (n.beat % 2 === 0 ? 1 : 0.9) * (0.85 + Math.random() * 0.15);
+    bassNote(n.midi, audioTimeAt(T(n.beat) - 4 + jit(14)), r.beat / 1000 + 0.02, vel);
+  }
+  while (r.compAt < r.comp.length && T(r.comp[r.compAt].beat) < horizon) {
+    const h = r.comp[r.compAt++];
+    compChord(h.midis, audioTimeAt(T(h.beat)), (h.len * r.beat) / 1000, 0.7 + Math.random() * 0.25);
   }
 }
 

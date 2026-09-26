@@ -14,9 +14,16 @@
 // decaying envelope, 2.4 s), after a gentle saturation that glues the
 // voices; dry 0.85 + wet 0.32.
 //
-// Drums (patterns): a synthesised ride — six inharmonic squares band-passed
-// high, plus a ping — and a hi-hat foot chick (short bright noise), on the
-// drum bus with a little of the room. Swing is set by tempo (swingAt).
+// Swing is set by tempo (swingAt).
+//
+// Trio (patterns, C3): samples from FluidR3 Mono GM (MIT, public/sounds/,
+// licence alongside) — its "Acoustic Bass" (6 zones, looped sustain) and
+// "Jazz" kit (ride, hi-hat foot, kick, snare) — plus Rhodes comping. The
+// levels are the prototype's the boss approved by ear (docs/trio/, clip 8,
+// bass −2 dB on his word). The bass bus has the phone-speaker trick: phone
+// speakers can't play a bass fundamental, so a parallel drive adds
+// harmonics the ear reads as the note and a +7 dB peak at 800 Hz lifts the
+// growl (A-weighted, the old orchestral pizz was 4 % of the mix — inaudible).
 //
 // The metronome click keeps its own bus (SOLVED.md) and the right-answer
 // ping stays a sine echo an octave up.
@@ -27,9 +34,9 @@ let ctx = null;
 let master = null;     // the ping
 let room = null;       // Rhodes in: → saturation → dry + reverb
 let verb = null;       // the room's convolver, for sends
-let drumBus = null;
 let clickBus = null;   // metronome clicks: own bus, bypassing everything else
-let noise = null;      // cached white-noise buffer (clicks, hi-hat)
+let bassBus = null, kitBus = null, compBus = null;   // the trio
+let noise = null;      // cached white-noise buffer (clicks)
 // Every live source, so stopAll() can silence them. A source leaves the set
 // when it ends — kept forever, a long session piled up thousands.
 let voices = new Set();
@@ -88,17 +95,89 @@ function buildRoom() {
   const wet = ctx.createGain(); wet.gain.value = 0.32;
   sat.connect(dry); dry.connect(ctx.destination);
   sat.connect(verb); verb.connect(wet); wet.connect(ctx.destination);
-  drumBus = ctx.createGain();
-  drumBus.connect(ctx.destination);
-  const send = ctx.createGain(); send.gain.value = 0.15;
-  drumBus.connect(send); send.connect(verb);
+  buildTrio();
+}
+
+// The trio's buses (as the prototype's mix): bass centre with the phone
+// trick and a little room, kit a touch left, comping a touch right.
+function buildTrio() {
+  const out = (level, sendLevel, pan) => {
+    const p = ctx.createStereoPanner(); p.pan.value = pan;
+    const g = ctx.createGain(); g.gain.value = level;
+    p.connect(g); g.connect(ctx.destination);
+    const snd = ctx.createGain(); snd.gain.value = sendLevel; g.connect(snd); snd.connect(verb);
+    return p;
+  };
+  const bassOut = out(1.0, 0.08, 0);
+  bassBus = ctx.createGain();
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 35;
+  const peak = ctx.createBiquadFilter(); peak.type = 'peaking'; peak.frequency.value = 800; peak.Q.value = 0.9; peak.gain.value = 7;
+  const drive = ctx.createWaveShaper(); const cv = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; cv[i] = Math.tanh(3 * x) / Math.tanh(3); }
+  drive.curve = cv;
+  const drv = ctx.createGain(); drv.gain.value = 0.35;
+  bassBus.connect(hp); hp.connect(peak); peak.connect(bassOut);
+  hp.connect(drive); drive.connect(drv); drv.connect(bassOut);
+  kitBus = out(0.9, 0.15, -0.2);
+  compBus = out(0.55, 0.35, 0.25);
+}
+
+// --- Trio samples: loaded once, on first use (patterns' Start) ---
+// Bass zones: root (MIDI), the keys it covers, its sustain loop (frames).
+const BASS_ZONES = [
+  { root: 28, lo: 0, hi: 28, loop: [76560, 78701] }, { root: 29, lo: 29, hi: 29, loop: [90123, 91133] },
+  { root: 36, lo: 30, hi: 36, loop: [51742, 52417] }, { root: 41, lo: 37, hi: 41, loop: [52903, 53409] },
+  { root: 46, lo: 42, hi: 46, loop: [43947, 44705] }, { root: 54, lo: 47, hi: 127, loop: [36227, 36704] },
+];
+const KIT = ['ride', 'hatfoot', 'kick', 'snare'];
+let trio = null;           // {bass: [{…zone, buf}], kit: {name: buf}} once loaded
+let trioLoading = null;
+export function loadTrio() {
+  if (trio) return Promise.resolve();
+  if (!trioLoading) {
+    const get = async url => ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
+    trioLoading = Promise.all([
+      Promise.all(BASS_ZONES.map(async z => ({ ...z, buf: await get(`sounds/bass/bass-${z.root}.ogg`) }))),
+      Promise.all(KIT.map(async k => [k, await get(`sounds/kit/${k}.ogg`)])),
+    ]).then(([bass, kit]) => { trio = { bass, kit: Object.fromEntries(kit) }; })
+      .catch(err => { trioLoading = null; throw err; });
+  }
+  return trioLoading;
+}
+
+// A bass note at `t`, held `dur` s (looping its sustain), then released.
+export function bassNote(midi, t, dur, vel = 1) {
+  if (!ctx || !trio) return;
+  const z = trio.bass.find(b => midi >= b.lo && midi <= b.hi);
+  const src = ctx.createBufferSource(); src.buffer = z.buf;
+  src.playbackRate.value = Math.pow(2, (midi - z.root) / 12);
+  src.loop = true; src.loopStart = z.loop[0] / 44100; src.loopEnd = z.loop[1] / 44100;
+  const g = ctx.createGain(); src.connect(g); g.connect(bassBus);
+  // 0.28: the prototype's 0.35 less 2 dB ("tone the bass down slightly").
+  g.gain.setValueAtTime(0.28 * vel, t); g.gain.setTargetAtTime(0, t + dur, 0.06);
+  src.start(t); src.stop(t + dur + 0.4); track(src, g);
+}
+
+// A kit hit ('ride', 'hatfoot', 'kick', 'snare') at `t`.
+export function kitHit(name, t, vel) {
+  if (!ctx || !trio) return;
+  const src = ctx.createBufferSource(); src.buffer = trio.kit[name];
+  const g = ctx.createGain(); g.gain.value = vel; src.connect(g); g.connect(kitBus);
+  src.start(t); track(src, g);
+}
+
+// A comping voicing (MIDI notes, concert) at `t` for `dur` s, rolled a few ms.
+export function compChord(midis, t, dur, vel) {
+  if (!ctx) return;
+  for (const m of midis) rhodesNote(m, t + rnd(0, 0.012), dur, vel, 0, compBus);
 }
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const freq = midi => 440 * Math.pow(2, (midi - 69) / 12);
 
-// One Rhodes note at audio time `t`, released at t + dur.
-function rhodesNote(midi, t, dur, vel, pan) {
+// One Rhodes note at audio time `t`, released at t + dur, into `dest`
+// (the room, or the comping bus).
+function rhodesNote(midi, t, dur, vel, pan, dest = room) {
   const f = freq(midi);
   const car = ctx.createOscillator(); car.frequency.value = f;
   const m1 = ctx.createOscillator(); m1.frequency.value = f;
@@ -115,7 +194,7 @@ function rhodesNote(midi, t, dur, vel, pan) {
   amp.gain.setTargetAtTime(0.04 * vel, t + 0.004, decay);
   amp.gain.setTargetAtTime(0, t + dur, 0.08);
   const p = ctx.createStereoPanner(); p.pan.value = pan;
-  car.connect(amp); amp.connect(p); p.connect(room);
+  car.connect(amp); amp.connect(p); p.connect(dest);
   for (const o of [car, m1, m2]) { o.start(t); o.stop(t + dur + 0.6); track(o, amp); }
 }
 
@@ -135,14 +214,7 @@ export function playChord(rootConcertPc, quality, dur) {
   rhodesChord(rootConcertPc, quality, ctx.currentTime + 0.02, dur);
 }
 
-// A chord at audio time `time` for `dur` seconds, without silencing what's
-// already scheduled (the patterns lane queues chords alongside its drums).
-export function scheduleChord(rootConcertPc, quality, time, dur) {
-  if (!ctx) return;
-  rhodesChord(rootConcertPc, quality, time, dur);
-}
-
-// --- Drums (patterns) ---
+// --- Swing ---
 // Where the swung "and" falls, as a fraction of the beat: near 3:1 at
 // ballads, 2:1 at medium, flattening toward straight eighths fast (IDEAS.md:
 // hard-code 2:1 and it feels leaden slow and frantic fast).
@@ -151,35 +223,6 @@ export function swingAt(bpm) {
   if (bpm <= 160) return 0.72 - (bpm - 80) * (0.72 - 0.64) / 80;
   if (bpm >= 280) return 0.54;
   return 0.64 - (bpm - 160) * (0.64 - 0.54) / 120;
-}
-
-export function ride(t, vel = 1) {
-  if (!ctx) return;
-  const g = ctx.createGain();
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 8000; bp.Q.value = 0.7;
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5000;
-  bp.connect(hp); hp.connect(g); g.connect(drumBus);
-  const lvl = 0.08 * vel;
-  for (const r of [2, 3, 4.16, 5.43, 6.79, 8.21]) {
-    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = 180 * r;
-    o.connect(bp); o.start(t); o.stop(t + 1.2); track(o, g);
-  }
-  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lvl, t + 0.002);
-  g.gain.exponentialRampToValueAtTime(lvl * 0.25, t + 0.12); g.gain.exponentialRampToValueAtTime(0.0008, t + 1.1);
-  const p = ctx.createOscillator(); p.type = 'sine'; p.frequency.value = 3300;
-  const pg = ctx.createGain(); p.connect(pg); pg.connect(drumBus);
-  pg.gain.setValueAtTime(lvl * 0.25, t); pg.gain.exponentialRampToValueAtTime(0.0005, t + 0.5);
-  p.start(t); p.stop(t + 0.6); track(p, pg);
-}
-
-export function hat(t, vel = 1) {
-  if (!ctx) return;
-  const n = ctx.createBufferSource(); n.buffer = noise;
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 9000; bp.Q.value = 1.2;
-  const g = ctx.createGain(); n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(drumBus);
-  g.gain.setValueAtTime(0.35 * vel, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-  n.start(t); n.stop(t + 0.1); track(n, g);
 }
 
 // A soft, bell-like ping of one note on a right answer: a sine plus a quiet

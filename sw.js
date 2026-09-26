@@ -18,7 +18,11 @@ const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
   'js/main.js', 'js/midi.js', 'js/music.js', 'js/audio.js', 'js/events.js', 'js/drill.js',
   'js/notation.js', 'js/weakspots.js', 'js/backup.js',
-  'js/levels.js', 'js/scoring.js', 'js/heatmap.js', 'js/summary.js', 'js/sync.js', 'js/scales.js', 'js/tempo.js', 'js/scalelevels.js', 'js/rangemap.js', 'js/scaletempo.js', 'js/latency.js', 'js/patterns.js', 'js/patternlib.js', 'fonts/realbook.woff2', 'fonts/symbols.woff2',
+  'js/levels.js', 'js/scoring.js', 'js/heatmap.js', 'js/summary.js', 'js/sync.js', 'js/scales.js', 'js/tempo.js', 'js/scalelevels.js', 'js/rangemap.js', 'js/scaletempo.js', 'js/latency.js', 'js/patterns.js', 'js/patternlib.js', 'js/trio.js',
+  // Samples for the trio (FluidR3 Mono GM, MIT, licence alongside). No apostrophes in this list: tests/offline.spec.js reads it.
+  'sounds/bass/bass-28.ogg', 'sounds/bass/bass-29.ogg', 'sounds/bass/bass-36.ogg', 'sounds/bass/bass-41.ogg',
+  'sounds/bass/bass-46.ogg', 'sounds/bass/bass-54.ogg', 'sounds/kit/ride.ogg', 'sounds/kit/hatfoot.ogg',
+  'sounds/kit/kick.ogg', 'sounds/kit/snare.ogg', 'sounds/FLUIDR3-LICENSE.txt', 'fonts/realbook.woff2', 'fonts/symbols.woff2',
   'fonts/REALBOOK-LICENSE.txt', 'fonts/DEJAVU-LICENSE.txt',
 ];
 

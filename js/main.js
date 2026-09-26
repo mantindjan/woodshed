@@ -24,6 +24,7 @@ import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as re
 import { renderRangeMap, colour } from './rangemap.js';
 import { createTempoModel, tempoKey, pipText, pips } from './scaletempo.js';
 import { startLatency, stopLatency, latencyNote, measuring } from './latency.js';
+import { initAudio, loadTrio } from './audio.js';
 import { startPatterns, stopPatterns, patternNote, patternsRunning, patternHTML, esc,
          pausePatterns, resumePatterns, restartPatterns, patternsPaused } from './patterns.js';
 import { loadLibrary, savePattern, deletePattern, patternProgress, nearestOct, autoName, degreesText,
@@ -362,6 +363,10 @@ startBtn.addEventListener('click', async () => {
                 recap => { scaleRecap = recap; showRunning(false); loadTempo(); runSync(); });
   } else if (game === 'patterns') {
     const p = currentPattern();
+    // The trio's samples, once (cached for offline by the service worker).
+    // If they can't load, the run goes on with the count-in and no band.
+    initAudio();
+    await loadTrio().catch(() => {});
     startPatterns({ pattern: p, mode, exercise: mode === 'learn' ? 'cycle4' : pExercise, stage: currentStage(p),
                     bpm: ptempo.get(), calib, calibOffset, latency },
                   () => { showRunning(false); showSettings(); loadPatternProgress(); runSync(); });
