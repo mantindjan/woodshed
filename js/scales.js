@@ -52,7 +52,7 @@ import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { pickScaleKey, PATTERNS, runPattern } from './scalelevels.js';
-import { tempoKey, runOutcome, CLEAN_RUNS, rungUp, rungDown } from './scaletempo.js';
+import { tempoKey, runOutcome, CLEAN_RUNS, rungUp, rungDown, inComfort } from './scaletempo.js';
 import { saveKeys, saveTempo } from './summary.js';
 
 const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
@@ -60,7 +60,10 @@ const COUNT_IN = 4;            // clicks before the first note
 const PER_BEAT = 2;            // eighths: two scale notes per click (boss, 2026-09-25)
 const SUMMARY_MS = 1800;       // how long a run's summary shows before the next
 const SHEET_SUMMARY_MS = 4000; // learn: longer, to read the marks on the sheet
-const SHEET_ROW = 12;          // learn: most notes per sheet row (12, not 16: bigger discs)
+// Learn: most notes per sheet row. 18 keeps any run to 2 rows, so each row
+// has the height to show the pattern's staircase (at 12 a row, 3 rows of
+// big discs flattened the thirds — boss, 2026-09-26).
+const SHEET_ROW = 18;
 // A run that's gone (boss, 2026-09-26): after a false start, or in learn
 // ERRORS_IN_A_ROW wrong/missed notes running, it stops, pauses RESTART_MS,
 // and the same run starts again straight into the count-in.
@@ -518,7 +521,10 @@ function endRun(stopped, abort = null) {
     // The tally sits under the sheet, which stays up to be read.
     const onBeat = hits.filter(e => Math.abs(e.off) <= ON_BEAT_MS).length;
     const drift = mean !== null && Math.abs(mean) > 15 ? lateness : '';   // "on the beat" is already said
-    message(`<b>${hits.length} / ${r.expected.length} right</b> · ${onBeat} on the beat${drift}${tempoNote}`);
+    // Misses at the horn's extremes are shown but don't hold learn back.
+    const edge = r.expected.filter(e => e.status !== 'hit' && !inComfort(e.w)).length;
+    const edgeNote = edge ? `<br><small>${edge} missed below low C / above high E — not counted toward the tempo</small>` : '';
+    message(`<b>${hits.length} / ${r.expected.length} right</b> · ${onBeat} on the beat${drift}${edgeNote}${tempoNote}`);
     $('#scaleMsg').classList.add('tally');
   } else {
     message((stopped
@@ -622,9 +628,11 @@ function draw(r) {
 
   const now = performance.now();
   const pos = slotAt(r, now);
-  // Big discs (boss: "make the notes much bigger, I can't see anything").
-  const pxBeat = Math.min(130, W * 0.22);
-  const stepPx = Math.min(30, H / 12);
+  // Discs big enough to read, and a scale step tall enough relative to them
+  // that the pattern's staircase shows (boss, 2026-09-26: bigger discs on
+  // the old spacing made the thirds look flat).
+  const pxBeat = Math.min(120, W * 0.2);
+  const stepPx = Math.min(38, H / 8.5);
   g.textAlign = 'center'; g.textBaseline = 'middle';
   r.expected.forEach((e, i) => {
     const d = i - pos;                        // note slots until this note
@@ -633,7 +641,7 @@ function draw(r) {
     const y = cy - (e.i - (r.base + r.slope * pos)) * stepPx;
     if (x < -60 || x > W + 30) return;
     const root = e.deg === '1';
-    const rad = root ? 29 : 25;
+    const rad = root ? 22 : 19;
     const fade = x < nowX - 10 ? Math.max(0, 1 - (nowX - x) / (nowX + 30)) : 1;
     g.globalAlpha = fade;
     if (e.status === 'hit') bloom(g, x, y, rad, accuracy(r, e), now - e.hitAt);
@@ -713,17 +721,19 @@ function sheetLayout(r, W, H) {
   const top = 34;                                   // under the count-in dots
   const bandH = (H - top - 44) / rows;              // room for the tally below
   const slot = (W - 24) / per;
-  const rad = Math.max(10, Math.min(24, slot * 0.44, bandH * 0.24));
+  const rad = Math.max(9, Math.min(16, slot * 0.42, bandH * 0.14));
+  const nameSize = Math.max(11, Math.round(rad * 0.85));
   const bands = [];
   for (let k = 0; k < rows; k++) {
     const a = k * per, b = Math.min(n, a + per);
     const is = r.expected.slice(a, b).map(e => e.i);
     const lo = Math.min(...is), hi = Math.max(...is);
-    // Room for the note name under the lowest disc and the "start" tag over the top.
-    const stepPx = Math.min(rad * 0.9, (bandH - 3 * rad - 22) / Math.max(1, hi - lo));   // + the name under the lowest disc
+    // The staircase gets the band's height, less the discs, the note name
+    // under the lowest and the "start" tag over the top.
+    const stepPx = Math.min(rad * 1.2, (bandH - 2 * rad - nameSize - 18) / Math.max(1, hi - lo));
     bands.push({ a, b, mid: (lo + hi) / 2, cy: top + bandH * (k + 0.5), stepPx });
   }
-  r.sheet = { W, H, per, slot, rad, bands, bandH, left: 12 };
+  r.sheet = { W, H, per, slot, rad, nameSize, bands, bandH, left: 12 };
   return r.sheet;
 }
 
@@ -775,7 +785,7 @@ function drawSheet(g, r, W, H) {
     // Learn: the note name under every degree (boss, 2026-09-26); the start
     // disc already carries its name, so its degree goes under instead.
     // Big enough to read on the stand (boss, 2026-09-26): about the disc's radius.
-    const nameSize = Math.max(14, Math.round(L.rad * 0.95));
+    const nameSize = L.nameSize;
     g.fillStyle = j === 0 ? START_COLOR : 'rgba(255,226,168,.85)';
     g.font = `700 ${nameSize}px system-ui, sans-serif`;
     g.fillText(j === 0 ? e.deg : NOTES[pc(e.w)], x, y + L.rad + nameSize * 0.65 + 2);

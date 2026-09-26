@@ -24,7 +24,8 @@ const KEY = 'woodshed.summary';
 // v5: placement ramp, growing steps, new keys start from the level.
 // v6: learn: one slip is clean, 2 clean step up; false starts void; chosen tempo = baseline.
 // v7: tempos move by rungs of the tempo scale, not percentages.
-const VERSION = 7;
+// v8: learn judges clean/stay/broken on the comfort range C4–E6.
+const VERSION = 8;
 
 function read() {
   try {
