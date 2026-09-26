@@ -9,7 +9,7 @@
 
 import { connectMidi } from './midi.js';
 import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, NOTES, SCALES, WRITTEN_MIDDLE_C, degreeLabel, writtenPc } from './music.js';
-import { startScales, stopScales, scaleNote, scalesRunning } from './scales.js';
+import { startScales, stopScales, scaleNote, scalesRunning, nextKey } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
@@ -79,13 +79,20 @@ const currentScaleExercise = () => resolveScaleExercise(scaleExerciseId, scaleCu
 // starts on the current exercise's level, then follows the picker.
 let mapLevel = null;
 let mapView = 'range';
-// Auto tempo (E4): on by default; applies to practice only (learn keeps the
-// Fixed tempo). The staircases live in the cached summary; kept here too so
-// the Play pane can show the next session's tempo without waiting.
+// Auto tempo (E4): on by default, in practice and learn (boss 2026-09-26:
+// learn should climb too), one staircase per key. The staircases live in
+// the cached summary; kept here too so the panes can show tempos without
+// waiting.
 let tempoAuto = load(TEMPO_AUTO_KEY) !== 'fixed';
 let tempoModel = createTempoModel();
-const autoActive = () => tempoAuto && mode === 'practice';
-const scaleTempoKey = () => { const x = currentScaleExercise(); return tempoKey(x.scale, x.pattern); };
+const autoActive = () => tempoAuto;
+// What the Play strip shows on Auto: the middle of the exercise's keys'
+// starting tempos (each run then plays at its own key's, shown on stage).
+function autoStartTempo() {
+  const x = currentScaleExercise();
+  const starts = x.keys.map(k => tempoModel.start(tempoKey(x.scale, x.pattern, k))).sort((a, b) => a - b);
+  return starts.length ? starts[starts.length >> 1] : 60;
+}
 async function loadTempo() {
   tempoModel = createTempoModel((await getSummary()).tempo || []);
   showSettings();
@@ -163,14 +170,14 @@ function showSettings() {
   const sx = currentScaleExercise();
   $('#scaleExLabel').textContent = sx.num ? `${sx.num} · ${sx.title}` : `Custom · ${sx.title} · ${sx.keysLabel}`;
   $('#scaleExKeys').textContent = PATTERNS[sx.pattern].chip;
-  // Tempo: on Auto the strip shows where this level's session starts and
-  // can't be dragged; on Fixed (or in learn) it's the remembered tempo.
-  if (autoActive()) tempo.set(tempoModel.start(scaleTempoKey()), false);
+  // Tempo: on Auto the strip shows roughly where the session starts (each
+  // key has its own) and can't be dragged; on Fixed it's the remembered tempo.
+  if (autoActive()) tempo.set(autoStartTempo(), false);
   else tempo.set(fixedBpm, false);
   tempo.setEnabled(!autoActive());   // every button in the block — the toggle is set after
   $('#tempoMode').textContent = tempoAuto ? 'auto' : 'fixed';
   $('#tempoMode').classList.toggle('active', tempoAuto);
-  $('#tempoMode').disabled = mode === 'learn';
+  $('#tempoMode').disabled = false;   // setEnabled above just locked it with the rest
   // An empty custom pick can't be played.
   startBtn.disabled = game === 'degrees' ? ex.cells.length === 0 : sx.keys.length === 0;
   showHint();
@@ -321,6 +328,7 @@ $('#exerciseBtn').addEventListener('click', () => showTab('levels'));
 calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a second tap cancels
 connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 $('#hornWarn').addEventListener('click', () => showTab('horn'));
+$('#scaleNext').addEventListener('click', nextKey);
 
 // --- Levels (D6): the ladder on the stage, custom builder in the pane ---
 
@@ -411,7 +419,7 @@ function selectScaleExercise(id) {
 async function showScaleLevels() {
   await loadTempo();                 // the cached summary may have been rebuilt
   const pill = l => `<button class="lvl${l.id === scaleExerciseId ? ' active' : ''}" data-slevel="${l.id}">` +
-    `<b>${l.num}</b><span>${l.name}</span><i>${pipText(tempoModel.best(tempoKey(l.scale, l.pattern)))}</i></button>`;
+    `<b>${l.num}</b><span>${l.name}</span><i>${pipText(tempoModel.levelBest(l.scale, l.pattern))}</i></button>`;
   let h = '';
   for (const sc of SCALE_ORDER) {
     h += `<div class="tier">${SCALES[sc].name}</div><div class="lrow">` +
@@ -429,7 +437,7 @@ async function showScaleLevels() {
   $('#scaleLevelInfo').innerHTML = '<b></b><span class="degs keys"></span><span class="lvkeys"></span>';
   $('#scaleLevelInfo b').textContent = ex.num ? `${ex.num} · ${ex.title} · ${ex.name}` : `${ex.title} · ${ex.name} · Custom`;
   $('#scaleLevelInfo .degs').textContent = PATTERNS[ex.pattern].shape;
-  const best = tempoModel.best(tempoKey(ex.scale, ex.pattern));
+  const best = tempoModel.levelBest(ex.scale, ex.pattern);   // median key
   $('#scaleLevelInfo .lvkeys').textContent = `${ex.keysLabel} · clean best ${best ? `${best} bpm` : '–'}`;
   showScaleCustom();
 }
@@ -476,7 +484,15 @@ function drawRangeMap() {
   $('#rangeTitle').textContent = mapView === 'range'
     ? 'Recent runs · key × note, low B♭ to high F♯' : 'Recent runs · key × degree, all octaves';
   const runs = levelRuns(l);
-  renderRangeMap($('#rangemap'), runs, l.scale, mapView, rangeSelected);
+  // Each key row ends with that key's auto tempo (clean best, or where it
+  // is if nothing cleared yet); the pooled row with the median.
+  const rowTempo = rk => {
+    if (rk === 'all') { const b = tempoModel.levelBest(l.scale, l.pattern); return b ? String(b) : ''; }
+    const k = tempoKey(l.scale, l.pattern, Number(rk));
+    const b = tempoModel.best(k), w = tempoModel.working(k);
+    return b ? String(b) : w === null ? '' : `(${w})`;
+  };
+  renderRangeMap($('#rangemap'), runs, l.scale, mapView, rangeSelected, rowTempo);
   // Pane figures: the level's last 20 runs.
   const dayStart = new Date().setHours(0, 0, 0, 0);
   const last = runs.slice(-20);
@@ -487,8 +503,7 @@ function drawRangeMap() {
   $('#sstatToday').textContent = runs.filter(e => e.t >= dayStart).length;
   $('#sstatHit').textContent = notes.length ? `${Math.round(100 * hit / notes.length)}%` : '–';
   $('#sstatClean').textContent = last.length ? `${clean} / ${last.length}` : '–';
-  const tk = tempoKey(l.scale, l.pattern);
-  const working = tempoModel.working(tk), best = tempoModel.best(tk);
+  const working = tempoModel.levelWorking(l.scale, l.pattern), best = tempoModel.levelBest(l.scale, l.pattern);
   $('#sstatWorking').textContent = working === null ? '–' : `${working} bpm`;
   $('#sstatBest').textContent = best ? `${best} bpm` : '–';
 }

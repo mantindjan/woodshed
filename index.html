@@ -239,6 +239,9 @@
   .scale-info { text-align: right; font-variant-numeric: tabular-nums; }
   /* The run's key, big and always there; the pattern beside it. */
   .scale-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Learn: skip to the next key in the hardest-first order. */
+  #scaleNext { padding: 3px 10px; font-size: 12px; color: var(--brass); }
+  #scaleNext[hidden] { display: none; }
   #scaleKey, #scaleBpm { font: 800 22px/1 system-ui, sans-serif; color: #ffe2a8; }
   #scaleMsg small { font-size: 12px; color: var(--dim); }
   /* Learn: the run's tally sits under the sheet, which stays up to be read. */
@@ -313,6 +316,8 @@
   .rm-cell.empty { background: #1c1c1c; }
   .rm-cell.na { background: #121212; cursor: default; }
   .rm-cell.selected { outline: 2px solid #ffe2a8; outline-offset: 1px; }
+  .rm-bpm { font-size: 10px; color: var(--brass); text-align: right; align-self: center; font-variant-numeric: tabular-nums; }
+  .rm-bpm.all { font-weight: 700; }
   .rm-cap { font-size: 12px; color: var(--dim); margin-top: 8px; min-height: 16px; }
   #rangemap { flex: 1; min-height: 0; overflow-y: auto; }
   .rm-bar { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-shrink: 0; }
@@ -403,7 +408,8 @@
     <!-- Scales (E1): the lane. -->
     <div class="view" id="view-scales" data-view="play" data-for="scales" hidden>
       <div class="stage-top">
-        <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span><span></span>
+        <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span>
+        <span><button id="scaleNext" hidden>Next key ›</button></span>
         <span class="scale-info"><b id="scaleBpm"></b> <span id="scaleBpmNote"></span> · <span id="scaleInfo"></span></span>
       </div>
       <div class="lane-wrap">

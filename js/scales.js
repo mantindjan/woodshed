@@ -7,8 +7,9 @@
 // notes per click at the set bpm — from the start note to the edge of the
 // range, low B♭ / high F♯) → summary → next run, in the next key of the
 // exercise (drawn toward weak keys or evenly, scalelevels.js) … until Stop.
-// A Start-to-Stop session is one `round` in the events. On Auto tempo
-// (practice) each run's outcome moves the tempo for the next (scaletempo.js);
+// A Start-to-Stop session is one `round` in the events. On Auto tempo each
+// run's outcome moves that KEY's tempo (scaletempo.js), so every run plays
+// at its own key's tempo;
 // the tempo is always on screen, big, with an arrow when it just moved.
 //
 // Judging: a note is HIT if it's the right written pitch (octave included)
@@ -19,8 +20,11 @@
 // the horn often sends a brief in-between note while the fingers change
 // (data 2026-09-26: 51 "wrong" notes were a semitone-below glitch with the
 // right note 20–80 ms behind). Nothing by the end of the window is a MISS. Practice: after `misses` misses the run stops ("start again").
-// Learn (boss, 2026-09-25): the same judging, shown the other way round, and
-// nothing ever stops. Before each run it names a start note ("low B♭ — B♭3");
+// Learn (boss, 2026-09-25/26): the same judging, shown the other way round,
+// and nothing ever stops. Keys go HARDEST FIRST (most accidentals in the
+// written key, weak keys bumped up — master F♯ and C is a breeze) and a key
+// repeats run after run while its tempo climbs; it moves on after a tempo
+// step up, or when the player taps Next key. Before each run it names a start note ("low B♭ — B♭3");
 // the player plays first — no preview sound (boss: a 4-note preview before
 // the start note was dropped the same day). Once the start note is blown the whole run is drawn at once, still, as a SHEET (wrapped
 // into rows); after the count-in a playhead sweeps across it left to right,
@@ -47,7 +51,7 @@
 import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
-import { pickScaleKey, PATTERNS } from './scalelevels.js';
+import { pickScaleKey, PATTERNS, runPattern } from './scalelevels.js';
 import { tempoKey } from './scaletempo.js';
 import { saveKeys, saveTempo } from './summary.js';
 
@@ -78,6 +82,18 @@ function scaleNotes(scale, key) {
   }
   return out;
 }
+// Accidentals in each written key's signature, by pitch class (C♯ counted
+// as D♭, 5 flats; F♯ as 6 sharps) — the learn order's difficulty.
+const ACCIDENTALS = [0, 5, 2, 3, 4, 1, 6, 1, 4, 3, 2, 5];
+
+// Learn's key order: hardest first, weak keys bumped up. Difficulty =
+// accidentals + the weak-key model's tickets (0.6 for a solid key up to 4.6
+// for a weak one, 2.2 untried) — a weak C still trails a solid F♯.
+export function learnOrder(keys, model, scale, pattern) {
+  const score = k => ACCIDENTALS[k] + model.tickets(scale, pattern, k);
+  return [...keys].sort((a, b) => score(b) - score(a) || ACCIDENTALS[b] - ACCIDENTALS[a] || a - b);
+}
+
 const degreeOf = (scale, key, w) => SCALES[scale].degrees[SCALES[scale].steps.indexOf(pc(w - key))];
 
 // Where a tenor player would call a written note: low up to F4, middle up
@@ -111,10 +127,24 @@ export function startScales(opts, onEnd) {
   requestPersistence();
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
   s = { ...opts, scale: opts.exercise.scale, pattern: opts.exercise.pattern, keys: opts.exercise.keys, onEnd,
-        session: Date.now().toString(36), run: null, timers: [], moved: 0 };
+        session: Date.now().toString(36), run: null, timers: [], moved: 0,
+        // Learn: the key order, fixed for the session, and where we are in it.
+        order: opts.mode === 'learn' ? learnOrder(opts.exercise.keys, opts.model, opts.exercise.scale, opts.exercise.pattern) : null,
+        at: 0, advance: false };
   nextRun();
   resize();
   raf = requestAnimationFrame(frame);
+}
+
+// Learn: skip to the next key now. A run in progress is dropped unlogged —
+// half a run is no evidence either way.
+export function nextKey() {
+  if (!s?.order) return;
+  s.timers.forEach(clearTimeout);
+  s.timers = [];
+  stopAll();
+  s.advance = true;
+  nextRun();
 }
 
 export function stopScales() {
@@ -127,15 +157,28 @@ export function stopScales() {
   wakeLock = null;
   s = null;
   message('');
+  $('#scaleNext').hidden = true;
   draw(null);
   onEnd();
 }
 
-// A new run: the next key of the exercise, weighted toward weak ones or
-// even, never the same twice in a row when there's a choice.
+// A new run. Practice: the next key, weighted toward weak ones or even,
+// never the same twice in a row when there's a choice. Learn: the same key
+// again, or the next in the hardest-first order once it's to advance. On
+// Auto, the run takes its key's tempo.
 function nextRun() {
-  const k = pickScaleKey(s.model, { scale: s.scale, pattern: s.pattern, keys: s.keys, pick: s.pick, prev: s.run?.key });
+  let k;
+  if (s.order) {
+    if (s.advance && s.run) s.at = (s.at + 1) % s.order.length;
+    k = s.order[s.at];
+  } else {
+    k = pickScaleKey(s.model, { scale: s.scale, pattern: s.pattern, keys: s.keys, pick: s.pick, prev: s.run?.key });
+  }
+  if (k !== s.run?.key) s.moved = 0;  // the ↑/↓ is about this key's last run
+  s.advance = false;
+  if (s.tempoAuto) s.bpm = s.tempo.tempoFor(tempoKey(s.scale, s.pattern, k), s.session);
   s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0, hint: null };
+  $('#scaleNext').hidden = !s.order || s.order.length < 2;
   topBar();
   const scaleName = `<b>${NOTES[k]} ${SCALES[s.scale].name.toLowerCase()}</b>`;
   const pattern = PATTERNS[s.pattern].name.toLowerCase();
@@ -316,19 +359,24 @@ function endRun(stopped) {
   if (s.tempoAuto) {
     s.tempo.add(event);
     saveTempo(s.tempo);
-    const key = tempoKey(s.scale, s.pattern);
+    const key = tempoKey(s.scale, runPattern(event), r.key);
     const next = s.tempo.next(key);
     s.moved = Math.sign(next - s.bpm);
-    tempoNote = s.moved > 0 ? `<br>Tempo up → <b>${next}</b>` : s.moved < 0 ? `<br>Tempo down → <b>${next}</b>`
+    const name = NOTES[r.key];
+    tempoNote = s.moved > 0 ? `<br>${name} tempo up → <b>${next}</b>` : s.moved < 0 ? `<br>${name} tempo down → <b>${next}</b>`
       : `<br><small>clean ${s.tempo.streak(key)} of 3 at ${next}</small>`;
-    s.bpm = next;
+    // Learn: a tempo step up means this key is done for now — next key.
+    if (s.order && s.moved > 0) {
+      s.advance = true;
+      tempoNote += s.order.length > 1 ? ` · next: <b>${NOTES[s.order[(s.at + 1) % s.order.length]]}</b>` : '';
+    }
   }
   const lateness = mean === null ? '' : mean > 15 ? ` · ${mean} ms late on average` : mean < -15 ? ` · ${-mean} ms early on average` : ' · right on the beat';
   if (s.mode === 'learn') {
     // The tally sits under the sheet, which stays up to be read.
     const onBeat = hits.filter(e => Math.abs(e.off) <= ON_BEAT_MS).length;
     const drift = mean !== null && Math.abs(mean) > 15 ? lateness : '';   // "on the beat" is already said
-    message(`<b>${hits.length} / ${r.expected.length} right</b> · ${onBeat} on the beat${drift}`);
+    message(`<b>${hits.length} / ${r.expected.length} right</b> · ${onBeat} on the beat${drift}${tempoNote}`);
     $('#scaleMsg').classList.add('tally');
   } else {
     message((stopped

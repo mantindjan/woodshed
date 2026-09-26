@@ -2,7 +2,7 @@
 // tempo you can play cleanly, and the marks that come from it.
 //
 // The rule (boss, 2026-09-25 — "build skill slow, raise it gradually"):
-// after each PRACTICE run on Auto tempo,
+// after each run on Auto tempo (practice or learn),
 //   clean (every note hit)            → streak + 1; at 3 in a row, +5 %
 //   80–99 % hit                       → stay; the streak starts over
 //   under 80 %, or stopped for misses → −5 %; the streak starts over
@@ -10,14 +10,18 @@
 // hard enough to grow, easy enough to stay clean (Levitt 1971; the
 // "85 % rule" for learning, Wilson et al. 2019).
 //
-// Per level = scale × pattern (as the stats), whichever exercise the run
-// came from. Each Start→Stop session begins WARMUP below the working tempo:
-// you regress a little cold, then climb back in a few runs.
+// Per KEY of each level (scale × pattern × written key; boss 2026-09-26:
+// "some keys are harder", one tempo per level made no sense), whichever
+// exercise the run came from. A key's first run in a Start→Stop session
+// begins WARMUP below its working tempo: you regress a little cold, then
+// climb back in a few runs.
 //
 // Marks: WORKING tempo = the mean of the last REVERSALS turning points
 // (where the staircase changed direction) — it wobbles, honestly; CLEAN
 // BEST = the highest tempo cleared 3 in a row — it only rises. Pips = the
 // tiers of TIERS the clean best has reached (they replace hit-rate stars).
+// A LEVEL's marks are the MEDIAN over its 12 keys (untried = none): one
+// easy key can't carry it, one monster key can't block it.
 //
 // Rebuildable from events: runs carry `tempoAuto: true` and their bpm, and
 // the model replays them in order (summary.js).
@@ -36,7 +40,12 @@ const REVERSALS = 6;       // turning points averaged for the working tempo
 // 2026-09-25). No real ceiling; 300 is the tempo control's own cap.
 const MIN = 60, MAX = 300;
 
-export const tempoKey = (scale, pattern) => `${scale}|${pattern}`;
+export const tempoKey = (scale, pattern, key) => `${scale}|${pattern}|${key}`;
+
+const median = xs => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length % 2 ? s[s.length >> 1] : Math.round((s[s.length / 2 - 1] + s[s.length / 2]) / 2);
+};
 
 // 'clean' | 'stay' | 'broken' for a run event.
 export function runOutcome(e) {
@@ -62,8 +71,8 @@ export function createTempoModel(initial = []) {
   const model = {
     stats,
     add(e) {
-      if (e.game !== 'scales' || e.mode !== 'practice' || !e.tempoAuto || !e.expected) return;
-      const k = tempoKey(e.scale, runPattern(e));
+      if (e.game !== 'scales' || !e.tempoAuto || !e.expected) return;
+      const k = tempoKey(e.scale, runPattern(e), e.keyWritten);
       const st = stats.get(k) || { next: e.bpm, streak: 0, dir: 0, reversals: [], best: 0, round: null };
       if (st.round !== e.round) { st.round = e.round; st.streak = 0; }   // a new session
       const move = dir => {
@@ -102,6 +111,21 @@ export function createTempoModel(initial = []) {
     },
     // Within a session: the tempo for the next run.
     next(key) { return stats.get(key)?.next ?? START; },
+    // The tempo for a run of `key` in session `round`: carries on where the
+    // session left it, or warms up if it's the key's first run this session.
+    tempoFor(key, round) {
+      const st = stats.get(key);
+      return st && st.round === round ? st.next : model.start(key);
+    },
+    // A level's marks: the median over its 12 keys (untried: best 0, and
+    // working tempo left out).
+    levelBest(scale, pattern) {
+      return median([...Array(12).keys()].map(k => model.best(tempoKey(scale, pattern, k))));
+    },
+    levelWorking(scale, pattern) {
+      const ws = [...Array(12).keys()].map(k => model.working(tempoKey(scale, pattern, k))).filter(w => w !== null);
+      return ws.length ? median(ws) : null;
+    },
     best(key) { return stats.get(key)?.best || 0; },
     streak(key) { return stats.get(key)?.streak || 0; },
   };

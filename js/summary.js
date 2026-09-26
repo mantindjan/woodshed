@@ -20,7 +20,8 @@ const KEY = 'woodshed.summary';
 // Bump when weakspots.js / scalelevels.js scoring or star rules change.
 // v2: adds `keys` (the scales' weak-key model) and scale stars (E1 step 2).
 // v3: scale stars dropped for `tempo` (the auto-tempo staircases, E4).
-const VERSION = 3;
+// v4: staircases per key (scale|pattern|key), learn runs included.
+const VERSION = 4;
 
 function read() {
   try {

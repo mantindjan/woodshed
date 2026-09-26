@@ -69,14 +69,18 @@ for (let w = SAX_RANGE.low; w <= SAX_RANGE.high; w++) PITCHES.push(w);
 // `view` = 'range' | 'degrees'. `selected` = a cell key ("3|70" / "all|70",
 // or "3|5" in the degree view) or null; the selected cell is outlined and
 // described in the caption (name, hits, timing).
-export function renderRangeMap(el, events, scale, view = 'range', selected = null) {
+// `rowNote(rowKey)` (optional): text for a last column per row — the key's
+// auto tempo, from the caller.
+export function renderRangeMap(el, events, scale, view = 'range', selected = null, rowNote = null) {
   const recent = recentNotes(events, view);
   const steps = SCALES[scale].steps;
   const cols = view === 'range' ? PITCHES : SCALES[scale].degrees;
-  let h = `<div class="rm-grid ${view}" style="grid-template-columns: 28px repeat(${cols.length}, 1fr)"><div></div>`;
+  const note = rowNote ? ' 30px' : '';
+  let h = `<div class="rm-grid ${view}" style="grid-template-columns: 28px repeat(${cols.length}, 1fr)${note}"><div></div>`;
   // Column heads: in the range view only the Cs, so the octaves read
   // without clutter; in the degree view every degree.
   h += cols.map(c => `<div class="rm-head">${view === 'degrees' ? c : pc(c) === 0 ? noteName(c) : ''}</div>`).join('');
+  if (rowNote) h += '<div class="rm-head rm-bpm">bpm</div>';
   const rows = [['all', 'All'], ...NOTES.map((n, k) => [String(k), n])];
   for (const [rk, label] of rows) {
     h += `<div class="rm-row${rk === 'all' ? ' all' : ''}">${label}</div>`;
@@ -89,6 +93,7 @@ export function renderRangeMap(el, events, scale, view = 'range', selected = nul
       const style = fig ? ` style="background:${colour(fig.score)}"` : '';
       h += `<div class="${cls}" data-cell="${key}"${style}></div>`;
     }
+    if (rowNote) h += `<div class="rm-bpm${rk === 'all' ? ' all' : ''}">${rowNote(rk)}</div>`;
   }
   h += '</div>';
   // Caption: the selected cell in words, or how to use the map.
