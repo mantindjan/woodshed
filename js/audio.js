@@ -11,7 +11,7 @@
 // few ms apart, as no hand strikes five keys at once.
 //
 // Room: a ConvolverNode on an impulse made in code (stereo noise with a
-// decaying envelope, 2.4 s), after a gentle saturation that glues the
+// decaying envelope, 1.5 s), after a gentle saturation that glues the
 // voices; dry 0.85 + wet 0.32.
 //
 // Swing is set by tempo (swingAt).
@@ -50,7 +50,12 @@ function track(o, g) {
 // Must be called from a user gesture (tap), or Chrome keeps audio muted.
 export function initAudio() {
   if (!ctx) {
-    ctx = new AudioContext();
+    // 'balanced' buffers: with the default ('interactive', the smallest)
+    // the phone crackled under the trio — audio-thread underruns, the last
+    // suspect after clipping, aliasing and CPU were dealt with (boss,
+    // 2026-09-26). Bigger buffers add output latency: ⚙ latency must be
+    // measured again after this change.
+    ctx = new AudioContext({ latencyHint: 'balanced' });
     // The output: 0.85 of headroom, then a hard limiter. Without it the
     // trio's buses (bass with its drive, kit, comping, room) summed straight
     // into the speaker and a loud Rhodes hit on top clipped — it crackled on
@@ -59,7 +64,7 @@ export function initAudio() {
     out.gain.value = 0.85;
     const lim = ctx.createDynamicsCompressor();
     lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20;
-    lim.attack.value = 0.002; lim.release.value = 0.12;
+    lim.attack.value = 0.005; lim.release.value = 0.12;   // 5 ms: 2 ms bit into note fronts
     out.connect(lim);
     lim.connect(ctx.destination);
     master = ctx.createGain();
@@ -96,7 +101,9 @@ function buildRoom() {
   sat.curve = curve;
   sat.oversample = '4x';               // no aliasing grit (heard as crackle on the phone)
   room.connect(sat);
-  const sr = ctx.sampleRate, len = Math.round(sr * 2.4);
+  // 1.5 s, not 2.4: the convolution is the heaviest thing running on the
+  // phone (a crackle suspect); still reads as a room.
+  const sr = ctx.sampleRate, len = Math.round(sr * 1.5);
   const ir = ctx.createBuffer(2, len, sr);
   for (let c = 0; c < 2; c++) {
     const d = ir.getChannelData(c);
