@@ -437,7 +437,7 @@ function draw(r) {
       g.strokeStyle = COLORS.pending; g.lineWidth = 2; g.stroke();
       g.restore();
     }
-    disc(g, e, x, y, rad, root, false);
+    disc(g, e, x, y, rad, root, false, i === 0);
     g.globalAlpha = 1;
   });
 }
@@ -446,19 +446,29 @@ function draw(r) {
 const accuracy = (r, e) => 1 - Math.min(Math.abs(e.off), r.window) / r.window;
 
 // One degree disc, coloured by status. `named`: a wrong/missed disc shows
-// its note name instead (learn: the answer on a miss).
-function disc(g, e, x, y, rad, root, named) {
+// its note name instead (learn: the answer on a miss). `start`: the run's
+// first note — the one the player blew to start — is written out with its
+// octave ("B♭3") in teal under a "start" tag, so which note it was isn't
+// lost to a bare degree number (boss, 2026-09-26).
+const START_COLOR = '#6fd3c6';
+function disc(g, e, x, y, rad, root, named, start = false) {
   g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2);
   g.fillStyle = e.status === 'pending' ? '#1c1a14' : COLORS[e.status];
   g.fill();
-  g.lineWidth = root ? 3 : 2;
-  g.strokeStyle = COLORS[e.status];
+  g.lineWidth = start ? 3 : root ? 3 : 2;
+  g.strokeStyle = start && e.status === 'pending' ? START_COLOR : COLORS[e.status];
   g.stroke();
-  g.fillStyle = e.status === 'pending' ? '#ffe2a8' : '#1a1206';
-  const showName = named && (e.status === 'wrong' || e.status === 'miss');
-  const size = Math.round(rad * (showName ? 0.75 : root ? 0.9 : 0.95));
+  if (start) {
+    g.fillStyle = START_COLOR;
+    g.font = `700 ${Math.max(9, Math.round(rad * 0.6))}px system-ui, sans-serif`;
+    g.fillText('start', x, y - rad - 8);
+  }
+  g.fillStyle = e.status === 'pending' ? (start ? START_COLOR : '#ffe2a8') : '#1a1206';
+  const showName = start || (named && (e.status === 'wrong' || e.status === 'miss'));
+  const label = start ? noteName(e.w) : showName ? NOTES[pc(e.w)] : e.deg;
+  const size = Math.round(rad * (start ? 0.62 : showName ? 0.75 : root ? 0.9 : 0.95));
   g.font = `800 ${size}px system-ui, sans-serif`;
-  g.fillText(showName ? NOTES[pc(e.w)] : e.deg, x, y + 1);
+  g.fillText(label, x, y + 1);
   // Early/late tick for hits: a small bar left (early) or right (late).
   if (e.status === 'hit' && Math.abs(e.off) > ON_BEAT_MS) {
     g.fillStyle = '#ffe2a8';
@@ -550,7 +560,7 @@ function drawSheet(g, r, W, H) {
     const { x, y } = sheetPoint(L, j, e.i);
     if (e.status === 'hit') bloom(g, x, y, L.rad, accuracy(r, e), now - e.hitAt);
     g.globalAlpha = e.status === 'pending' ? 0.85 : 1;
-    disc(g, e, x, y, L.rad, e.deg === '1', true);
+    disc(g, e, x, y, L.rad, e.deg === '1', true, j === 0);
     g.globalAlpha = 1;
   });
   drawMarks(false);
