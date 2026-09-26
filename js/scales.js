@@ -52,7 +52,7 @@ import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { pickScaleKey, PATTERNS, runPattern } from './scalelevels.js';
-import { tempoKey } from './scaletempo.js';
+import { tempoKey, runOutcome, CLEAN_RUNS } from './scaletempo.js';
 import { saveKeys, saveTempo } from './summary.js';
 
 const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
@@ -70,7 +70,9 @@ const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // evening only, `waits` from the dropped lane-hold learn). v5: learn = sheet.
 // v6: `tempoAuto` (was the bpm set by the auto-tempo staircase).
 // v7: `latency` (ms subtracted from note-ons before judging).
-const SCHEMA_VERSION = 7;
+// v8: `falseStart` (run begun on another note: void) and `tempoSet` (the
+// player chose this bpm on Auto).
+const SCHEMA_VERSION = 8;
 
 const $ = sel => document.querySelector(sel);
 
@@ -150,6 +152,7 @@ export function nudgeTempo(delta) {
     s.tempo.set(key, s.bpm, s.session);
     saveTempo(s.tempo);
     s.override = null;
+    s.run.manual = true;
   } else {
     s.override = Math.max(60, Math.min(300, (s.override ?? s.bpm) + delta));
   }
@@ -200,7 +203,9 @@ function nextRun() {
   if (k !== s.run?.key) s.moved = 0;  // the ↑/↓ is about this key's last run
   s.advance = false;
   if (s.tempoAuto) s.bpm = s.tempo.tempoFor(tempoKey(s.scale, s.pattern, k), s.session);
-  s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0, hint: null };
+  s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0, hint: null,
+            // A tempo the player set for this key (stage nudges) — its run is marked `tempoSet`.
+            manual: !!s.tempoAuto && s.tempo.manual(tempoKey(s.scale, s.pattern, k)) };
   $('#scaleNext').hidden = !s.order || s.order.length < 2;
   topBar();
   const scaleName = `<b>${NOTES[k]} ${SCALES[s.scale].name.toLowerCase()}</b>`;
@@ -375,6 +380,25 @@ function endRun(stopped) {
   };
   // Learn only: the suggested start {start: written MIDI}.
   if (s.mode === 'learn') event.hint = r.hint;
+  if (s.tempoAuto && r.manual) event.tempoSet = true;
+  // False start: the first note played on the beat is another note of the
+  // scale than the run's start note, and most of the run is wrong — the player began somewhere else
+  // (data 2026-09-26: runs like 0/11 dragged tempos down). Logged, marked,
+  // and void: no tempo, weak-key or recap change; the same run again.
+  const firstMs = Math.round(r.expected[0].t - r.t0 - r.window);
+  const first = r.notes.slice(1).find(([, ms]) => ms - s.latency >= firstMs);
+  const played = first ? first[0] - s.calibOffset : null;
+  // (A first note outside the scale is a wrong note, not another start.)
+  if (first && r.expected[0].status !== 'hit' && played !== r.expected[0].w && r.scaleNotes.includes(played) &&
+      hits.length < r.expected.length / 2) {
+    event.falseStart = true;
+    addEvent(event);
+    message(`<b>False start</b> — you began on ${noteName(played)}; this run starts on <b>${noteName(r.expected[0].w)}</b> ` +
+            '(the teal one). Doesn\'t count — again.');
+    if (s.mode === 'learn') $('#scaleMsg').classList.add('tally');
+    s.timers.push(setTimeout(() => { if (s) nextRun(); }, s.mode === 'learn' ? SHEET_SUMMARY_MS : SUMMARY_MS));
+    return;
+  }
   addEvent(event);
   // The key model adapts within the session; the summary keeps it for next time.
   s.model.add(event);
@@ -385,7 +409,7 @@ function endRun(stopped) {
   let rk = s.recap.keys.find(x => x.key === r.key);
   if (!rk) s.recap.keys.push(rk = { key: r.key, from: s.bpm, to: s.bpm, runs: 0, clean: 0, hits: 0, total: 0,
                                     bestBefore: s.tempo.best(tk), best: s.tempo.best(tk) });
-  const clean = hits.length === r.expected.length;
+  const clean = runOutcome(event) === 'clean';   // learn allows one slip
   s.recap.runs++; rk.runs++;
   if (clean) { s.recap.clean++; rk.clean++; }
   rk.hits += hits.length; rk.total += r.expected.length;
@@ -402,7 +426,7 @@ function endRun(stopped) {
     s.moved = Math.sign(next - s.bpm);
     const name = NOTES[r.key];
     tempoNote = s.moved > 0 ? `<br>${name} tempo up → <b>${next}</b>` : s.moved < 0 ? `<br>${name} tempo down → <b>${next}</b>`
-      : `<br><small>clean ${s.tempo.streak(key)} of 3 at ${next}</small>`;
+      : `<br><small>clean ${s.tempo.streak(key)} of ${CLEAN_RUNS[s.mode]} at ${next}</small>`;
     // Learn: a tempo step up means this key is done for now — next key.
     if (s.order && s.moved > 0) {
       s.advance = true;

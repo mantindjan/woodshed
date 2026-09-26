@@ -584,7 +584,7 @@ async function showScaleStats() {
     const ex = currentScaleExercise();
     mapLevel = (SCALE_LEVELS.find(l => l.scale === ex.scale && l.pattern === ex.pattern) || SCALE_LEVELS[0]).id;
   }
-  scaleEvents = (await allEvents()).filter(e => e.game === 'scales' && e.expected);
+  scaleEvents = (await allEvents()).filter(e => e.game === 'scales' && e.expected && !e.falseStart);
   await loadTempo();
   drawRangeMap();
 }

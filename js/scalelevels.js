@@ -110,7 +110,7 @@ export function createKeyModel(initial = []) {
   return {
     stats,
     add(e) {
-      if (e.game !== 'scales') return;
+      if (e.game !== 'scales' || e.falseStart) return;   // a false start says nothing about the key
       const score = runScore(e);
       if (score === null) return;
       const k = statKey(e.scale, runPattern(e), e.keyWritten);

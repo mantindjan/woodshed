@@ -20,7 +20,13 @@
 //    any run that isn't clean resets them to +5 %.
 //  - A key never played starts from what the level has proven: the median
 //    working tempo of its played keys, −10 % (60 if none).
-//  - The player can overrule a key's tempo (set(), the stage nudges).
+//  - The player can overrule a key's tempo (set(), the stage nudges); one
+//    clean run at a tempo they chose makes it the key's new baseline
+//    (working tempo = it, clean best raised) — runs carry `tempoSet`.
+//  - LEARN is looser (boss, 2026-09-26: "3 tries is really long"): clean =
+//    at most one slip, and 2 clean in a row step up (2-up/1-down settles
+//    near 70 % success). Practice stays at every note, 3 in a row.
+//  - False starts (the run begun on another note, `falseStart`) are void.
 //
 // Per KEY of each level (scale × pattern × written key; boss 2026-09-26:
 // "some keys are harder", one tempo per level made no sense), whichever
@@ -46,7 +52,8 @@ const START = 60;          // a level never played on Auto starts at the bottom 
 const STEP = 0.05;         // ± 5 % (boss): down always, up to start with
 const UP_STEPS = [0.05, 0.08, 0.12];   // consecutive steps up grow
 const PLACEMENT_STEP = 0.10;           // up after every clean run, until the first that isn't
-const CLEAN_RUNS = 3;      // clean runs in a row to step up
+const cleanRuns = e => (e.mode === 'learn' ? 2 : 3);   // clean runs in a row to step up
+export const CLEAN_RUNS = { learn: 2, practice: 3 };
 const STAY = 0.8;          // at or above: stay; below: step down
 const WARMUP = 0.9;        // a session starts 10 % under the working tempo
 const REVERSALS = 6;       // turning points averaged for the working tempo
@@ -65,7 +72,8 @@ const median = xs => {
 export function runOutcome(e) {
   const score = runScore(e);
   if (e.stopped || score < STAY) return 'broken';
-  return score === 1 ? 'clean' : 'stay';
+  const slips = e.expected.filter(x => x[3] !== 'hit').length;
+  return slips === 0 || (e.mode === 'learn' && slips <= 1) ? 'clean' : 'stay';
 }
 
 const clamp = v => Math.max(MIN, Math.min(MAX, v));
@@ -88,7 +96,7 @@ export function createTempoModel(initial = []) {
   const model = {
     stats,
     add(e) {
-      if (e.game !== 'scales' || !e.tempoAuto || !e.expected) return;
+      if (e.game !== 'scales' || !e.tempoAuto || !e.expected || e.falseStart) return;
       const k = tempoKey(e.scale, runPattern(e), e.keyWritten);
       const st = stats.get(k) || { next: e.bpm, streak: 0, dir: 0, reversals: [], best: 0, round: null,
                                    placing: true, ups: 0 };
@@ -102,11 +110,18 @@ export function createTempoModel(initial = []) {
         st.next = stepped(e.bpm, dir, frac);
       };
       const out = runOutcome(e);
+      st.manual = false;
+      // A tempo the player chose, played clean: the key's new baseline.
+      if (e.tempoSet && out === 'clean') {
+        st.reversals = [e.bpm];
+        st.dir = 0;
+        st.best = Math.max(st.best, e.bpm);
+      }
       if (out === 'clean' && st.placing) {
         // Placement: every clean run is cleared ground and a step up.
         st.best = Math.max(st.best, e.bpm);
         move(1, PLACEMENT_STEP);
-      } else if (out === 'clean' && ++st.streak >= CLEAN_RUNS) {
+      } else if (out === 'clean' && ++st.streak >= cleanRuns(e)) {
         st.best = Math.max(st.best, e.bpm);
         st.streak = 0;
         move(1, UP_STEPS[Math.min(st.ups, UP_STEPS.length - 1)]);
@@ -143,7 +158,7 @@ export function createTempoModel(initial = []) {
     // The player overrules: this key plays at `bpm` next, in session `round`.
     set(key, bpm, round) {
       const st = stats.get(key) || { streak: 0, dir: 0, reversals: [], best: 0, placing: true, ups: 0 };
-      Object.assign(st, { next: clamp(bpm), round, streak: 0 });
+      Object.assign(st, { next: clamp(bpm), round, streak: 0, manual: true });
       stats.set(key, st);
     },
     // Within a session: the tempo for the next run.
@@ -165,6 +180,7 @@ export function createTempoModel(initial = []) {
     },
     best(key) { return stats.get(key)?.best || 0; },
     streak(key) { return stats.get(key)?.streak || 0; },
+    manual(key) { return !!stats.get(key)?.manual; },
   };
   return model;
 }

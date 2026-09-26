@@ -22,7 +22,8 @@ const KEY = 'woodshed.summary';
 // v3: scale stars dropped for `tempo` (the auto-tempo staircases, E4).
 // v4: staircases per key (scale|pattern|key), learn runs included.
 // v5: placement ramp, growing steps, new keys start from the level.
-const VERSION = 5;
+// v6: learn: one slip is clean, 2 clean step up; false starts void; chosen tempo = baseline.
+const VERSION = 6;
 
 function read() {
   try {
