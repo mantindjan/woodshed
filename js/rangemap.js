@@ -57,7 +57,7 @@ export function figures(list) {
 }
 
 // Same ramp as the degree heatmap: ≤ 0.4 red … 1 green.
-function colour(score) {
+export function colour(score) {
   const hue = Math.round(120 * Math.max(0, Math.min(1, (score - 0.4) / 0.6)));
   return `hsl(${hue} 55% 38%)`;
 }

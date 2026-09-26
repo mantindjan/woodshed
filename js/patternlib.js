@@ -99,6 +99,33 @@ export const EXERCISES = {
 export const PRACTICE_EXERCISES = ['chromDown', 'chromUp', 'wholeDown', 'wholeUp', 'minor3Down'];
 export const STAGES = [4, 2, 1];          // learn: times on each chord
 
+// --- Stats: key × note of the pattern ---
+// For one pattern: the last RECENT times each note of the cell came up on
+// each key (and on all keys pooled), newest last. A note scores 1 hit on
+// the beat, sliding to 0.6 at the window's edge (as the scales map), 0
+// wrong or missed. Keys "<rootPc>|<j>" and "all|<j>", j = the note's place
+// in the cell.
+const RECENT = 10;
+export function patternGrid(events, id) {
+  const grid = new Map();
+  const push = (k, a) => {
+    const list = grid.get(k) || [];
+    list.push(a);
+    if (list.length > RECENT) list.shift();
+    grid.set(k, list);
+  };
+  for (const e of events) {
+    if (e.game !== 'patterns' || e.patternId !== id || !e.expected) continue;
+    const n = e.pattern.notes.length;
+    e.expected.forEach(([root, , , , status, off], i) => {
+      const a = { hit: status === 'hit', off, score: status === 'hit' ? 1 - 0.4 * Math.min(Math.abs(off || 0), 150) / 150 : 0 };
+      push(`${root}|${i % n}`, a);
+      push(`all|${i % n}`, a);
+    });
+  }
+  return grid;
+}
+
 // --- Progress, from runs ---
 // A run is SOLID at ≥ 95 % of its notes hit. Learn: 2 solid runs in a row
 // at a stage move the pattern to the next (×4 → ×2 → ×1); solid at ×1 =

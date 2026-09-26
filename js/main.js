@@ -21,12 +21,12 @@ import { getSummary } from './summary.js';
 import { sync, syncConfig, setSyncConfig, syncState } from './sync.js';
 import { renderHeatmap } from './heatmap.js';
 import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
-import { renderRangeMap } from './rangemap.js';
+import { renderRangeMap, colour } from './rangemap.js';
 import { createTempoModel, tempoKey, pipText, pips } from './scaletempo.js';
 import { startLatency, stopLatency, latencyNote, measuring } from './latency.js';
 import { startPatterns, stopPatterns, patternNote, patternsRunning, patternHTML, esc } from './patterns.js';
 import { loadLibrary, savePattern, deletePattern, patternProgress, nearestOct, autoName, degreesText,
-         PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, MIN_NOTES, MAX_NOTES } from './patternlib.js';
+         PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, MIN_NOTES, MAX_NOTES, patternGrid, runRate, SOLID } from './patternlib.js';
 
 // Settings (localStorage, all carried by the backup file).
 const CALIB_KEY = 'woodshed.calib';
@@ -185,6 +185,7 @@ function showTab(tab) {
   if (game === 'scales' && tab === 'levels') showScaleLevels();
   if (game === 'scales' && tab === 'stats') showScaleStats();
   if (game === 'patterns' && tab === 'levels') showPatternLevels();
+  if (game === 'patterns' && tab === 'stats') showPatternStats();
   if (tab === 'horn') showCount();
   else if (measuring()) endLatencyRun();
 }
@@ -677,6 +678,7 @@ async function runSync() {
   if (res.settingsRestored) location.reload();
   if (res.added && game === 'scales') loadTempo();     // runs from elsewhere move the staircases
   if (res.added && !$('#view-stats').hidden) showStats();
+  if (res.added && !$('#view-pattern-stats').hidden) showPatternStats();
   else if (res.added && !$('#view-scale-stats').hidden) showScaleStats();
 }
 
@@ -853,6 +855,76 @@ $('#pLib').addEventListener('click', e => {
     showSettings();
   }
 });
+
+// --- Pattern stats: key × note of the pattern, for the pattern picked ---
+let pStatSelected = null;       // a tapped cell key, or null
+let pStatEvents = [];
+async function showPatternStats() {
+  pStatEvents = (await allEvents()).filter(e => e.game === 'patterns' && e.expected);
+  // The picker: every library pattern, plus any played pattern since deleted.
+  const lib = loadLibrary();
+  const names = new Map(lib.map(p => [p.id, p]));
+  for (const e of pStatEvents) if (!names.has(e.patternId)) names.set(e.patternId, { id: e.patternId, ...e.pattern, name: `${e.pattern.name} (deleted)` });
+  const cur = currentPattern();
+  const pick = names.has($('#pStatSel').value) ? $('#pStatSel').value : cur?.id || [...names.keys()][0];
+  $('#pStatSel').innerHTML = [...names.values()].map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  if (pick) $('#pStatSel').value = pick;
+  drawPatternStats();
+}
+function drawPatternStats() {
+  const id = $('#pStatSel').value;
+  const lib = loadLibrary();
+  const p = lib.find(x => x.id === id) || pStatEvents.find(e => e.patternId === id)?.pattern;
+  if (!p) { $('#pGrid').innerHTML = '<div class="small-note">No pattern yet.</div>'; return; }
+  const grid = patternGrid(pStatEvents, id);
+  const n = p.notes.length;
+  const fig = list => {
+    if (!list?.length) return null;
+    const hits = list.filter(a => a.hit);
+    const off = hits.length ? Math.round(hits.reduce((a, b) => a + (b.off || 0), 0) / hits.length) : null;
+    return { n: list.length, hits: hits.length, off, score: list.reduce((a, b) => a + b.score, 0) / list.length };
+  };
+  let h = `<div class="rm-grid" style="grid-template-columns: 28px repeat(${n}, 1fr)"><div></div>` +
+    p.notes.map(x => `<div class="rm-head">${degreeLabel(x.deg)}</div>`).join('');
+  for (const [rk, label] of [['all', 'All'], ...NOTES.map((nm, k) => [String(k), nm])]) {
+    h += `<div class="rm-row${rk === 'all' ? ' all' : ''}">${label}</div>`;
+    for (let j = 0; j < n; j++) {
+      const key = `${rk}|${j}`;
+      const f = fig(grid.get(key));
+      h += `<div class="rm-cell${f ? '' : ' empty'}${key === pStatSelected ? ' selected' : ''}" data-cell="${key}"` +
+           `${f ? ` style="background:${colour(f.score)}"` : ''}></div>`;
+    }
+  }
+  h += '</div>';
+  let cap = 'Tap a cell: which chord, which note of the pattern, how often right.';
+  if (pStatSelected) {
+    const [rk, j] = pStatSelected.split('|');
+    const f = fig(grid.get(pStatSelected));
+    const where = `${rk === 'all' ? 'All chords' : `${NOTES[Number(rk)]}${QUALITY_TEXT[p.quality]}`} · note ${Number(j) + 1} (the ${degreeLabel(p.notes[j].deg)})`;
+    cap = !f ? `${where} — not played yet.` : `${where} — ${f.hits} of ${f.n} right` +
+      (f.off === null ? '' : f.off > 15 ? ` · ${f.off} ms late` : f.off < -15 ? ` · ${-f.off} ms early` : ' · on the beat');
+  }
+  $('#pGrid').innerHTML = h + `<div class="rm-cap">${cap}</div>`;
+  // Pane figures: this pattern's last 20 runs, and where it stands.
+  const runs = pStatEvents.filter(e => e.patternId === id);
+  const last = runs.slice(-20);
+  const notes = last.flatMap(e => e.expected);
+  const dayStart = new Date().setHours(0, 0, 0, 0);
+  const prog = patternProgress(pStatEvents, id);
+  $('#pstRuns').textContent = runs.length;
+  $('#pstToday').textContent = runs.filter(e => e.t >= dayStart).length;
+  $('#pstHit').textContent = notes.length ? `${Math.round(100 * notes.filter(x => x[4] === 'hit').length / notes.length)}%` : '–';
+  $('#pstSolid').textContent = last.length ? `${last.filter(e => runRate(e) >= SOLID).length} / ${last.length}` : '–';
+  $('#pstLearn').textContent = prog.learnt ? 'learnt ✓' : `×${STAGES[prog.stage]}`;
+  $('#pstPractice').textContent = `${prog.done.size} / ${PRACTICE_EXERCISES.length}`;
+}
+$('#pGrid').addEventListener('click', e => {
+  const cell = e.target.closest('[data-cell]');
+  const key = cell ? cell.dataset.cell : null;
+  pStatSelected = key && key !== pStatSelected ? key : null;
+  drawPatternStats();
+});
+$('#pStatSel').addEventListener('change', () => { pStatSelected = null; drawPatternStats(); });
 
 // --- ⚙ Latency ---
 let latency = Number(load(LATENCY_KEY)) || 0;

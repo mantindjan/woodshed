@@ -502,8 +502,9 @@
       <div id="pLib"></div>
     </div>
     <div class="view" id="view-pattern-stats" data-view="stats" data-for="patterns" hidden>
-      <h2>Pattern stats</h2>
-      <div id="pStats" class="small-note">Stats come next: which keys and which notes of the pattern break.</div>
+      <h2>Recent runs · key × note of the pattern</h2>
+      <div id="pGrid"></div>
+      <div class="rm-bar"><select id="pStatSel" aria-label="Pattern"></select></div>
     </div>
     <!-- Levels: the ladder (D6). -->
     <div class="view" id="view-levels" data-view="levels" data-for="degrees" hidden><div id="ladder"></div></div>
@@ -648,7 +649,19 @@
       <div id="pHint" class="small-note"></div>
     </div>
     <div class="pane" data-pane="stats" data-for="patterns" hidden>
-      <div class="small-note">Per pattern: which keys and which notes break — coming next.</div>
+      <div class="stat">Runs <b id="pstRuns">0</b></div>
+      <div class="stat">Today <b id="pstToday">0</b></div>
+      <div class="stat">Notes right <b id="pstHit">–</b></div>
+      <div class="stat">Solid runs <b id="pstSolid">–</b></div>
+      <div class="stat">Learn <b id="pstLearn">–</b></div>
+      <div class="stat">Practice <b id="pstPractice">–</b></div>
+      <div>
+        <div class="legend"></div>
+        <div class="legend-labels"><span>weak</span><span>strong</span></div>
+      </div>
+      <div class="small-note">For the pattern picked under the grid. Each cell: the last 10 times that note of
+        the pattern came up on that chord — right on the beat is green, late or early fades it, wrong or
+        missed is red. Figures: the last 20 runs.</div>
     </div>
     <div class="pane" data-pane="stats" data-for="degrees" hidden>
       <div class="stat">Answers <b id="statAnswers">0</b></div>
