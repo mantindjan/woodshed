@@ -61,6 +61,11 @@ const PER_BEAT = 2;            // eighths: two scale notes per click (boss, 2026
 const SUMMARY_MS = 1800;       // how long a run's summary shows before the next
 const SHEET_SUMMARY_MS = 4000; // learn: longer, to read the marks on the sheet
 const SHEET_ROW = 16;          // learn: most notes per sheet row
+// A run that's gone (boss, 2026-09-26): after a false start, or in learn
+// ERRORS_IN_A_ROW wrong/missed notes running, it stops, pauses RESTART_MS,
+// and the same run starts again straight into the count-in.
+const ERRORS_IN_A_ROW = 5;
+const RESTART_MS = 1500;
 // A hit this close counts "on the beat"; beyond it the disc gets an
 // early/late tick. 30 ms was too tight on the horn (boss, 2026-09-25).
 const ON_BEAT_MS = 100;
@@ -71,8 +76,10 @@ const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // v6: `tempoAuto` (was the bpm set by the auto-tempo staircase).
 // v7: `latency` (ms subtracted from note-ons before judging).
 // v8: `falseStart` (run begun on another note: void) and `tempoSet` (the
-// player chose this bpm on Auto).
-const SCHEMA_VERSION = 8;
+// player chose this bpm on Auto). v9: `restarted` (the app restarted the
+// run after a false start or too many errors: no start note was blown, so
+// `notes` has no start-note entry).
+const SCHEMA_VERSION = 9;
 
 const $ = sel => document.querySelector(sel);
 
@@ -269,7 +276,7 @@ export function scaleNote(midi) {
     best.hitAt = arrived;             // page time, for the bloom
   } else {
     // Not final: the right pitch may still come inside the window (expire()).
-    best.wrongAt = best.wrongAt || now;
+    if (!best.wrongAt) { best.wrongAt = now; best.wrongW = w; }
   }
   checkDone();
 }
@@ -304,7 +311,7 @@ function startRun(w, now, midi) {
   // pattern's slope — the discs are drawn relative to it (see draw()).
   r.slope = PATTERNS[s.pattern].slope;
   r.base = idx.reduce((a, j, k) => a + j - r.slope * k, 0) / idx.length;
-  r.notes = [[midi, 0]];
+  r.notes = midi === null ? [] : [[midi, 0]];   // a restart has no blown start note
   // Count-in clicks on beats 1–4 after the start note; note j at beat 5 +
   // j/2. Clicks keep going on every beat through the run.
   r.expected = run.map((nw, j) => ({ w: nw, i: idx[j], deg: degreeOf(s.scale, r.key, nw),
@@ -338,9 +345,42 @@ function expire(now) {
       e.status = e.wrongAt ? 'wrong' : 'miss';
       miss();
       if (r.phase !== 'running') return;
+      // A run that's gone stops now rather than being played out.
+      const i = r.expected.indexOf(e);
+      if (i === 1 && falseStart(r)) return endRun(true, 'false');
+      if (s.mode === 'learn' && errorsInARow(r, i) >= ERRORS_IN_A_ROW) return endRun(true, 'errors');
     }
   }
   checkDone();
+}
+
+// False start: the first two notes both missed, and what was played on the
+// first is another note of the scale — the player began somewhere else
+// (data 2026-09-26: runs like 0/11). A first note outside the scale is a
+// wrong note, not another start.
+function falseStart(r) {
+  const [a, b] = r.expected;
+  return a.status !== 'hit' && b.status !== 'hit' && a.wrongW != null && r.scaleNotes.includes(a.wrongW);
+}
+
+// Wrong/missed notes in a row, ending at note i.
+function errorsInARow(r, i) {
+  let n = 0;
+  while (i >= 0 && r.expected[i].status !== 'hit' && r.expected[i].status !== 'pending') { n++; i--; }
+  return n;
+}
+
+// The same run again, straight into the count-in (no start note to blow),
+// at the key's tempo now.
+function restartRun() {
+  const old = s.run;
+  const start = old.expected[0].w;
+  const tk = tempoKey(s.scale, s.pattern, old.key);
+  if (s.tempoAuto) s.bpm = s.tempo.tempoFor(tk, s.session);
+  s.run = { key: old.key, phase: 'waiting', notes: [], expected: [], misses: 0, hint: old.hint,
+            manual: !!s.tempoAuto && s.tempo.manual(tk), restarted: true };
+  topBar();
+  startRun(start, performance.now(), null);
 }
 
 function checkDone() {
@@ -348,7 +388,9 @@ function checkDone() {
   if (r && r.phase === 'running' && r.expected.every(e => e.status !== 'pending')) endRun(false);
 }
 
-function endRun(stopped) {
+// `abort`: 'false' (false start: logged, void) or 'errors' (learn: too many
+// in a row — counts as a stopped run); either way the same run restarts.
+function endRun(stopped, abort = null) {
   const r = s.run;
   r.phase = 'summary';
   stopAll();                          // drop the rest of the clicks
@@ -381,22 +423,16 @@ function endRun(stopped) {
   // Learn only: the suggested start {start: written MIDI}.
   if (s.mode === 'learn') event.hint = r.hint;
   if (s.tempoAuto && r.manual) event.tempoSet = true;
-  // False start: the first note played on the beat is another note of the
-  // scale than the run's start note, and most of the run is wrong — the player began somewhere else
-  // (data 2026-09-26: runs like 0/11 dragged tempos down). Logged, marked,
-  // and void: no tempo, weak-key or recap change; the same run again.
-  const firstMs = Math.round(r.expected[0].t - r.t0 - r.window);
-  const first = r.notes.slice(1).find(([, ms]) => ms - s.latency >= firstMs);
-  const played = first ? first[0] - s.calibOffset : null;
-  // (A first note outside the scale is a wrong note, not another start.)
-  if (first && r.expected[0].status !== 'hit' && played !== r.expected[0].w && r.scaleNotes.includes(played) &&
-      hits.length < r.expected.length / 2) {
+  if (r.restarted) event.restarted = true;
+  // False start: logged, marked and void — no tempo, weak-key or recap
+  // change; the same run again.
+  if (abort === 'false') {
     event.falseStart = true;
     addEvent(event);
-    message(`<b>False start</b> — you began on ${noteName(played)}; this run starts on <b>${noteName(r.expected[0].w)}</b> ` +
-            '(the teal one). Doesn\'t count — again.');
+    message(`<b>False start</b> — you began on ${noteName(r.expected[0].wrongW)}; this run starts on ` +
+            `<b>${noteName(r.expected[0].w)}</b> (the teal one). Doesn't count — again.`);
     if (s.mode === 'learn') $('#scaleMsg').classList.add('tally');
-    s.timers.push(setTimeout(() => { if (s) nextRun(); }, s.mode === 'learn' ? SHEET_SUMMARY_MS : SUMMARY_MS));
+    s.timers.push(setTimeout(() => { if (s) restartRun(); }, RESTART_MS));
     return;
   }
   addEvent(event);
@@ -444,6 +480,13 @@ function endRun(stopped) {
     message((stopped
       ? `<b>${r.misses} misses — start again.</b> ${hits.length} of ${r.expected.length} hit.`
       : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`) + tempoNote);
+  }
+  if (abort === 'errors') {
+    message(`<b>${ERRORS_IN_A_ROW} wrong in a row</b> — again from ${noteName(r.expected[0].w)}.${tempoNote}`);
+    $('#scaleMsg').classList.add('tally');
+    s.advance = false;                 // same key, whatever the tempo did
+    s.timers.push(setTimeout(() => { if (s) restartRun(); }, RESTART_MS));
+    return;
   }
   s.timers.push(setTimeout(() => { if (s) nextRun(); }, s.mode === 'learn' ? SHEET_SUMMARY_MS : SUMMARY_MS));
 }
@@ -662,7 +705,8 @@ function drawSheet(g, r, W, H) {
   // was played (time × pitch). Right pitch for the nearest note: gold, drawn
   // UNDER the discs so it only peeks out when early or late; wrong pitch:
   // red, drawn over them. Count-in notes aren't drawn.
-  const marks = r.notes.slice(1).map(([midi, ms]) => {
+  // Skip the blown start note (a restarted run has none).
+  const marks = r.notes.slice(r.restarted ? 0 : 1).map(([midi, ms]) => {
     const p = slotAt(r, r.t0 + ms - s.latency);
     const w = midi - s.calibOffset;
     const near = r.expected[Math.max(0, Math.min(r.expected.length - 1, Math.round(p)))];
