@@ -26,9 +26,13 @@ const STATE_KEY = 'woodshed.syncState';
 // Settings that travel in settings.json: everything but the sync credentials.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
-                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.scaleExercise',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.patternSel', 'woodshed.patternEx', 'woodshed.patternBpm', 'woodshed.scaleExercise',
                   'woodshed.scaleCustom', 'woodshed.bpm', 'woodshed.misses'];
 const SETTINGS_PATH = 'settings.json';
+// The pattern library (P game): the boss's own creations, kept apart from
+// the runs and from settings, as readable JSON (one object per pattern).
+const LIBRARY_KEY = 'woodshed.patterns';
+const LIBRARY_PATH = 'patterns.json';
 export const WINDOW_DAYS = 90;
 const DAY_MS = 86400000;
 
@@ -220,6 +224,25 @@ async function run() {
         const sha = await writeFile(SETTINGS_PATH, text, remote.get(SETTINGS_PATH), 'woodshed: settings')
           ?? await writeFile(SETTINGS_PATH, text, (await readFile(SETTINGS_PATH))?.sha, 'woodshed: settings');
         if (sha) state.settings = text;
+      }
+    }
+
+    // 3b. Pattern library: restore it on a device that has none, else push
+    // it when it changed.
+    const lib = ls(LIBRARY_KEY);
+    if (lib === null && remote.has(LIBRARY_PATH)) {
+      const file = await readFile(LIBRARY_PATH);
+      if (file) {
+        ls(LIBRARY_KEY, JSON.stringify(JSON.parse(file.text)));
+        state.library = file.text;
+        result.settingsRestored = true;           // reload so the app sees it
+      }
+    } else if (lib !== null) {
+      const text = `${JSON.stringify(JSON.parse(lib), null, 2)}\n`;
+      if (text !== state.library) {
+        const sha = await writeFile(LIBRARY_PATH, text, remote.get(LIBRARY_PATH), 'woodshed: pattern library')
+          ?? await writeFile(LIBRARY_PATH, text, (await readFile(LIBRARY_PATH))?.sha, 'woodshed: pattern library');
+        if (sha) state.library = text;
       }
     }
 

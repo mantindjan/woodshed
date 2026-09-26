@@ -194,12 +194,52 @@
   /* Game switch + ⚙ on top; each game's controls show only when selected. */
   .topbar { display: flex; gap: 6px; }
   .topbar .seg { flex: 1; }
-  .seg.game button { font-weight: 600; padding: 6px 0; }
+  .seg.game button { font-weight: 600; padding: 4px 0; display: flex; align-items: center; justify-content: center; }
+  .seg.game .gicon { height: 24px; }
+  .seg.game svg.gicon { width: 24px; }
+  .seg.game .rb { font: 24px/24px 'RealBook', Georgia, serif; letter-spacing: 2px; }
   .gear { flex: none; padding: 4px 11px; font-size: 16px; color: var(--dim); }
   .gear.active { border-color: var(--brass); color: var(--brass); }
-  .g-degrees, .g-scales { display: flex; flex-direction: column; gap: 9px; }
-  .g-degrees > *, .g-scales > * { flex-shrink: 0; }
-  body[data-game="scales"] .g-degrees, body[data-game="degrees"] .g-scales { display: none; }
+  .g-degrees, .g-scales, .g-patterns { display: none; flex-direction: column; gap: 9px; }
+  .g-degrees > *, .g-scales > *, .g-patterns > * { flex-shrink: 0; }
+  body[data-game="degrees"] .g-degrees, body[data-game="scales"] .g-scales,
+  body[data-game="patterns"] .g-patterns { display: flex; }
+
+  /* Patterns (P game): the pattern on top, the chord lane, the library. */
+  .seg.game .pg { font: 800 22px/24px system-ui, sans-serif; }
+  #pShow { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 2px 0 4px; }
+  #pShow > b { font-size: 14px; color: var(--dim); font-weight: 600; white-space: nowrap; }
+  .pshape { position: relative; display: flex; align-items: flex-start; gap: 4px; }
+  .pshape .pn { position: relative; min-width: 22px; text-align: center; font: 800 18px/22px system-ui, sans-serif;
+                color: #ffe2a8; border-radius: 6px; }
+  .pshape .pn.sel { background: rgba(217,164,65,.25); outline: 1px solid var(--brass); }
+  .pshape .proot { position: absolute; left: -4px; right: -4px; height: 0; border-top: 1px dashed rgba(217,164,65,.45); }
+  #pChords { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .pchord { position: absolute; left: 0; top: 0; font-size: 26px; color: #ffe2a8; white-space: nowrap; }
+  #pMsg { position: absolute; left: 25%; right: 0; bottom: 8px; text-align: center; font-size: 15px; padding: 0 12px; }
+  #pMsg[hidden] { display: none; }
+  #pMsg b { color: #ffe2a8; }
+  #pMsg small { color: var(--dim); font-size: 12px; }
+  #pLib { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .pcard { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: #181818; text-align: left; }
+  .pcard.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
+  .pcard .pname { font-size: 13px; font-weight: 600; min-width: 90px; }
+  .pcard .pprog { margin-left: auto; font-size: 11px; color: var(--dim); text-align: right; line-height: 1.4; }
+  .pcard .pprog b { color: var(--brass); font-weight: 600; }
+  .pcard .pact { display: flex; gap: 4px; }
+  .pcard .pact button { padding: 2px 7px; font-size: 11px; color: var(--dim); }
+  #pEdit { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #151515;
+           border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+  #pKeys button { min-width: 34px; }
+  .prow { display: flex; gap: 5px; }
+  .prow button { flex: 1; padding: 5px 0; font-size: 14px; }
+  #pName { width: 100%; }
+  #pStages[hidden], #pExercises[hidden] { display: none; }
+  #pStages .label { align-self: center; margin-right: 4px; }
+  /* Play card: name over the degrees, like the scales card. */
+  #pCard .ex { flex-direction: column; align-items: flex-start; gap: 1px; }
+  #pCardName { font-weight: 600; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pCardDeg { font-size: 15px; }
   .row2 { display: flex; gap: 6px; }
   .row2 .seg { flex: 1; }
   .row2 .seg button { font-size: 12px; padding-left: 2px; padding-right: 2px; white-space: nowrap; }
@@ -444,6 +484,27 @@
         <div id="scaleIdle" hidden></div>
       </div>
     </div>
+    <!-- Patterns (P): the pattern on top, chords scrolling along a staff. -->
+    <div class="view" id="view-patterns" data-view="play" data-for="patterns" hidden>
+      <div class="stage-top">
+        <span id="pTitle"></span><span></span><span id="pInfo" class="scale-info"></span>
+      </div>
+      <div id="pShow"></div>
+      <div class="lane-wrap">
+        <canvas id="plane"></canvas>
+        <div id="pChords"></div>
+        <div id="pMsg" hidden></div>
+      </div>
+    </div>
+    <!-- Patterns library: every pattern with its progress. -->
+    <div class="view" id="view-pattern-levels" data-view="levels" data-for="patterns" hidden>
+      <h2>Your patterns</h2>
+      <div id="pLib"></div>
+    </div>
+    <div class="view" id="view-pattern-stats" data-view="stats" data-for="patterns" hidden>
+      <h2>Pattern stats</h2>
+      <div id="pStats" class="small-note">Stats come next: which keys and which notes of the pattern break.</div>
+    </div>
     <!-- Levels: the ladder (D6). -->
     <div class="view" id="view-levels" data-view="levels" data-for="degrees" hidden><div id="ladder"></div></div>
     <!-- Scale levels (E1 step 2): the ladder, one block per scale. -->
@@ -479,8 +540,12 @@
     <!-- The game first; its own Play · Levels · Stats under it. ⚙ is shared. -->
     <div class="topbar">
       <div class="seg game">
-        <button data-game="degrees">Degrees</button>
-        <button data-game="scales">Scales</button>
+        <!-- Icons (boss, 2026-09-26): degrees as "3 5 7" in the Real Book
+             numerals, like a time signature; scales as a piece of ladder. -->
+        <button data-game="degrees" aria-label="Degrees" title="Degrees"><span class="gicon rb">3 5 7</span></button>
+        <button data-game="patterns" aria-label="Patterns" title="Patterns"><span class="gicon pg">P</span></button>
+        <button data-game="scales" aria-label="Scales" title="Scales"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 2v20M17 2v20M7 6h10M7 11h10M7 16h10M7 21h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
       </div>
       <button class="gear" data-tab="horn" aria-label="Horn, sync and backup">⚙</button>
     </div>
@@ -506,6 +571,15 @@
         <div class="misses"><span class="label">Restart after</span>
           <div class="chips"><button data-misses="1">1</button><button data-misses="2">2</button><button data-misses="3">3</button><button data-misses="5">5</button></div>
         </div>
+      </div>
+      <div class="g-patterns">
+        <button id="pCard" class="excard"><span class="ex"><b id="pCardName"></b><b id="pCardDeg" class="degs"></b></span><span class="chg">change ›</span></button>
+        <div class="seg"><button data-pmode="learn">Learn</button><button data-pmode="practice">Practice</button></div>
+        <!-- Learn: times on each chord round the cycle of 4ths; practice: the path. -->
+        <div class="chips" id="pStages"><span class="label">Each chord</span>
+          <button data-pstage="0">×4</button><button data-pstage="1">×2</button><button data-pstage="2">×1</button></div>
+        <div class="chips" id="pExercises"></div>
+        <div id="ptempo"></div>
       </div>
       <div class="g-degrees">
         <button id="exerciseBtn" class="excard"><span class="ex"><b id="exerciseLabel"></b><b id="exerciseDegrees" class="degs"></b></span><span class="chg">change ›</span></button>
@@ -562,6 +636,19 @@
       <div class="small-note">For the level picked under the map. Each cell: the last 10 times that note
         (20 for a degree) came up in that key — hit on the beat is green, late or early fades it, wrong or
         missed is red. "All" pools every key.</div>
+    </div>
+    <div class="pane" data-pane="levels" data-for="patterns" hidden>
+      <div class="label">Pattern</div>
+      <div class="seg" id="pQual"><button data-pq="maj7">△</button><button data-pq="7">7</button><button data-pq="m7">−</button><button data-pq="m7b5">ø</button></div>
+      <div id="pEdit"></div>
+      <div class="chips keys" id="pKeys"></div>
+      <div class="prow"><button id="pDown" aria-label="Octave down">↓ lower</button><button id="pUp" aria-label="Octave up">↑ higher</button><button id="pDel" aria-label="Delete note">⌫</button></div>
+      <input id="pName" placeholder="name (optional)" autocomplete="off" spellcheck="false">
+      <div class="prow"><button id="pSave">Save</button><button id="pNew">New</button></div>
+      <div id="pHint" class="small-note"></div>
+    </div>
+    <div class="pane" data-pane="stats" data-for="patterns" hidden>
+      <div class="small-note">Per pattern: which keys and which notes break — coming next.</div>
     </div>
     <div class="pane" data-pane="stats" data-for="degrees" hidden>
       <div class="stat">Answers <b id="statAnswers">0</b></div>

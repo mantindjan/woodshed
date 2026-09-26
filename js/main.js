@@ -24,6 +24,9 @@ import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as re
 import { renderRangeMap } from './rangemap.js';
 import { createTempoModel, tempoKey, pipText, pips } from './scaletempo.js';
 import { startLatency, stopLatency, latencyNote, measuring } from './latency.js';
+import { startPatterns, stopPatterns, patternNote, patternsRunning, patternHTML, esc } from './patterns.js';
+import { loadLibrary, savePattern, deletePattern, patternProgress, nearestOct, autoName, degreesText,
+         PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, MIN_NOTES, MAX_NOTES } from './patternlib.js';
 
 // Settings (localStorage, all carried by the backup file).
 const CALIB_KEY = 'woodshed.calib';
@@ -71,7 +74,8 @@ let calib = load(CALIB_KEY) === null ? null : Number(load(CALIB_KEY));
 // Octave-aware calibration (E1): older calibrations only know the pitch
 // class, which the degree drill needs; scales need the octave too.
 let calibOffset = load(OFFSET_KEY) === null ? null : Number(load(OFFSET_KEY));
-let game = load(GAME_KEY) === 'scales' ? 'scales' : 'degrees';
+const GAMES = ['degrees', 'scales', 'patterns'];
+let game = GAMES.includes(load(GAME_KEY)) ? load(GAME_KEY) : 'degrees';
 // Scales start on the first rung too (major, linear up).
 let scaleExerciseId = load(SCALE_EX_KEY) || SCALE_LEVELS[0].id;
 let scaleCustom = loadJSON(SCALE_CUSTOM_KEY, { scale: 'major', pattern: 'up', keys: [0] });
@@ -180,6 +184,7 @@ function showTab(tab) {
   if (game === 'degrees' && tab === 'stats') showStats();
   if (game === 'scales' && tab === 'levels') showScaleLevels();
   if (game === 'scales' && tab === 'stats') showScaleStats();
+  if (game === 'patterns' && tab === 'levels') showPatternLevels();
   if (tab === 'horn') showCount();
   else if (measuring()) endLatencyRun();
 }
@@ -211,7 +216,7 @@ function showSettings() {
   // The miss limit only applies in practice: learn never restarts a run.
   $$('[data-misses]').forEach(b => { b.classList.toggle('active', Number(b.dataset.misses) === misses); b.disabled = mode === 'learn'; });
   // Learn/Practice and Weak/Random are one setting shared by both games.
-  $$('[data-mode], [data-smode]').forEach(b => b.classList.toggle('active', (b.dataset.mode || b.dataset.smode) === mode));
+  $$('[data-mode], [data-smode], [data-pmode]').forEach(b => b.classList.toggle('active', (b.dataset.mode || b.dataset.smode || b.dataset.pmode) === mode));
   $$('[data-pick], [data-spick]').forEach(b => b.classList.toggle('active', (b.dataset.pick || b.dataset.spick) === pick));
   $$('[data-length]').forEach(b => b.classList.toggle('active', Number(b.dataset.length) === length));
   // The exercise everywhere as "L13 · Major" + its degrees in brass, so
@@ -234,7 +239,9 @@ function showSettings() {
   $('#tempoMode').classList.toggle('active', tempoAuto);
   $('#tempoMode').disabled = false;   // setEnabled above just locked it with the rest
   // An empty custom pick can't be played.
-  startBtn.disabled = game === 'degrees' ? ex.cells.length === 0 : sx.keys.length === 0;
+  startBtn.disabled = game === 'degrees' ? ex.cells.length === 0
+    : game === 'scales' ? sx.keys.length === 0 : !currentPattern();
+  if (game === 'patterns') showPatternSettings();
   showHint();
   if (game === 'scales') showScaleIdle();
 }
@@ -267,7 +274,8 @@ function onNote(midi) {
   }
   if (calib === null) noteEl.textContent = '?';
   else noteEl.innerHTML = noteHTML(writtenPc(midi, calib));
-  if (scalesRunning()) scaleNote(midi);
+  if (patternsRunning()) patternNote(midi);
+  else if (scalesRunning()) scaleNote(midi);
   else drillNote(midi);
 }
 
@@ -349,6 +357,11 @@ startBtn.addEventListener('click', async () => {
                   tempoAuto: autoActive(), tempo: tempoModel,
                   bpm: tempo.get(), misses, calib, calibOffset },
                 recap => { scaleRecap = recap; showRunning(false); loadTempo(); runSync(); });
+  } else if (game === 'patterns') {
+    const p = currentPattern();
+    startPatterns({ pattern: p, mode, exercise: mode === 'learn' ? 'cycle4' : pExercise, stage: currentStage(p),
+                    bpm: ptempo.get(), calib, calibOffset, latency },
+                  () => { showRunning(false); showSettings(); loadPatternProgress(); runSync(); });
   } else {
     startRound(mode, calib, onRoundEnd, { length, pick, exercise: currentExercise() });
   }
@@ -369,7 +382,8 @@ $('#scalePlay').addEventListener('click', () => {
 $('#scaleRestart').addEventListener('click', () => { restartScales(); showScalePlay(); });
 $('#scaleStop').addEventListener('click', () => stopScales());
 stopBtn.addEventListener('click', () => {
-  if (scalesRunning()) stopScales();
+  if (patternsRunning()) stopPatterns();
+  else if (scalesRunning()) stopScales();
   else if (isRunning()) stopRound();
 });
 
@@ -377,6 +391,7 @@ stopBtn.addEventListener('click', () => {
 $$('button[data-game]').forEach(b => b.addEventListener('click', () => {
   game = b.dataset.game; save(GAME_KEY, game); showSettings();
   if (game === 'scales') loadTempo();
+  if (game === 'patterns') loadPatternProgress();
   showTab(currentTab === 'horn' ? 'play' : currentTab);
 }));
 $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Number(b.dataset.misses); save(MISSES_KEY, String(misses)); showSettings(); }));
@@ -392,8 +407,8 @@ $('#tempoMode').addEventListener('click', () => {
   tempoAuto = !tempoAuto; save(TEMPO_AUTO_KEY, tempoAuto ? 'auto' : 'fixed'); scaleRecap = null; showSettings();
 });
 
-$$('[data-mode], [data-smode]').forEach(b => b.addEventListener('click', () => {
-  mode = b.dataset.mode || b.dataset.smode; save(MODE_KEY, mode); scaleRecap = null; showSettings();
+$$('[data-mode], [data-smode], [data-pmode]').forEach(b => b.addEventListener('click', () => {
+  mode = b.dataset.mode || b.dataset.smode || b.dataset.pmode; save(MODE_KEY, mode); scaleRecap = null; showSettings();
 }));
 $$('[data-pick], [data-spick]').forEach(b => b.addEventListener('click', () => {
   pick = b.dataset.pick || b.dataset.spick; save(PICK_KEY, pick); scaleRecap = null; showSettings();
@@ -679,6 +694,166 @@ function say(text, bad = false) {
   menuMsg.textContent = text;
   menuMsg.className = bad ? 'bad' : '';
 }
+// --- Patterns (P game): Play pane, library + editor on Levels ---
+const PSEL_KEY = 'woodshed.patternSel';    // the selected pattern's id
+const PEX_KEY = 'woodshed.patternEx';      // practice path
+const PBPM_KEY = 'woodshed.patternBpm';    // a tempo of its own (quarter notes), set by the player
+let patternId = load(PSEL_KEY);
+let pExercise = PRACTICE_EXERCISES.includes(load(PEX_KEY)) ? load(PEX_KEY) : PRACTICE_EXERCISES[0];
+let pStage = null;                          // learn stage picked by hand; null = where progress says
+let pProgress = new Map();                  // pattern id → patternProgress()
+const currentPattern = () => { const lib = loadLibrary(); return lib.find(p => p.id === patternId) || lib[0] || null; };
+const currentStage = p => pStage ?? (p && pProgress.get(p.id)?.stage) ?? 0;
+const ptempo = mountTempo($('#ptempo'), { min: 60, value: Math.max(60, Number(load(PBPM_KEY)) || 60),
+                                          note: '♩ quarters', onChange: v => save(PBPM_KEY, String(v)) });
+
+async function loadPatternProgress() {
+  const evs = (await allEvents()).filter(e => e.game === 'patterns');
+  pProgress = new Map(loadLibrary().map(p => [p.id, patternProgress(evs, p.id)]));
+  showSettings();
+  if (!$('#view-pattern-levels').hidden) showPatternLevels();
+}
+
+function showPatternSettings() {
+  const p = currentPattern();
+  const prog = p && pProgress.get(p.id);
+  $('#pCardName').textContent = p ? p.name : 'No pattern yet';
+  $('#pCardDeg').textContent = p ? degreesText(p) : 'build one ›';
+  $('#pStages').hidden = mode !== 'learn';
+  $('#pExercises').hidden = mode === 'learn';
+  const stage = currentStage(p);
+  $$('[data-pstage]').forEach(b => b.classList.toggle('active', Number(b.dataset.pstage) === stage));
+  $('#pExercises').innerHTML = PRACTICE_EXERCISES.map(id =>
+    `<button data-pex="${id}" class="${id === pExercise ? 'active' : ''}">${EXERCISES[id].name}${prog?.done.has(id) ? ' ✓' : ''}</button>`).join('');
+  if (patternsRunning()) return;
+  // Idle stage: the pattern on top, what Start will do underneath.
+  $('#pShow').innerHTML = p ? `<b>${esc(p.name)}</b>${patternHTML(p)}` : '<b>Build a pattern in Levels</b>';
+  $('#pTitle').textContent = !p ? '' : mode === 'learn' ? `Cycle of 4ths · ×${STAGES[stage]}` : EXERCISES[pExercise].name;
+  const msg = $('#pMsg');
+  msg.hidden = !p;
+  msg.innerHTML = !p ? '' : mode === 'learn'
+    ? `<b>Learn</b> — the pattern ${STAGES[stage]}× on each chord round the cycle of 4ths. Nothing is shown ahead: ` +
+      'play it from the top on each chord. Two solid runs (95 %) and it moves to fewer times per chord.<br><small>Start goes straight into a one-bar count-in.</small>'
+    : `<b>Practice</b> — once on each chord, ${EXERCISES[pExercise].name.toLowerCase()}.<br><small>Start goes straight into a one-bar count-in.</small>`;
+}
+$('#pCard').addEventListener('click', () => showTab('levels'));
+$('#pStages').addEventListener('click', e => {
+  const b = e.target.closest('[data-pstage]');
+  if (b) { pStage = Number(b.dataset.pstage); showSettings(); }
+});
+$('#pExercises').addEventListener('click', e => {
+  const b = e.target.closest('[data-pex]');
+  if (b) { pExercise = b.dataset.pex; save(PEX_KEY, pExercise); showSettings(); }
+});
+
+// The library on the stage: each pattern with its height-drawn shape and
+// progress; the editor in the pane. A draft is edited in place and only
+// written to the library on Save.
+let draft = null;            // {id, name, quality, notes: [{deg, oct}], sel}
+// The first time, the editor opens on an example (the boss's "5 1 3 5 on
+// a dominant", from the low 5) — not saved until Save.
+const EXAMPLE = { quality: '7', notes: [{ deg: '5', oct: -1 }, { deg: '1', oct: 0 }, { deg: '3', oct: 0 }, { deg: '5', oct: 0 }] };
+function editDraft(p) {
+  const src = p || (loadLibrary().length ? { quality: '7', notes: [] } : EXAMPLE);
+  draft = { id: p?.id || null, name: p?.name || '', quality: src.quality, notes: src.notes.map(n => ({ ...n })), sel: src.notes.length - 1 };
+}
+
+function stageText(prog) {
+  if (!prog) return 'new';
+  const marks = STAGES.map((n, i) => (prog.learnt || i < prog.stage ? `<b>×${n} ✓</b>` : `×${n}`)).join(' ');
+  return `Learn ${marks}<br>Practice ${prog.done.size} / ${PRACTICE_EXERCISES.length}`;
+}
+
+function showPatternLevels() {
+  const lib = loadLibrary();
+  const sel = currentPattern();
+  $('#pLib').innerHTML = lib.length ? lib.map(p => `<div class="pcard${sel && p.id === sel.id ? ' active' : ''}" data-psel="${p.id}">` +
+      `<span class="pname">${esc(p.name)}</span>${patternHTML(p)}` +
+      `<span class="pprog">${stageText(pProgress.get(p.id))}</span>` +
+      `<span class="pact"><button data-pedit="${p.id}">edit</button><button data-pdel="${p.id}">✕</button></span></div>`).join('')
+    : '<div class="small-note">No patterns yet — build one on the right (an example is loaded), then Save.</div>';
+  if (!draft) editDraft(null);
+  showEditor();
+}
+
+function showEditor() {
+  $$('[data-pq]').forEach(b => b.classList.toggle('active', b.dataset.pq === draft.quality));
+  $('#pEdit').innerHTML = draft.notes.length ? patternHTML(draft, draft.sel) : '<span class="small-note">Tap degrees below</span>';
+  $('#pKeys').innerHTML = PATTERN_DEGREES.map(d => `<button data-pd="${d}">${degreeLabel(d)}</button>`).join('');
+  $('#pName').value = draft.name;
+  $('#pName').placeholder = draft.notes.length ? autoName(draft) : 'name (optional)';
+  const n = draft.notes.length;
+  $('#pHint').textContent = n < MIN_NOTES ? `At least ${MIN_NOTES} notes. Each new note goes to the nearest octave; ↑ ↓ move the selected one.`
+    : `${n} notes to a bar — ${n === 4 ? 'quarters' : n === 6 ? 'triplets' : 'evenly spread'}.${draft.id ? ' Editing' : ' New'}${n >= MAX_NOTES ? ' · full' : ''}`;
+  $('#pSave').disabled = n < MIN_NOTES;
+}
+
+$('#pKeys').addEventListener('click', e => {
+  const b = e.target.closest('[data-pd]');
+  if (!b || draft.notes.length >= MAX_NOTES) return;
+  const at = draft.sel + 1;
+  const deg = b.dataset.pd;
+  draft.notes.splice(at, 0, { deg, oct: nearestOct(draft.quality, deg, draft.notes[at - 1]) });
+  draft.sel = at;
+  showEditor();
+});
+$('#pEdit').addEventListener('click', e => {
+  const n = e.target.closest('[data-i]');
+  if (n) { draft.sel = Number(n.dataset.i); showEditor(); }
+});
+const shiftOct = d => {
+  const n = draft.notes[draft.sel];
+  if (n && Math.abs(n.oct + d) <= 2) { n.oct += d; showEditor(); }
+};
+$('#pUp').addEventListener('click', () => shiftOct(1));
+$('#pDown').addEventListener('click', () => shiftOct(-1));
+$('#pDel').addEventListener('click', () => {
+  if (draft.sel < 0) return;
+  draft.notes.splice(draft.sel, 1);
+  draft.sel = Math.min(draft.sel, draft.notes.length - 1);
+  showEditor();
+});
+$$('[data-pq]').forEach(b => b.addEventListener('click', () => { draft.quality = b.dataset.pq; showEditor(); }));
+$('#pName').addEventListener('input', e => { draft.name = e.target.value; });
+$('#pNew').addEventListener('click', () => { editDraft(null); draft.notes = []; draft.sel = -1; showEditor(); });
+$('#pSave').addEventListener('click', async () => {
+  // Changing the notes of a pattern that has runs makes a new pattern.
+  const played = !!draft.id && (await allEvents()).some(e => e.game === 'patterns' && e.patternId === draft.id);
+  const saved = savePattern(draft, played);
+  patternId = saved.id;
+  save(PSEL_KEY, patternId);
+  pStage = null;
+  editDraft(saved);
+  await loadPatternProgress();
+  showPatternLevels();
+  runSync();                    // the library goes to its own file in the data repo
+});
+$('#pLib').addEventListener('click', e => {
+  const edit = e.target.closest('[data-pedit]');
+  const del = e.target.closest('[data-pdel]');
+  const card = e.target.closest('[data-psel]');
+  const lib = loadLibrary();
+  if (del) {
+    const p = lib.find(x => x.id === del.dataset.pdel);
+    if (p && confirm(`Delete "${p.name}"? Its runs stay in your history.`)) {
+      deletePattern(p.id);
+      if (patternId === p.id) patternId = null;
+      showPatternLevels();
+      showSettings();
+      runSync();
+    }
+    return;
+  }
+  if (edit) { editDraft(lib.find(x => x.id === edit.dataset.pedit)); showEditor(); }
+  if (card) {
+    patternId = card.dataset.psel;
+    save(PSEL_KEY, patternId);
+    pStage = null;
+    showPatternLevels();
+    showSettings();
+  }
+});
+
 // --- ⚙ Latency ---
 let latency = Number(load(LATENCY_KEY)) || 0;
 function showLatency(extra = '') {
@@ -742,6 +917,7 @@ showSettings();
 showTab('play');   // applies the stage for the remembered game
 showSyncStatus();
 if (game === 'scales') loadTempo();   // the auto-tempo staircases, from the cached summary
+if (game === 'patterns') loadPatternProgress();
 connectMidi(onNote, onStatus);
 runSync();   // pull anything new, push anything pending (A9)
 

@@ -75,6 +75,17 @@ export function playChord(rootConcertPc, quality, dur) {
   });
 }
 
+// A chord at audio time `time` for `dur` seconds, without silencing what's
+// already scheduled (the patterns lane queues a chord per key alongside its
+// clicks; playChord's stopAll would cut them).
+export function scheduleChord(rootConcertPc, quality, time, dur) {
+  if (!ctx) return;
+  VOICING[quality].forEach((semi, i) => {
+    const level = i === 0 ? 0.13 : i <= 4 ? 0.085 : 0.05;
+    playNote(48 + rootConcertPc + semi, time, level, dur);
+  });
+}
+
 // A soft, bell-like ping of one note on a right answer: a sine plus a quiet
 // octave partial, 5 ms attack, exponential fade. Sits an octave above the
 // pad's close voicing (MIDI 72–83) so it reads as an echo, not a new chord.
