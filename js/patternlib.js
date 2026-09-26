@@ -5,8 +5,8 @@
 // is a degree of the chord plus an OCTAVE relative to the root, because
 // height matters — "5 3 1 5" from the low 5 and from the high 5 are two
 // different patterns. Semitones above the root = degree's semitones (by
-// quality) + 12 × octave. The cell fills two beats: 4 notes → eighths,
-// 6 → eighth triplets, n → n evenly (patterns.js CELL).
+// quality) + 12 × octave. A note a beat: the tempo is notes per minute
+// (mastered ≈ 240 = 4 a second), and a chord lasts the pattern × reps.
 //
 // The library lives in localStorage (`woodshed.patterns`) and syncs as its
 // own readable file (`patterns.json`, sync.js), apart from the runs. Runs

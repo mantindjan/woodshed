@@ -1,14 +1,14 @@
 // Patterns runner (P game): play a pattern from memory over chords going
 // by. The stage shows no notes ahead (boss, 2026-09-26: "we want the player
 // to remember, to feel the pattern"): chord symbols scroll toward a fixed
-// now line along a staff, beats and the cell's subdivisions marked (4 →
-// eighths, 6 → eighth triplets); after a clicked count-in a jazz trio plays the
+// now line along a staff: a line a beat (a note a beat), stronger where
+// each pattern starts, thickest where the chord changes; after a clicked count-in a jazz trio plays the
 // changes — walking bass, drums, Rhodes comping (trio.js, audio.js).
 // Played notes leave marks behind the line — gold right, red wrong.
 // The pattern itself, heights included, is always shown at the top.
 //
 // A run = the exercise's keys in order (patternlib.js EXERCISES), the
-// pattern `reps` times on each chord, one cell per two beats, after a
+// pattern `reps` times on each chord, a note a beat, after a
 // one-bar count-in. Start goes straight into the count-in: nothing to blow.
 //
 // Judging: a note is HIT if it's the right degree of that bar's chord, on
@@ -29,16 +29,13 @@ import { addEvent, requestPersistence } from './events.js';
 import { EXERCISES, STAGES, SOLID, noteSemis } from './patternlib.js';
 
 const MAX_WINDOW_MS = 150;
-const BEATS = 4;                 // 4/4: bars and the count-in
-// One cell per TWO BEATS — eighths (boss, 2026-09-26): 4 notes = eighths,
-// 6 = eighth-note triplets. His measure: a pattern is mastered at ~4 notes
-// a second, i.e. 120 bpm, and learnt from the 60 floor (2 a second) — the
-// tempo ladder 60…126 is that journey. ×4 = 2 bars per chord, ×2 = 1 bar,
-// ×1 = half a bar (a chord a second at 120: bass root + approach, normal
-// jazz harmonic rhythm). A cell per bar (quarters) needed silly tempos; a
-// cell per beat (16ths) was past his ceiling at learning tempos and left
-// the bass one note per chord. Runs record `cellBeats`.
-const CELL = 2;
+const BEATS = 4;                 // the count-in (and the drums' phrase)
+// ONE NOTE PER BEAT, no bars (boss, 2026-09-26, after we tangled ourselves
+// in bars, eighths and 16ths): the tempo is notes per minute, and a chord
+// lasts as long as the pattern on it — n notes × reps beats. His measure:
+// mastered at ~4 notes a second = 240 bpm, where a 4-note pattern ×1
+// changes chord every second; learnt slower (70–100). Runs record
+// `cellBeats` (= the pattern's length; a v2 run from before said 2 or 1).
 const NEXT_MS = 3000;            // tally on screen before the next run
 // Sound is queued this far ahead, as the run goes (a look-ahead scheduler).
 // Queuing the whole run at Start — 12 chords × 7 voices with their filters,
@@ -63,24 +60,25 @@ export const patternsRunning = () => s !== null;
 export function buildRun(pattern, exerciseId, reps, bpm, t0) {
   const beat = 60000 / bpm;
   const n = pattern.notes.length;
-  const slot = (CELL * beat) / n;
+  const slot = beat;                  // a note a beat
+  const cellBeats = n;
   const keys = EXERCISES[exerciseId].keys;
   const first = t0 + BEATS * beat;
   const expected = [];
   const chords = [];
   keys.forEach((key, i) => {
-    chords.push({ key, t: first + i * reps * CELL * beat, beats: reps * CELL });
+    chords.push({ key, t: first + i * reps * cellBeats * beat, beats: reps * cellBeats });
     for (let r = 0; r < reps; r++) {
       const cell = i * reps + r;
       pattern.notes.forEach((note, j) => {
         const semis = noteSemis(pattern.quality, note);
-        expected.push({ t: first + cell * CELL * beat + j * slot, cell, j, key, deg: note.deg, semis,
+        expected.push({ t: first + cell * cellBeats * beat + j * slot, cell, j, key, deg: note.deg, semis,
                         pc: pc(key + semis), status: 'pending', off: null, wrongAt: null, hitAt: null });
       });
     }
   });
   return { beat, slot, n, window: Math.min(MAX_WINDOW_MS, slot * 0.45), expected, chords,
-           end: first + keys.length * reps * CELL * beat };
+           end: first + keys.length * reps * cellBeats * beat };
 }
 
 // Judge one note-on (written pitch `w`, played time `now`) against a run.
@@ -271,7 +269,7 @@ function endRun() {
     pattern: { name: p.name, quality: p.quality, notes: p.notes },   // snapshot: history outlives edits
     exercise: s.exercise,
     reps: reps(),
-    cellBeats: CELL,                  // beats per cell (v1 runs: 4, a cell per bar)
+    cellBeats: s.pattern.notes.length,   // beats per cell: a note a beat (v1 runs: 4, a cell per bar)
     keys: EXERCISES[s.exercise].keys,                          // written roots, in order
     bpm: s.bpm,
     latency: s.latency,
@@ -334,7 +332,6 @@ function buildChords(r) {
   const box = $('#pChords');
   box.innerHTML = r.chords.map(c => `<div class="pchord">${chordHTML(c.key, s.pattern.quality)}</div>`).join('');
   r.chordEls = [...box.children];
-  r.chordW = r.chordEls.map(el => el.offsetWidth);   // measured once, not every frame
 }
 function clearChords() { $('#pChords').innerHTML = ''; }
 
@@ -372,8 +369,8 @@ function draw() {
   // The now line a third in: the notes just played stay in view a while,
   // since that's the only feedback (nothing is shown ahead).
   const nowX = W * 0.34;
-  // Half a cell a beat (eighths): room for the slots, a cell or two ahead.
-  const pxBeat = Math.max(70, W * 0.2);
+  // A note a beat: a pattern or two in view ahead.
+  const pxBeat = Math.max(46, W * 0.11);
   const x = t => nowX + ((t - now) / r.beat) * pxBeat;
   const cy = H * 0.56, half = 38, gap = 15;
   // Staff: five faint lines.
@@ -390,22 +387,23 @@ function draw() {
       g.lineWidth = 2; g.strokeStyle = 'rgba(255,226,168,.7)'; g.stroke();
     }
   }
-  // Beat lines (a cell each), bar lines stronger, a chord change thickest.
+  // No bars: a faint line a beat, stronger where a pattern starts, the
+  // thickest where the chord changes.
   const first = r.t0 + BEATS * r.beat;
   for (let k = 0; k <= r.beats - BEATS; k++) {
     const tk = first + k * r.beat;
     const bx = x(tk);
     if (bx < -20 || bx > W + 20) continue;
     const change = r.chords.some(ch => Math.abs(ch.t - tk) < 1);
-    const bar = k % BEATS === 0;
-    g.strokeStyle = change ? 'rgba(255,226,168,.75)' : bar ? 'rgba(217,164,65,.45)' : 'rgba(217,164,65,.18)';
-    g.lineWidth = change ? 3 : bar ? 1.5 : 1;
+    const cellStart = k % r.n === 0;
+    g.strokeStyle = change ? 'rgba(255,226,168,.75)' : cellStart ? 'rgba(217,164,65,.45)' : 'rgba(217,164,65,.14)';
+    g.lineWidth = change ? 3 : cellStart ? 1.5 : 1;
     g.beginPath(); g.moveTo(bx, cy - half); g.lineTo(bx, cy + half); g.stroke();
   }
   for (const e of r.expected) {
     const ex = x(e.t);
     if (ex < -20 || ex > W + 20) continue;
-    // Slot tick: where a note of the cell falls (4 → eighths, 6 → eighth triplets).
+    // Slot tick: where a note falls (a beat each).
     g.strokeStyle = 'rgba(217,164,65,.35)';
     g.lineWidth = 1;
     g.beginPath(); g.moveTo(ex, cy - 11); g.lineTo(ex, cy + 11); g.stroke();
@@ -430,14 +428,15 @@ function draw() {
   g.strokeStyle = 'rgba(217,164,65,.8)';
   g.lineWidth = 2;
   g.beginPath(); g.moveTo(nowX, cy - half - 34); g.lineTo(nowX, cy + half + 10); g.stroke();
-  // Chord symbols above the staff, at their bar. The chord being played
-  // stays pinned at the left edge until the next one pushes it out — it's
-  // what you're playing over.
+  // Chord symbols above the staff, at their chord change. Only the chord
+  // being played (the last one started) is pinned at the left edge; older
+  // ones go — at 240 the last one lingered beside it ("B7 B♭7").
+  let current = -1;
+  r.chords.forEach((ch, i) => { if (ch.t <= now) current = i; });
   r.chordEls?.forEach((el, i) => {
     let cx = x(r.chords[i].t);
-    const nextX = i + 1 < r.chords.length ? x(r.chords[i + 1].t) : Infinity;
-    if (cx < 6) cx = Math.min(6, nextX - r.chordW[i] - 10);
-    const vis = cx >= 0 && cx < W + 10;          // a pinned chord that no longer fits has had its turn
+    if (i === current) cx = Math.max(cx, 6);
+    const vis = i >= current && cx >= 0 && cx < W + 10;
     el.style.display = vis ? '' : 'none';
     if (vis) el.style.transform = `translate(${Math.round(cx)}px, ${Math.round(cy - half - 44)}px)`;
   });
