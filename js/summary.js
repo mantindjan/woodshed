@@ -23,7 +23,8 @@ const KEY = 'woodshed.summary';
 // v4: staircases per key (scale|pattern|key), learn runs included.
 // v5: placement ramp, growing steps, new keys start from the level.
 // v6: learn: one slip is clean, 2 clean step up; false starts void; chosen tempo = baseline.
-const VERSION = 6;
+// v7: tempos move by rungs of the tempo scale, not percentages.
+const VERSION = 7;
 
 function read() {
   try {

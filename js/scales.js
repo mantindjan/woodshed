@@ -52,7 +52,7 @@ import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { pickScaleKey, PATTERNS, runPattern } from './scalelevels.js';
-import { tempoKey, runOutcome, CLEAN_RUNS } from './scaletempo.js';
+import { tempoKey, runOutcome, CLEAN_RUNS, rungUp, rungDown } from './scaletempo.js';
 import { saveKeys, saveTempo } from './summary.js';
 
 const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
@@ -148,20 +148,22 @@ export function startScales(opts, onEnd) {
   raf = requestAnimationFrame(frame);
 }
 
-// Auto tempo: the player overrules the current key's tempo by `delta`.
-// Before the run starts it plays at the new tempo; once it's under way the
-// change is for the key's next run (endRun applies it after the staircase).
-export function nudgeTempo(delta) {
+// Auto tempo: the player overrules the current key's tempo by a rung of the
+// tempo scale (`dir` −1 / 1). Before the run starts it plays at the new
+// tempo; once it's under way the change is for the key's next run (endRun
+// applies it after the staircase).
+const rung = (bpm, dir) => (dir > 0 ? rungUp(bpm) : rungDown(bpm));
+export function nudgeTempo(dir) {
   if (!s?.tempoAuto || !s.run) return;
   const key = tempoKey(s.scale, s.pattern, s.run.key);
   if (s.run.phase === 'waiting') {
-    s.bpm = Math.max(60, Math.min(300, s.bpm + delta));
+    s.bpm = rung(s.bpm, dir);
     s.tempo.set(key, s.bpm, s.session);
     saveTempo(s.tempo);
     s.override = null;
     s.run.manual = true;
   } else {
-    s.override = Math.max(60, Math.min(300, (s.override ?? s.bpm) + delta));
+    s.override = rung(s.override ?? s.bpm, dir);
   }
   topBar();
 }
@@ -276,6 +278,12 @@ function topBar() {
   $('#scaleBpmNote').textContent = !r ? '' : `${s.moved > 0 ? '↑ ' : s.moved < 0 ? '↓ ' : ''}bpm${s.tempoAuto ? ' auto' : ''}` +
     (s.override != null ? ` → ${s.override} next` : '');
   $('#scaleNudge').hidden = !r || !s.tempoAuto;
+  // The rung buttons say where they go: "‹ 72" · "96 ›".
+  if (r && s.tempoAuto) {
+    const at = s.override ?? s.bpm;
+    $('#scaleNudge [data-sn="-1"]').textContent = `‹ ${rungDown(at)}`;
+    $('#scaleNudge [data-sn="1"]').textContent = `${rungUp(at)} ›`;
+  }
   $('#scaleInfo').textContent = r ? `· misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
 }
 
