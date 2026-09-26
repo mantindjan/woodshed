@@ -120,7 +120,7 @@ export const scalesRunning = () => s !== null;
 // opts: {exercise: {id, scale, pattern, keys}, mode: 'learn'|'practice',
 // pick: 'weak'|'random', model (the weak-key model, from the cached
 // summary), tempoAuto (practice on Auto tempo), tempo (the staircase model),
-// bpm (the first run's), misses, calib, calibOffset, latency (ms)}. onEnd()
+// bpm (the first run's), misses, calib, calibOffset, latency (ms)}. onEnd(recap)
 // when stopped.
 export function startScales(opts, onEnd) {
   initAudio();
@@ -130,7 +130,10 @@ export function startScales(opts, onEnd) {
         session: Date.now().toString(36), run: null, timers: [], moved: 0,
         // Learn: the key order, fixed for the session, and where we are in it.
         order: opts.mode === 'learn' ? learnOrder(opts.exercise.keys, opts.model, opts.exercise.scale, opts.exercise.pattern) : null,
-        at: 0, advance: false };
+        at: 0, advance: false,
+        // Session recap, handed to onEnd on Stop (main.js shows it on the
+        // stage): what the session did, key by key, so progress is seen.
+        recap: { t0: Date.now(), runs: 0, clean: 0, keys: [], levelBestBefore: opts.tempo.levelBest(opts.exercise.scale, opts.exercise.pattern) } };
   nextRun();
   resize();
   raf = requestAnimationFrame(frame);
@@ -172,12 +175,14 @@ export function stopScales() {
   stopAll();
   wakeLock?.release().catch(() => {});
   wakeLock = null;
+  const recap = s.recap.runs ? { ...s.recap, t1: Date.now(), tempoAuto: s.tempoAuto, mode: s.mode } : null;
   s = null;
+  topBar();                           // empties the key, tempo and misses
   message('');
   $('#scaleNext').hidden = true;
   $('#scaleNudge').hidden = true;
   draw(null);
-  onEnd();
+  onEnd(recap);
 }
 
 // A new run. Practice: the next key, weighted toward weak ones or even,
@@ -223,7 +228,7 @@ function topBar() {
   $('#scaleBpmNote').textContent = !r ? '' : `${s.moved > 0 ? '↑ ' : s.moved < 0 ? '↓ ' : ''}bpm${s.tempoAuto ? ' auto' : ''}` +
     (s.override != null ? ` → ${s.override} next` : '');
   $('#scaleNudge').hidden = !r || !s.tempoAuto;
-  $('#scaleInfo').textContent = r ? `misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
+  $('#scaleInfo').textContent = r ? `· misses ${r.misses}${s.mode === 'practice' ? `/${s.misses}` : ''}` : '';
 }
 
 function message(html) {
@@ -374,14 +379,26 @@ function endRun(stopped) {
   // The key model adapts within the session; the summary keeps it for next time.
   s.model.add(event);
   saveKeys(s.model);
+  // Recap: per key, where the session took it. `from` is the key's first
+  // run's tempo, `to` where it'll play next; the clean best before and after.
+  const tk = tempoKey(s.scale, s.pattern, r.key);
+  let rk = s.recap.keys.find(x => x.key === r.key);
+  if (!rk) s.recap.keys.push(rk = { key: r.key, from: s.bpm, to: s.bpm, runs: 0, clean: 0, hits: 0, total: 0,
+                                    bestBefore: s.tempo.best(tk), best: s.tempo.best(tk) });
+  const clean = hits.length === r.expected.length;
+  s.recap.runs++; rk.runs++;
+  if (clean) { s.recap.clean++; rk.clean++; }
+  rk.hits += hits.length; rk.total += r.expected.length;
   // Auto tempo: this run moves the tempo for the next.
   let tempoNote = '';
   if (s.tempoAuto) {
     s.tempo.add(event);
-    const key = tempoKey(s.scale, runPattern(event), r.key);
+    const key = tk;
     if (s.override != null) { s.tempo.set(key, s.override, s.session); s.override = null; }
     saveTempo(s.tempo);
     const next = s.tempo.next(key);
+    rk.to = next;
+    rk.best = s.tempo.best(key);
     s.moved = Math.sign(next - s.bpm);
     const name = NOTES[r.key];
     tempoNote = s.moved > 0 ? `<br>${name} tempo up → <b>${next}</b>` : s.moved < 0 ? `<br>${name} tempo down → <b>${next}</b>`
@@ -479,7 +496,8 @@ function draw(r) {
   const g = c.getContext('2d');
   const W = c.clientWidth, H = c.clientHeight;
   g.clearRect(0, 0, W, H);
-  if (r && r.expected.length) countIn(g, r, W);
+  if (!r) return;                     // stopped: the stage belongs to the idle card
+  if (r.expected.length) countIn(g, r, W);
   if (s?.mode === 'learn') return drawSheet(g, r, W, H);
   const nowX = W * 0.22, cy = H * 0.5;
   // The now line.

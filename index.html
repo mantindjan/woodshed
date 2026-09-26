@@ -235,6 +235,19 @@
   #scaleMsg { position: absolute; left: 25%; right: 0; top: 50%; transform: translateY(-50%);
               text-align: center; font-size: 16px; color: var(--ink); padding: 0 12px; }
   #scaleMsg[hidden] { display: none; }
+  #scaleIdle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+               justify-content: center; gap: 6px; text-align: center; padding: 0 24px; pointer-events: none; }
+  #scaleIdle[hidden] { display: none; }
+  #scaleIdle .big { font: 700 22px/1.2 system-ui, sans-serif; }
+  #scaleIdle .what { font: 800 18px/1.3 system-ui, sans-serif; color: #ffe2a8; }
+  #scaleIdle .how { font-size: 13px; color: var(--ink); max-width: 440px; line-height: 1.4; }
+  #scaleIdle .go { font-size: 12px; color: var(--dim); margin-top: 4px; }
+  #scaleIdle .keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 10px; max-width: 470px; }
+  #scaleIdle .k { font-size: 14px; font-variant-numeric: tabular-nums; }
+  #scaleIdle .k b { color: #ffe2a8; }
+  #scaleIdle .up { color: #7fd17f; }
+  #scaleIdle .down { color: #e08a7a; }
+  #scaleIdle .star { color: var(--brass); }
   #scaleMsg b { color: #ffe2a8; }
   .scale-info { text-align: right; font-variant-numeric: tabular-nums; }
   /* The run's key, big and always there; the pattern beside it. */
@@ -414,11 +427,14 @@
         <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span>
         <span><button id="scaleNext" hidden>Next key ›</button></span>
         <span class="scale-info"><span id="scaleNudge" hidden><button data-sn="-5">−5</button><button data-sn="5">+5</button></span>
-          <b id="scaleBpm"></b> <span id="scaleBpmNote"></span> · <span id="scaleInfo"></span></span>
+          <b id="scaleBpm"></b> <span id="scaleBpmNote"></span> <span id="scaleInfo"></span></span>
       </div>
       <div class="lane-wrap">
         <canvas id="lane"></canvas>
         <div id="scaleMsg" hidden></div>
+        <!-- Before Start: what's next and how this mode works; after Stop:
+             the session recap (main.js showScaleIdle). -->
+        <div id="scaleIdle" hidden></div>
       </div>
     </div>
     <!-- Levels: the ladder (D6). -->

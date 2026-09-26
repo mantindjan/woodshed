@@ -9,7 +9,7 @@
 
 import { connectMidi } from './midi.js';
 import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, NOTES, SCALES, WRITTEN_MIDDLE_C, degreeLabel, writtenPc } from './music.js';
-import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo } from './scales.js';
+import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
@@ -21,7 +21,7 @@ import { sync, syncConfig, setSyncConfig, syncState } from './sync.js';
 import { renderHeatmap } from './heatmap.js';
 import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
 import { renderRangeMap } from './rangemap.js';
-import { createTempoModel, tempoKey, pipText } from './scaletempo.js';
+import { createTempoModel, tempoKey, pipText, pips } from './scaletempo.js';
 import { startLatency, stopLatency, latencyNote, measuring } from './latency.js';
 
 // Settings (localStorage, all carried by the backup file).
@@ -85,6 +85,8 @@ let mapView = 'range';
 // waiting.
 let tempoAuto = load(TEMPO_AUTO_KEY) !== 'fixed';
 let tempoModel = createTempoModel();
+let keyModel = createKeyModel();   // weak keys, for learn's key order on the idle card
+let scaleRecap = null;             // the last session's recap, shown until something changes
 const autoActive = () => tempoAuto;
 // What the Play strip shows on Auto: the middle of the exercise's keys'
 // starting tempos (each run then plays at its own key's, shown on stage).
@@ -94,8 +96,60 @@ function autoStartTempo() {
   return starts.length ? starts[starts.length >> 1] : 60;
 }
 async function loadTempo() {
-  tempoModel = createTempoModel((await getSummary()).tempo || []);
+  const sm = await getSummary();
+  tempoModel = createTempoModel(sm.tempo || []);
+  keyModel = createKeyModel(sm.keys || []);
   showSettings();
+}
+
+// --- Scales stage when not running (boss 2026-09-26: a new user must see
+// what the mode does and what the practice did for them) ---
+// Before Start: what's next, how this mode works, what to do. After Stop:
+// the session recap — runs, keys with their tempo moves and new bests,
+// pips gained — until the player changes something or starts again.
+function showScaleIdle() {
+  const el = $('#scaleIdle');
+  if (scalesRunning()) { el.hidden = true; return; }
+  el.hidden = false;
+  const ex = currentScaleExercise();
+  const exName = `${ex.num ? `${ex.num} · ` : ''}${ex.title} · ${ex.name}`;
+  if (scaleRecap) { el.innerHTML = recapHTML(scaleRecap, ex, exName); return; }
+  const tk = k => tempoKey(ex.scale, ex.pattern, k);
+  let next, how;
+  if (mode === 'learn') {
+    const first = learnOrder(ex.keys, keyModel, ex.scale, ex.pattern)[0];
+    next = `${NOTES[first]} major first — hardest keys first` +
+           (tempoAuto ? ` · ${tempoModel.start(tk(first))} bpm` : ` · ${fixedBpm} bpm`);
+    if (ex.scale !== 'major') next = next.replace('major', SCALES[ex.scale].name.toLowerCase());
+    how = 'The whole run is laid out; a line sweeps across it in time — play along, nothing stops. ' +
+          (tempoAuto ? 'A key repeats; clean runs raise its tempo, and after a step up the next key comes.'
+                     : 'A key repeats until you tap Next key.');
+  } else {
+    next = `${ex.keys.length > 1 ? (pick === 'weak' ? 'Keys drawn toward your weak ones' : 'Keys at random') : `${NOTES[ex.keys[0]]} only`}` +
+           (tempoAuto ? ' · each at its own tempo' : ` · ${fixedBpm} bpm`);
+    how = `Notes scroll to the line — hit each on the beat. ${misses} miss${misses === 1 ? '' : 'es'} and the run starts again.` +
+          (tempoAuto ? ' Three clean runs in a row raise that key\'s tempo; a bad one lowers it.' : '');
+  }
+  el.innerHTML = `<div class="label">${mode === 'learn' ? 'Learn' : 'Practice'} · next up</div>` +
+    `<div class="big">${exName}</div><div class="what">${next}</div><div class="how">${how}</div>` +
+    '<div class="go">Press Start, then blow the first note of the run.</div>';
+}
+
+function recapHTML(r, ex, exName) {
+  const mins = Math.max(1, Math.round((r.t1 - r.t0) / 60000));
+  const keys = r.keys.map(k => {
+    const move = !r.tempoAuto ? `${Math.round(100 * k.hits / k.total)}%`
+      : k.to > k.from ? `${k.from} → <b class="up">${k.to} ↑</b>` : k.to < k.from ? `${k.from} → <span class="down">${k.to} ↓</span>` : `${k.from}`;
+    const star = k.best > k.bestBefore ? ` <span class="star">★ ${k.best}</span>` : '';
+    return `<span class="k"><b>${NOTES[k.key]}</b> ${move}${star}</span>`;
+  }).join('');
+  const bestNow = tempoModel.levelBest(ex.scale, ex.pattern);
+  const gained = pips(bestNow) - pips(r.levelBestBefore);
+  const level = gained > 0 ? `<div class="how">${exName}: ${pipText(bestNow)} — ${gained} tier${gained === 1 ? '' : 's'} up</div>` : '';
+  return `<div class="label">Session</div>` +
+    `<div class="big">${r.runs} run${r.runs === 1 ? '' : 's'} · ${r.clean} clean · ${mins} min</div>` +
+    `<div class="keys">${keys}</div>${level}` +
+    `<div class="go">${r.tempoAuto ? 'Tempos per key: first run → where it plays next. ★ = new clean best.' : 'Notes hit per key.'}</div>`;
 }
 let misses = [1, 2, 3, 5].includes(Number(load(MISSES_KEY))) ? Number(load(MISSES_KEY)) : 3;
 let calibrating = false;
@@ -181,6 +235,7 @@ function showSettings() {
   // An empty custom pick can't be played.
   startBtn.disabled = game === 'degrees' ? ex.cells.length === 0 : sx.keys.length === 0;
   showHint();
+  if (game === 'scales') showScaleIdle();
 }
 
 // Set when Start sent the player to ⚙ to calibrate: back to Play after.
@@ -283,10 +338,12 @@ startBtn.addEventListener('click', async () => {
   if (game === 'scales') {
     // The weak-key model continues from the cached summary (A8): no history read.
     const model = createKeyModel((await getSummary()).keys || []);
+    scaleRecap = null;
+    $('#scaleIdle').hidden = true;
     startScales({ exercise: currentScaleExercise(), mode, pick, model, latency,
                   tempoAuto: autoActive(), tempo: tempoModel,
                   bpm: tempo.get(), misses, calib, calibOffset },
-                () => { showRunning(false); loadTempo(); runSync(); });
+                recap => { scaleRecap = recap; showRunning(false); loadTempo(); runSync(); });
   } else {
     startRound(mode, calib, onRoundEnd, { length, pick, exercise: currentExercise() });
   }
@@ -307,19 +364,19 @@ $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Nu
 let fixedBpm = Math.max(60, Number(load(BPM_KEY)) || 80);
 // Min 60, as auto tempo's floor (boss: "the minimal tempo should be 60").
 const tempo = mountTempo($('#tempo'), { min: 60, value: fixedBpm,
-                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); } });
+                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); if (game === 'scales') showScaleIdle(); } });
 // Auto | Fixed: one small toggle under the bpm (a full-width row pushed the
 // exercise card off the pane at 390 px). Notes are always eighths.
 $('#tempo .bpm').insertAdjacentHTML('beforeend', '<button id="tempoMode" class="tmode"></button>');
 $('#tempoMode').addEventListener('click', () => {
-  tempoAuto = !tempoAuto; save(TEMPO_AUTO_KEY, tempoAuto ? 'auto' : 'fixed'); showSettings();
+  tempoAuto = !tempoAuto; save(TEMPO_AUTO_KEY, tempoAuto ? 'auto' : 'fixed'); scaleRecap = null; showSettings();
 });
 
 $$('[data-mode], [data-smode]').forEach(b => b.addEventListener('click', () => {
-  mode = b.dataset.mode || b.dataset.smode; save(MODE_KEY, mode); showSettings();
+  mode = b.dataset.mode || b.dataset.smode; save(MODE_KEY, mode); scaleRecap = null; showSettings();
 }));
 $$('[data-pick], [data-spick]').forEach(b => b.addEventListener('click', () => {
-  pick = b.dataset.pick || b.dataset.spick; save(PICK_KEY, pick); showSettings();
+  pick = b.dataset.pick || b.dataset.spick; save(PICK_KEY, pick); scaleRecap = null; showSettings();
 }));
 $$('[data-length]').forEach(b => b.addEventListener('click', () => {
   length = Number(b.dataset.length); save(LENGTH_KEY, String(length)); showSettings();
@@ -409,6 +466,7 @@ $('#playLevel').addEventListener('click', () => showTab('play'));
 // --- Scale levels (E1 step 2): ladder on the stage, custom builder in the pane ---
 function selectScaleExercise(id) {
   scaleExerciseId = id;
+  scaleRecap = null;
   save(SCALE_EX_KEY, id);
   showSettings();
   showScaleLevels();
