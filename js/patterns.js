@@ -102,6 +102,34 @@ export function startPatterns(opts, onEnd) {
   raf = requestAnimationFrame(frame);
 }
 
+// Pause / restart, as in scales: a run under way is dropped unlogged and
+// the stage freezes; resume or restart plays the run again from its
+// count-in (same pattern, path and stage).
+export const patternsPaused = () => !!s?.paused;
+function halt() {
+  s.timers.forEach(clearTimeout);
+  s.timers = [];
+  stopAll();
+}
+export function pausePatterns() {
+  if (!s || s.paused) return;
+  halt();
+  s.paused = true;
+  if (s.run) s.run.phase = 'paused';
+  message('<b>Paused</b> — ▶ to go again from the count-in');
+}
+export function resumePatterns() {
+  if (!s?.paused) return;
+  s.paused = false;
+  nextRun();
+}
+export function restartPatterns() {
+  if (!s) return;
+  halt();
+  s.paused = false;
+  nextRun();
+}
+
 export function stopPatterns() {
   if (!s) return;
   const { onEnd } = s;
@@ -258,6 +286,7 @@ window.addEventListener('resize', () => { if (s) resize(); });
 
 function frame() {
   if (!s) return;
+  if (s.paused) { raf = requestAnimationFrame(frame); return; }   // the stage stays as it was
   expire(performance.now());
   draw();
   raf = requestAnimationFrame(frame);
@@ -273,14 +302,16 @@ function draw() {
   const r = s?.run;
   if (!r) return;
   const now = performance.now();
-  const nowX = W * 0.22;
+  // The now line a third in: the notes just played stay in view a while,
+  // since that's the only feedback (nothing is shown ahead).
+  const nowX = W * 0.34;
   const pxBeat = Math.max(46, W * 0.13);
   const x = t => nowX + ((t - now) / r.beat) * pxBeat;
-  const cy = H * 0.58, half = 30;
+  const cy = H * 0.56, half = 38, gap = 15;
   // Staff: five faint lines.
   g.strokeStyle = 'rgba(217,164,65,.18)';
   g.lineWidth = 1;
-  for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(0, cy + k * 12); g.lineTo(W, cy + k * 12); g.stroke(); }
+  for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(0, cy + k * gap); g.lineTo(W, cy + k * gap); g.stroke(); }
   // Count-in: four dots filling, one per click.
   if (now < r.t0 + BEATS * r.beat) {
     const filled = Math.max(0, Math.min(BEATS, Math.floor((now - r.t0) / r.beat) + 1));
@@ -308,8 +339,8 @@ function draw() {
     // Slot tick: where a note of the cell falls (4 → quarters, 6 → triplets).
     g.strokeStyle = 'rgba(217,164,65,.35)';
     g.lineWidth = 1;
-    g.beginPath(); g.moveTo(ex, cy - 8); g.lineTo(ex, cy + 8); g.stroke();
-    g.beginPath(); g.arc(ex, cy, 7, 0, Math.PI * 2);
+    g.beginPath(); g.moveTo(ex, cy - 11); g.lineTo(ex, cy + 11); g.stroke();
+    g.beginPath(); g.arc(ex, cy, 9, 0, Math.PI * 2);
     if (e.status === 'pending') {
       g.strokeStyle = 'rgba(255,226,168,.45)'; g.lineWidth = 1.5; g.stroke();
     } else {
@@ -320,7 +351,7 @@ function draw() {
         if (age < 500) {
           g.save(); g.globalCompositeOperation = 'lighter';
           g.fillStyle = `rgba(255,214,130,${0.5 * (1 - age / 500)})`;
-          g.beginPath(); g.arc(ex, cy, 7 + 14 * (age / 500), 0, Math.PI * 2); g.fill();
+          g.beginPath(); g.arc(ex, cy, 9 + 16 * (age / 500), 0, Math.PI * 2); g.fill();
           g.restore();
         }
       }
@@ -330,10 +361,14 @@ function draw() {
   g.strokeStyle = 'rgba(217,164,65,.8)';
   g.lineWidth = 2;
   g.beginPath(); g.moveTo(nowX, cy - half - 34); g.lineTo(nowX, cy + half + 10); g.stroke();
-  // Chord symbols above the staff, at their bar.
+  // Chord symbols above the staff, at their bar. The chord being played
+  // stays pinned at the left edge until the next one pushes it out — it's
+  // what you're playing over.
   r.chordEls?.forEach((el, i) => {
-    const cx = x(r.chords[i].t);
-    const vis = cx > -80 && cx < W + 10;
+    let cx = x(r.chords[i].t);
+    const nextX = i + 1 < r.chords.length ? x(r.chords[i + 1].t) : Infinity;
+    if (cx < 6) cx = Math.min(6, nextX - el.offsetWidth - 10);
+    const vis = cx >= 0 && cx < W + 10;          // a pinned chord that no longer fits has had its turn
     el.style.display = vis ? '' : 'none';
     if (vis) el.style.transform = `translate(${Math.round(cx)}px, ${Math.round(cy - half - 44)}px)`;
   });

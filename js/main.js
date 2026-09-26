@@ -24,7 +24,8 @@ import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as re
 import { renderRangeMap, colour } from './rangemap.js';
 import { createTempoModel, tempoKey, pipText, pips } from './scaletempo.js';
 import { startLatency, stopLatency, latencyNote, measuring } from './latency.js';
-import { startPatterns, stopPatterns, patternNote, patternsRunning, patternHTML, esc } from './patterns.js';
+import { startPatterns, stopPatterns, patternNote, patternsRunning, patternHTML, esc,
+         pausePatterns, resumePatterns, restartPatterns, patternsPaused } from './patterns.js';
 import { loadLibrary, savePattern, deletePattern, patternProgress, nearestOct, autoName, degreesText,
          PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, MIN_NOTES, MAX_NOTES, patternGrid, runRate, SOLID } from './patternlib.js';
 
@@ -305,8 +306,9 @@ function onStatus({ state, names, error }) {
 function showRunning(running) {
   $('#idle').hidden = running;
   startBtn.hidden = running;
-  // Scales get play/pause · restart · stop; the degree drill a Stop.
-  const scales = game === 'scales';
+  // Scales and patterns get play/pause · restart · stop (#scaleCtl serves
+  // both); the degree drill a Stop.
+  const scales = game !== 'degrees';
   stopBtn.hidden = !running || scales;
   $('#scaleCtl').hidden = !running || !scales;
   showScalePlay();
@@ -372,16 +374,20 @@ startBtn.addEventListener('click', async () => {
 const PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>';
 const PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
 function showScalePlay() {
-  const paused = scalesPaused();
+  const paused = game === 'patterns' ? patternsPaused() : scalesPaused();
   $('#scalePlay').innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
   $('#scalePlay').setAttribute('aria-label', paused ? 'Resume' : 'Pause');
 }
 $('#scalePlay').addEventListener('click', () => {
-  if (scalesPaused()) resumeScales(); else pauseScales();
+  if (game === 'patterns') { if (patternsPaused()) resumePatterns(); else pausePatterns(); }
+  else if (scalesPaused()) resumeScales(); else pauseScales();
   showScalePlay();
 });
-$('#scaleRestart').addEventListener('click', () => { restartScales(); showScalePlay(); });
-$('#scaleStop').addEventListener('click', () => stopScales());
+$('#scaleRestart').addEventListener('click', () => {
+  if (game === 'patterns') restartPatterns(); else restartScales();
+  showScalePlay();
+});
+$('#scaleStop').addEventListener('click', () => (game === 'patterns' ? stopPatterns() : stopScales()));
 stopBtn.addEventListener('click', () => {
   if (patternsRunning()) stopPatterns();
   else if (scalesRunning()) stopScales();
