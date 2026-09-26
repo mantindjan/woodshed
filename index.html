@@ -277,6 +277,13 @@
   #start, #stop { font-size: 17px; font-weight: 600; padding: 11px; border: none;
                   background: var(--brass); color: #1a1206; }
   #stop { background: #3a2222; color: #ff9b9b; }
+  #scaleCtl { display: flex; gap: 8px; }
+  #scaleCtl[hidden] { display: none; }
+  #scaleCtl button { flex: 1; display: flex; align-items: center; justify-content: center; padding: 9px; border: none; }
+  #scaleCtl svg { width: 26px; height: 26px; fill: currentColor; }
+  #scalePlay { background: var(--brass); color: #1a1206; flex: 1.4; }
+  #scaleRestart { background: #2a2418; color: #ffe2a8; }
+  #scaleStop { background: #3a2222; color: #ff9b9b; }
 
   /* Horn line at the top of ⚙ (moved from Play, boss 2026-09-25: setup,
      not practice; Play was crammed). */
@@ -514,6 +521,13 @@
       </div>
       <button id="start">Start</button>
       <button id="stop" hidden>Stop</button>
+      <!-- Scales while running: play/pause (one button, it flips), restart
+           the run, stop. Drawn icons, not emoji glyphs (Android swaps those). -->
+      <div id="scaleCtl" hidden>
+        <button id="scalePlay" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+        <button id="scaleRestart" aria-label="Restart the run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1.5L6.5 6 12 10.5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg></button>
+        <button id="scaleStop" aria-label="Stop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg></button>
+      </div>
     </div>
 
     <div class="pane" data-pane="levels" data-for="degrees" hidden>

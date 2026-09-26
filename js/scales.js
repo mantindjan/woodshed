@@ -60,7 +60,7 @@ const COUNT_IN = 4;            // clicks before the first note
 const PER_BEAT = 2;            // eighths: two scale notes per click (boss, 2026-09-25)
 const SUMMARY_MS = 1800;       // how long a run's summary shows before the next
 const SHEET_SUMMARY_MS = 4000; // learn: longer, to read the marks on the sheet
-const SHEET_ROW = 16;          // learn: most notes per sheet row
+const SHEET_ROW = 12;          // learn: most notes per sheet row (12, not 16: bigger discs)
 // A run that's gone (boss, 2026-09-26): after a false start, or in learn
 // ERRORS_IN_A_ROW wrong/missed notes running, it stops, pauses RESTART_MS,
 // and the same run starts again straight into the count-in.
@@ -177,6 +177,42 @@ export function nextKey() {
   nextRun();
 }
 
+// Pause / Restart (boss, 2026-09-26). A run under way is dropped unlogged
+// (half a run is no evidence, as with Next key); the stage freezes.
+// Resume then plays that same run again, straight into the count-in; a
+// run not yet started just waits for its start note again; between runs,
+// the next one comes. Restart = the same run again now.
+export const scalesPaused = () => !!s?.paused;
+const underway = r => r && (r.phase === 'countin' || r.phase === 'running');
+function halt() {
+  s.timers.forEach(clearTimeout);
+  s.timers = [];
+  stopAll();
+}
+export function pauseScales() {
+  if (!s || s.paused) return;
+  halt();
+  s.paused = { run: underway(s.run) ? 'restart' : s.run.phase === 'summary' ? 'next' : 'wait' };
+  message('<b>Paused</b> — ▶ to carry on');
+}
+export function resumeScales() {
+  if (!s?.paused) return;
+  const { run } = s.paused;
+  s.paused = null;
+  message('');
+  if (run === 'restart') restartRun();
+  else if (run === 'next') nextRun();
+  else message(s.run.prompt);                   // the same run, still waiting for its start note
+}
+export function restartScales() {
+  if (!s) return;
+  if (!s.run?.expected.length) return;          // nothing started yet: nothing to restart
+  halt();
+  s.paused = null;
+  message('');
+  restartRun();
+}
+
 export function stopScales() {
   if (!s) return;
   const { onEnd } = s;
@@ -219,12 +255,12 @@ function nextRun() {
   const pattern = PATTERNS[s.pattern].name.toLowerCase();
   const start = s.mode === 'learn' ? suggestStart(s.scale, k, s.pattern) : null;
   if (start === null) {
-    message(`Blow any note of ${scaleName} to start — ${pattern}`);
+    message(s.run.prompt = `Blow any note of ${scaleName} to start — ${pattern}`);
     return;
   }
   // Learn: name a start note; the sheet appears once it's blown.
   s.run.hint = { start };
-  message(`Start on <b>${register(start)} ${NOTES[pc(start)]}</b> (${noteName(start)}) — ${scaleName}, ${pattern}` +
+  message(s.run.prompt = `Start on <b>${register(start)} ${NOTES[pc(start)]}</b> (${noteName(start)}) — ${scaleName}, ${pattern}` +
           '<br><small>any scale note works too</small>');
 }
 
@@ -252,7 +288,7 @@ function message(html) {
 
 // Every note-on from the horn while the scale runner is active.
 export function scaleNote(midi) {
-  if (!s) return;
+  if (!s || s.paused) return;
   const r = s.run;
   const arrived = performance.now();
   const w = midi - s.calibOffset;
@@ -505,8 +541,11 @@ window.addEventListener('resize', () => { if (s) resize(); });
 
 function frame() {
   if (!s) return;
-  expire(performance.now());
-  draw(s.run);
+  // Paused: the stage stays as it was (the last frame).
+  if (!s.paused) {
+    expire(performance.now());
+    draw(s.run);
+  }
   raf = requestAnimationFrame(frame);
 }
 
@@ -575,8 +614,9 @@ function draw(r) {
 
   const now = performance.now();
   const pos = slotAt(r, now);
-  const pxBeat = Math.min(120, W * 0.2);
-  const stepPx = Math.min(26, H / 14);
+  // Big discs (boss: "make the notes much bigger, I can't see anything").
+  const pxBeat = Math.min(130, W * 0.22);
+  const stepPx = Math.min(30, H / 12);
   g.textAlign = 'center'; g.textBaseline = 'middle';
   r.expected.forEach((e, i) => {
     const d = i - pos;                        // note slots until this note
@@ -585,7 +625,7 @@ function draw(r) {
     const y = cy - (e.i - (r.base + r.slope * pos)) * stepPx;
     if (x < -60 || x > W + 30) return;
     const root = e.deg === '1';
-    const rad = root ? 20 : 17;
+    const rad = root ? 29 : 25;
     const fade = x < nowX - 10 ? Math.max(0, 1 - (nowX - x) / (nowX + 30)) : 1;
     g.globalAlpha = fade;
     if (e.status === 'hit') bloom(g, x, y, rad, accuracy(r, e), now - e.hitAt);
@@ -665,7 +705,7 @@ function sheetLayout(r, W, H) {
   const top = 34;                                   // under the count-in dots
   const bandH = (H - top - 44) / rows;              // room for the tally below
   const slot = (W - 24) / per;
-  const rad = Math.max(8, Math.min(16, slot * 0.4, bandH * 0.2));
+  const rad = Math.max(10, Math.min(24, slot * 0.44, bandH * 0.24));
   const bands = [];
   for (let k = 0; k < rows; k++) {
     const a = k * per, b = Math.min(n, a + per);

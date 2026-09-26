@@ -9,7 +9,8 @@
 
 import { connectMidi } from './midi.js';
 import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, NOTES, SCALES, WRITTEN_MIDDLE_C, degreeLabel, writtenPc } from './music.js';
-import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder } from './scales.js';
+import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder,
+         pauseScales, resumeScales, restartScales, scalesPaused } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { noteHTML } from './notation.js';
 import { startRound, stopRound, drillNote, isRunning } from './drill.js';
@@ -295,9 +296,13 @@ function onStatus({ state, names, error }) {
 function showRunning(running) {
   $('#idle').hidden = running;
   startBtn.hidden = running;
-  stopBtn.hidden = !running;
+  // Scales get play/pause · restart · stop; the degree drill a Stop.
+  const scales = game === 'scales';
+  stopBtn.hidden = !running || scales;
+  $('#scaleCtl').hidden = !running || !scales;
+  showScalePlay();
   $$('.pane[data-pane="play"] button, button[data-tab], button[data-game]').forEach(b => {
-    if (b !== stopBtn) b.disabled = running;
+    if (b !== stopBtn && !b.closest('#scaleCtl')) b.disabled = running;
   });
 }
 
@@ -348,6 +353,21 @@ startBtn.addEventListener('click', async () => {
     startRound(mode, calib, onRoundEnd, { length, pick, exercise: currentExercise() });
   }
 });
+// The play/pause button shows what a tap does: pause while playing, play
+// (resume) while paused.
+const PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>';
+const PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+function showScalePlay() {
+  const paused = scalesPaused();
+  $('#scalePlay').innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
+  $('#scalePlay').setAttribute('aria-label', paused ? 'Resume' : 'Pause');
+}
+$('#scalePlay').addEventListener('click', () => {
+  if (scalesPaused()) resumeScales(); else pauseScales();
+  showScalePlay();
+});
+$('#scaleRestart').addEventListener('click', () => { restartScales(); showScalePlay(); });
+$('#scaleStop').addEventListener('click', () => stopScales());
 stopBtn.addEventListener('click', () => {
   if (scalesRunning()) stopScales();
   else if (isRunning()) stopRound();
