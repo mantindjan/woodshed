@@ -116,14 +116,18 @@ export function comp(spans, totalBeats, rnd = Math.random) {
   return hits;
 }
 
-// A pattern run's chords as spans: one per bar (a chord held ×4 walks 4
-// bars). `chords` = [{key (written pc), bars}], `calib` turns written into
-// concert.
+// A pattern run's chords as spans of at most a bar (a chord held longer
+// walks each bar). `chords` = [{key (written pc), beats}], `calib` turns
+// written into concert. Chords of 1 or 2 beats get one or two bass notes.
 export function spansOf(chords, quality, calib) {
   const spans = [];
   let beat = 0;
   for (const c of chords) {
-    for (let b = 0; b < c.bars; b++) { spans.push({ root: pcOf(c.key + calib), q: quality, start: beat, len: 4 }); beat += 4; }
+    for (let left = c.beats; left > 0;) {
+      const len = Math.min(4, left);
+      spans.push({ root: pcOf(c.key + calib), q: quality, start: beat, len });
+      beat += len; left -= len;
+    }
   }
   return spans;
 }

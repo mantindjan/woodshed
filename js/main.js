@@ -718,7 +718,7 @@ let pProgress = new Map();                  // pattern id → patternProgress()
 const currentPattern = () => { const lib = loadLibrary(); return lib.find(p => p.id === patternId) || lib[0] || null; };
 const currentStage = p => pStage ?? (p && pProgress.get(p.id)?.stage) ?? 0;
 const ptempo = mountTempo($('#ptempo'), { min: 60, value: Math.max(60, Number(load(PBPM_KEY)) || 60),
-                                          note: '♩ quarters', onChange: v => save(PBPM_KEY, String(v)) });
+                                          note: '♪ eighths', onChange: v => save(PBPM_KEY, String(v)) });
 
 async function loadPatternProgress() {
   const evs = (await allEvents()).filter(e => e.game === 'patterns');
@@ -797,7 +797,7 @@ function showEditor() {
   $('#pName').placeholder = draft.notes.length ? autoName(draft) : 'name (optional)';
   const n = draft.notes.length;
   $('#pHint').textContent = n < MIN_NOTES ? `At least ${MIN_NOTES} notes. Each new note goes to the nearest octave; ↑ ↓ move the selected one.`
-    : `${n} notes to a bar — ${n === 4 ? 'quarters' : n === 6 ? 'triplets' : 'evenly spread'}.${draft.id ? ' Editing' : ' New'}${n >= MAX_NOTES ? ' · full' : ''}`;
+    : `${n} notes to 2 beats — ${n === 4 ? 'eighths' : n === 6 ? 'eighth triplets' : 'evenly spread'}.${draft.id ? ' Editing' : ' New'}${n >= MAX_NOTES ? ' · full' : ''}`;
   $('#pSave').disabled = n < MIN_NOTES;
 }
 
