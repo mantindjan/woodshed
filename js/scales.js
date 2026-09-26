@@ -712,7 +712,7 @@ function sheetLayout(r, W, H) {
     const is = r.expected.slice(a, b).map(e => e.i);
     const lo = Math.min(...is), hi = Math.max(...is);
     // Room for the note name under the lowest disc and the "start" tag over the top.
-    const stepPx = Math.min(rad * 0.9, (bandH - 2 * rad - 22) / Math.max(1, hi - lo));
+    const stepPx = Math.min(rad * 0.9, (bandH - 3 * rad - 22) / Math.max(1, hi - lo));   // + the name under the lowest disc
     bands.push({ a, b, mid: (lo + hi) / 2, cy: top + bandH * (k + 0.5), stepPx });
   }
   r.sheet = { W, H, per, slot, rad, bands, bandH, left: 12 };
@@ -766,9 +766,11 @@ function drawSheet(g, r, W, H) {
     disc(g, e, x, y, L.rad, e.deg === '1', false, j === 0);
     // Learn: the note name under every degree (boss, 2026-09-26); the start
     // disc already carries its name, so its degree goes under instead.
-    g.fillStyle = j === 0 ? START_COLOR : 'rgba(255,226,168,.6)';
-    g.font = `600 ${Math.max(9, Math.round(L.rad * 0.62))}px system-ui, sans-serif`;
-    g.fillText(j === 0 ? e.deg : NOTES[pc(e.w)], x, y + L.rad + 9);
+    // Big enough to read on the stand (boss, 2026-09-26): about the disc's radius.
+    const nameSize = Math.max(14, Math.round(L.rad * 0.95));
+    g.fillStyle = j === 0 ? START_COLOR : 'rgba(255,226,168,.85)';
+    g.font = `700 ${nameSize}px system-ui, sans-serif`;
+    g.fillText(j === 0 ? e.deg : NOTES[pc(e.w)], x, y + L.rad + nameSize * 0.65 + 2);
     g.globalAlpha = 1;
   });
   drawMarks(false);
