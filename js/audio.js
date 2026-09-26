@@ -9,7 +9,14 @@ let ctx = null;
 let master = null;
 let clickBus = null;   // metronome clicks: own bus, bypassing the pad's lowpass
 let noise = null;      // cached white-noise buffer for clicks
-let voices = [];   // every live source, so stopAll() can silence them
+// Every live source, so stopAll() can silence them. A source leaves the set
+// when it ends — kept forever, a long session piled up thousands.
+let voices = new Set();
+function track(o, g) {
+  const v = { o, g };
+  voices.add(v);
+  o.onended = () => voices.delete(v);
+}
 
 // Must be called from a user gesture (tap), or Chrome keeps audio muted.
 export function initAudio() {
@@ -59,7 +66,7 @@ function playNote(midi, time, level, dur) {
   g.gain.linearRampToValueAtTime(0, time + dur + 0.03);
   o.start(time);
   o.stop(time + dur + 0.08);
-  voices.push({ o, g });
+  track(o, g);
 }
 
 // Play a chord. rootConcertPc is a CONCERT pitch class; the root sits in
@@ -106,7 +113,7 @@ export function playPing(pitchConcertPc) {
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
     o.start(t);
     o.stop(t + 0.75);
-    voices.push({ o, g });
+    track(o, g);
   }
 }
 
@@ -139,7 +146,7 @@ export function click(time, accent = false) {
   g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
   src.start(time);
   src.stop(time + dur + 0.02);
-  voices.push({ o: src, g });
+  track(src, g);
 }
 
 // Silence everything now. Called on every stop path, or notes hang.
@@ -150,5 +157,5 @@ export function stopAll() {
     try { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0.0001, t); } catch { /* already stopped */ }
     try { o.stop(t); } catch { /* already stopped */ }
   }
-  voices = [];
+  voices = new Set();
 }

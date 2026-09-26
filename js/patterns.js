@@ -29,6 +29,11 @@ import { EXERCISES, STAGES, SOLID, noteSemis } from './patternlib.js';
 const MAX_WINDOW_MS = 150;
 const BEATS = 4;                 // 4/4, one cell per bar
 const NEXT_MS = 3000;            // tally on screen before the next run
+// Sound is queued this far ahead, as the run goes (a look-ahead scheduler).
+// Queuing the whole run at Start — 12 chords × 7 voices with their filters,
+// plus every click — piled up in the audio graph and played choppy on the
+// phone (boss, 2026-09-26).
+const LOOKAHEAD_MS = 1500;
 const SCHEMA_VERSION = 1;
 
 const $ = sel => document.querySelector(sel);
@@ -157,15 +162,28 @@ function nextRun() {
   r.notes = [];
   r.phase = 'running';
   s.run = r;
-  const total = Math.round((r.end - r.t0) / r.beat);
-  for (let b = 0; b < total; b++) click(audioTimeAt(r.t0 + b * r.beat), b % BEATS === 0);
-  for (const c of r.chords) {
-    scheduleChord(pc(c.key + s.calib), s.pattern.quality, audioTimeAt(c.t), (c.bars * BEATS * r.beat) / 1000 - 0.05);
-  }
+  r.beats = Math.round((r.end - r.t0) / r.beat);
+  r.nextBeat = 0;                     // look-ahead: the next click / chord not yet queued
+  r.nextChord = 0;
+  schedule(now);
   buildChords(r);
   message('');
   $('#pTitle').textContent = `${EXERCISES[s.exercise].name} · ×${reps()}`;
   $('#pInfo').textContent = `${s.bpm} bpm`;
+}
+
+// Queue the clicks and chords that start within LOOKAHEAD_MS. Each chord
+// holds to the next one (no gap between them).
+function schedule(now) {
+  const r = s.run;
+  while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < now + LOOKAHEAD_MS) {
+    click(audioTimeAt(r.t0 + r.nextBeat * r.beat), r.nextBeat % BEATS === 0);
+    r.nextBeat++;
+  }
+  while (r.nextChord < r.chords.length && r.chords[r.nextChord].t < now + LOOKAHEAD_MS) {
+    const c = r.chords[r.nextChord++];
+    scheduleChord(pc(c.key + s.calib), s.pattern.quality, audioTimeAt(c.t), (c.bars * BEATS * r.beat) / 1000);
+  }
 }
 
 // Every note-on while the patterns runner is active.
@@ -269,6 +287,7 @@ function buildChords(r) {
   const box = $('#pChords');
   box.innerHTML = r.chords.map(c => `<div class="pchord">${chordHTML(c.key, s.pattern.quality)}</div>`).join('');
   r.chordEls = [...box.children];
+  r.chordW = r.chordEls.map(el => el.offsetWidth);   // measured once, not every frame
 }
 function clearChords() { $('#pChords').innerHTML = ''; }
 
@@ -287,6 +306,7 @@ window.addEventListener('resize', () => { if (s) resize(); });
 function frame() {
   if (!s) return;
   if (s.paused) { raf = requestAnimationFrame(frame); return; }   // the stage stays as it was
+  if (s.run.phase === 'running') schedule(performance.now());
   expire(performance.now());
   draw();
   raf = requestAnimationFrame(frame);
@@ -367,7 +387,7 @@ function draw() {
   r.chordEls?.forEach((el, i) => {
     let cx = x(r.chords[i].t);
     const nextX = i + 1 < r.chords.length ? x(r.chords[i + 1].t) : Infinity;
-    if (cx < 6) cx = Math.min(6, nextX - el.offsetWidth - 10);
+    if (cx < 6) cx = Math.min(6, nextX - r.chordW[i] - 10);
     const vis = cx >= 0 && cx < W + 10;          // a pinned chord that no longer fits has had its turn
     el.style.display = vis ? '' : 'none';
     if (vis) el.style.transform = `translate(${Math.round(cx)}px, ${Math.round(cy - half - 44)}px)`;
