@@ -271,7 +271,7 @@ function nextRun() {
   // Learn: name a start note; the sheet appears once it's blown.
   s.run.hint = { start };
   message(s.run.prompt = `Start on <b>${register(start)} ${NOTES[pc(start)]}</b> (${noteName(start)}) — ${scaleName}, ${pattern}` +
-          (rootOnly ? '<br><small>or any other root with room above</small>' : '<br><small>any scale note works too</small>'));
+          (rootOnly ? '<br><small>or any other root — what runs off the horn is cut</small>' : '<br><small>any scale note works too</small>'));
 }
 
 // What's being played, in words: a chord symbol for an arpeggio ("B♭7",

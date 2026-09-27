@@ -47,18 +47,26 @@ export const PATTERNS = {
 export const PATTERN_ORDER = ['up', 'down', '3up-asc', '3up-desc', '3down-asc', '3down-desc'];
 
 // Arpeggio mastery (F1, boss 2026-09-27), over the chord tones (the arp-*
-// "scales"): up through the four inversions — 1357 3571 5713 7135 — then
-// down from the root two octaves up (the 1 above the next 7, boss's
-// correction) — 1753 7531 5317 3175 1753 7531 — ending on the root: 40
-// notes, two octaves. From the root only (`rootOnly`).
+// "scales", index i = the root): up through the four inversions — 1357
+// 3571 5713 7135 — then down from the 1 above that last 7 — 1753 7531 5317
+// 3175 — and back up to the root: 33 notes, from the 5 below the root to
+// the 5 above the octave. Where the horn runs out (low B♭ / high F♯), the
+// groups that don't fit are dropped: C from middle-register C loses 3175
+// (no G below low B♭) and ends 5317 → C (boss: "truncate when you can't").
+// At least 1357 must fit. From the root only (`rootOnly`); learn suggests
+// the lowest root.
 PATTERNS.arp = {
-  name: 'Arpeggio mastery', chip: 'Arpeggio mastery', shape: '1357 3571 5713 7135 · 1753 7531 5317 3175 1753 7531',
+  name: 'Arpeggio mastery', chip: 'Arpeggio mastery', shape: '1357 3571 5713 7135 · 1753 7531 5317 3175 · 1',
   slope: 0, rootOnly: true,
   indices: (i, n) => {
-    if (i + 8 >= n) return [];
+    if (i + 3 >= n) return [];
     const out = [];
-    for (let g = 0; g < 4; g++) for (let k = 0; k < 4; k++) out.push(i + g + k);
-    for (let g = 8; g >= 3; g--) for (let k = 0; k < 4; k++) out.push(i + g - k);
+    for (let g = 0; g < 4 && i + g + 3 < n; g++) for (let k = 0; k < 4; k++) out.push(i + g + k);
+    for (let g = 4; g >= 1; g--) {
+      if (i + g >= n || i + g - 3 < 0) continue;
+      for (let k = 0; k < 4; k++) out.push(i + g - k);
+    }
+    if (out[out.length - 1] !== i) out.push(i);        // back up (or down) to the root
     return out;
   },
 };
