@@ -89,10 +89,12 @@ const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // run after a false start or too many errors: no start note was blown, so
 // `notes` has no start-note entry). v10: `startBy` — 'app' (the default
 // start, counted in by the app: no start-note entry in `notes` either) or
-// 'player' (My note: blown); `hint` in practice too; the scale patterns go
-// up and back (linear, 3up, 3down); misses at the horn's extremes never
-// count toward `allowedMisses`.
-const SCHEMA_VERSION = 10;
+// 'player' (My note: blown); `hint` in practice too; the scale patterns
+// (linear, 3up, 3down) go up to the top and back to the start; misses at
+// the horn's extremes never count toward `allowedMisses`. v11: the scale
+// patterns go corner to corner — up to the top, down to the bottom of the
+// horn (same ids; `expected` says what was asked either way).
+const SCHEMA_VERSION = 11;
 
 const $ = sel => document.querySelector(sel);
 
@@ -123,7 +125,7 @@ const degreeOf = (scale, key, w) => SCALES[scale].degrees[SCALES[scale].steps.in
 const register = w => (w <= 65 ? 'low' : w <= 78 ? 'middle' : 'high');
 
 // The default start: the lowest root with at least a few notes of pattern
-// ahead — every pattern goes up and back, so that covers the most horn.
+// ahead — every scale pattern climbs from it to the top first.
 function suggestStart(scale, key, pattern) {
   const notes = scaleNotes(scale, key);
   const root = notes.find((w, i) => pc(w - key) === 0 && PATTERNS[pattern].indices(i, notes.length, notes).length >= MIN_RUN);

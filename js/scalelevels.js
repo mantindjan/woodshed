@@ -20,12 +20,13 @@ import { SCALES, NOTES, inMiddle, HORN_MIDDLE } from './music.js';
 // there. `shape` = how it starts, in degrees from the root, for the level
 // card. `chip` = the custom builder's label.
 //
-// Every scale pattern goes UP the horn to its top edge and back DOWN to
-// the start note (boss, 2026-09-27: splitting each into an up level and a
-// down level made no sense — one run covers the horn both ways). Broken
-// thirds keep their direction both ways: "ascending" = each pair played
-// low → high (1 3 · 2 4 … then … 3 5 · 2 4 · 1 3), "descending" = high →
-// low (3 1 · 4 2 … then … 5 3 · 4 2 · 3 1).
+// Every scale pattern goes CORNER TO CORNER: from the start note (the low
+// root by default) UP to the top of the horn, then DOWN to its bottom —
+// not back to the start (boss, 2026-09-27: one run covers the whole horn;
+// the extremes are played, just not graded hard — music.js HORN_MIDDLE).
+// Broken thirds keep their direction both ways: "ascending" = each pair
+// played low → high (1 3 · 2 4 … then … 3 5 · 2 4 · 1 3), "descending" =
+// high → low (3 1 · 4 2 … then … 5 3 · 4 2 · 3 1).
 const pairs = (from, to, step, second) => {
   const out = [];
   for (let j = from; step > 0 ? j <= to : j >= to; j += step) out.push(j, j + second);
@@ -37,12 +38,12 @@ const range = (from, to, step) => {
   return out;
 };
 export const PATTERNS = {
-  linear: { name: 'Linear', chip: 'Linear', shape: '1 2 3 4 … up and back',
-            indices: (i, n) => (i + 1 < n ? [...range(i, n - 1, 1), ...range(n - 2, i, -1)] : []) },
-  '3up': { name: 'Thirds ascending', chip: 'Thirds asc', shape: '1 3 · 2 4 · 3 5 … up and back',
-           indices: (i, n) => (i + 2 < n ? [...pairs(i, n - 3, 1, 2), ...pairs(n - 4, i, -1, 2)] : []) },
-  '3down': { name: 'Thirds descending', chip: 'Thirds desc', shape: '3 1 · 4 2 · 5 3 … up and back',
-             indices: (i, n) => (i >= 2 && i < n ? [...pairs(i, n - 1, 1, -2), ...pairs(n - 2, i, -1, -2)] : []) },
+  linear: { name: 'Linear', chip: 'Linear', shape: '1 2 3 4 … top to bottom',
+            indices: (i, n) => (i + 1 < n ? [...range(i, n - 1, 1), ...range(n - 2, 0, -1)] : []) },
+  '3up': { name: 'Thirds ascending', chip: 'Thirds asc', shape: '1 3 · 2 4 · 3 5 … top to bottom',
+           indices: (i, n) => (i + 2 < n ? [...pairs(i, n - 3, 1, 2), ...pairs(n - 4, 0, -1, 2)] : []) },
+  '3down': { name: 'Thirds descending', chip: 'Thirds desc', shape: '3 1 · 4 2 · 5 3 … top to bottom',
+             indices: (i, n) => (i >= 2 && i < n ? [...pairs(i, n - 1, 1, -2), ...pairs(n - 2, 2, -1, -2)] : []) },
 };
 export const PATTERN_ORDER = ['linear', '3up', '3down'];
 
@@ -123,7 +124,7 @@ export function scaleExercise(id, custom, game = 'scales') {
 
 // The pattern a run counts for. Runs before patterns (event v2) carry only
 // `direction`, which was linear up or down; the one-way patterns count for
-// the there-and-back pattern they're half of (OLD_PATTERNS).
+// the corner-to-corner pattern they're half of (OLD_PATTERNS).
 export const runPattern = e => { const p = e.pattern || e.direction; return OLD_PATTERNS[p] || p; };
 
 // The notes of a run that count toward its score, clean or not and tempo:

@@ -11,10 +11,10 @@
 // A ROUND = the exercise's keys in order (celllib.js EXERCISES; a fresh
 // shuffle each round for 'random'), the cell `reps` times on each chord,
 // a note a beat. Start goes straight into a 4-beat count-in (nothing to
-// blow), then rounds follow each other SEAMLESSLY until Stop — the next
-// round is added before the current one ends, like a play-along on repeat
-// (boss, 2026-09-26: "it should go on and repeat"). Each round is scored
-// and logged on its own once its last note is judged.
+// blow), then ONE round; its tally comes up with Play again, which counts
+// in the next (boss, 2026-09-27 — rounds on an endless loop, his
+// 2026-09-26 idea, "not that great an idea"). A round is scored and
+// logged once its last note is judged.
 //
 // Judging: a note is HIT if it's the right degree of that bar's chord, on
 // time (±150 ms, narrowed at fast tempos), with the cell's heights
@@ -24,9 +24,8 @@
 //
 // Learn: the cell as a b c d c b (playedNotes) goes round the cycle of
 // 4ths ×4 → ×2 → ×1; two solid runs (≥ 95 %) in a row move to the next
-// stage. Practice: the 4 notes, another path, once per chord. Runs repeat
-// until Stop. `s.cell` is the cell (logged as is), `s.play` what's
-// played.
+// stage. Practice: the 4 notes, another path, once per chord. `s.cell` is
+// the cell (logged as is), `s.play` what's played.
 
 import { pc, degreeLabel } from './music.js';
 import { chordHTML } from './notation.js';
@@ -43,7 +42,6 @@ const BEATS = 4;                 // the count-in (and the drums' phrase)
 // mastered at ~4 notes a second = 240 bpm, where a 4-note cell ×1
 // changes chord every second; learnt slower (70–100). Runs record
 // `cellBeats` (= the cell's length; a v2 run from before said 2 or 1).
-const NEXT_MS = 3000;            // a round's tally stays up this long while the music goes on
 // Sound is queued this far ahead, as the run goes (a look-ahead scheduler).
 // Queuing the whole run at Start — 12 chords × 7 voices with their filters,
 // plus every click — piled up in the audio graph and played choppy on the
@@ -243,8 +241,6 @@ function schedule(now) {
   const T = b => first + (Math.floor(b) + (b % 1 ? swing : 0)) * r.beat;
   const jit = ms => Math.random() * ms;                          // a band isn't a grid
   const horizon = now + LOOKAHEAD_MS;
-  // The next round is added a second before the look-ahead would need it.
-  if (r.end < horizon + 1000) appendRound();
   while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < horizon) {
     const b = r.nextBeat;
     if (b < BEATS) click(audioTimeAt(r.t0 + b * r.beat), b === 0);
@@ -360,11 +356,12 @@ function scoreRound(round) {
   }
   const mean = offs.length ? Math.round(offs.reduce((a, b) => a + b, 0) / offs.length) : null;
   const drift = mean === null || Math.abs(mean) <= 15 ? '' : mean > 0 ? ` · ${mean} ms late on average` : ` · ${-mean} ms early on average`;
-  const html = `<b>${hits} / ${exp.length} right</b>${drift}${note}`;
-  message(html);
+  r.phase = 'done';
+  message(`<b>${hits} / ${exp.length} right</b>${drift}${note}<br><button id="cellAgain">Play again</button>`);
   $('#cellTitle').textContent = `${EXERCISES[s.exercise].name} · ×${reps()}`;
-  s.timers.push(setTimeout(() => { if (s && !s.paused && $('#cellMsg').innerHTML === html) message(''); }, NEXT_MS));
 }
+// Play again: the next round, from a count-in (the stage may have moved on).
+$('#cellMsg').addEventListener('click', e => { if (e.target.closest('#cellAgain')) restartCells(); });
 
 function message(html) {
   const el = $('#cellMsg');

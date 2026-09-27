@@ -12,7 +12,7 @@
 // phone's output delay and would now judge every note early — dropped, not
 // renamed; measured again it's `woodshed.inputLatency`.
 //
-// 2026-09-27 — the six one-way scale patterns became three there-and-back
+// 2026-09-27 — the six one-way scale patterns became three corner-to-corner
 // ones (scalelevels.js OLD_PATTERNS): the chosen level
 // (`woodshed.scaleExercise`, 'major-3up-asc' → 'major-3up') and a custom
 // pick's pattern (`woodshed.scaleCustom`). Scale runs are NOT renamed —
