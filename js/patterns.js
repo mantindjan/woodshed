@@ -372,21 +372,23 @@ function message(html) {
 
 // --- The pattern, always on top: degrees placed by height ---
 // Each degree sits higher the more semitones above the root it is, so
-// "5 3 1 5" from the low 5 and from the high 5 look different.
-export function patternHTML(p, sel = -1) {
+// "5 3 1 5" from the low 5 and from the high 5 look different. Notes from
+// `back` on are learn's way back (a b c d | c b), drawn in blue so the
+// cell itself stands out (boss, 2026-09-27).
+export function patternHTML(p, sel = -1, back = Infinity) {
   const semis = p.notes.map(n => noteSemis(p.quality, n));
   const lo = Math.min(0, ...semis), hi = Math.max(0, ...semis);
   const px = 3;                                     // per semitone
   const h = (hi - lo) * px + 26;
   const notes = p.notes.map((n, i) => {
     const y = (hi - semis[i]) * px;
-    return `<span class="pn${i === sel ? ' sel' : ''}" data-i="${i}" style="top:${y}px">${degreeLabel(n.deg)}</span>`;
+    return `<span class="pn${i === sel ? ' sel' : ''}${i >= back ? ' back' : ''}" data-i="${i}" style="top:${y}px">${degreeLabel(n.deg)}</span>`;
   }).join('');
   // The root's line, for reference.
   return `<div class="pshape" style="height:${h}px"><i class="proot" style="top:${hi * px + 11}px"></i>${notes}</div>`;
 }
 function showPattern(p) {
-  $('#pShow').innerHTML = `<b>${esc(p.name)}</b>${patternHTML(p)}`;
+  $('#pShow').innerHTML = `<b>${esc(p.name)}</b>${patternHTML(p, -1, s.pattern.notes.length)}`;
 }
 
 // --- Chord symbols: HTML over the canvas (Real Book notation) ---

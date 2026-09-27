@@ -766,7 +766,7 @@ function showPatternSettings() {
   if (patternsRunning()) return;
   // Idle stage: what will be played on top (learn: a b c d c b), what
   // Start will do underneath.
-  $('#pShow').innerHTML = p ? `<b>${esc(p.name)}</b>${patternHTML({ ...p, notes: playedNotes(p, mode) })}` : '<b>Build a cell in Levels</b>';
+  $('#pShow').innerHTML = p ? `<b>${esc(p.name)}</b>${patternHTML({ ...p, notes: playedNotes(p, mode) }, -1, p.notes.length)}` : '<b>Build a cell in Levels</b>';
   $('#pTitle').textContent = !p ? '' : mode === 'learn' ? `Cycle of 4ths · ×${STAGES[stage]}` : EXERCISES[pExercise].name;
   const msg = $('#pMsg');
   msg.hidden = !p;
