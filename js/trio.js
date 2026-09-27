@@ -116,6 +116,22 @@ export function comp(spans, totalBeats, rnd = Math.random) {
   return hits;
 }
 
+// Root only (patterns' "Root" backing): the chord's root at the start of
+// each pattern, held till the next — no fifth, which lies on ø and ° chords
+// (boss, 2026-09-26). Each root near the last, around C2. `chords` =
+// [{key (written pc), beats}], `cellBeats` = the pattern's length.
+export function rootLine(chords, calib, cellBeats) {
+  const notes = [];
+  let beat = 0, prev = 36;
+  for (const c of chords) {
+    const midi = near(pcOf(c.key + calib), prev);
+    for (let b = 0; b < c.beats; b += cellBeats) notes.push({ midi, beat: beat + b, len: Math.min(cellBeats, c.beats - b) });
+    prev = midi;
+    beat += c.beats;
+  }
+  return notes;
+}
+
 // A pattern run's chords as spans of at most a bar (a chord held longer
 // walks each bar). `chords` = [{key (written pc), beats}], `calib` turns
 // written into concert. Chords of 1 or 2 beats get one or two bass notes.

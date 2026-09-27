@@ -368,7 +368,7 @@ startBtn.addEventListener('click', async () => {
     initAudio();
     await loadTrio().catch(() => {});
     startPatterns({ pattern: p, mode, exercise: mode === 'learn' ? 'cycle4' : pExercise, stage: currentStage(p),
-                    bpm: ptempo.get(), calib, calibOffset, latency },
+                    bpm: ptempo.get(), backing: pBacking, calib, calibOffset, latency },
                   () => { showRunning(false); showSettings(); loadPatternProgress(); runSync(); });
   } else {
     startRound(mode, calib, onRoundEnd, { length, pick, exercise: currentExercise() });
@@ -710,10 +710,14 @@ function say(text, bad = false) {
 // --- Patterns (P game): Play pane, library + editor on Levels ---
 const PSEL_KEY = 'woodshed.patternSel';    // the selected pattern's id
 const PEX_KEY = 'woodshed.patternEx';      // practice path
-const PBPM_KEY = 'woodshed.patternBpm';    // a tempo of its own (quarter notes), set by the player
+const PBPM_KEY = 'woodshed.patternBpm';    // a tempo of its own (notes per minute), set by the player
+const PBACK_KEY = 'woodshed.patternBacking';   // 'band' | 'root' | 'click'
 let patternId = load(PSEL_KEY);
 let pExercise = PRACTICE_EXERCISES.includes(load(PEX_KEY)) ? load(PEX_KEY) : PRACTICE_EXERCISES[0];
 let pStage = null;                          // learn stage picked by hand; null = where progress says
+// Backing (boss, 2026-09-26): the trio, drums + the root only (no fifth: it
+// lies on ø and ° chords), or the click alone. The band by default.
+let pBacking = ['band', 'root', 'click'].includes(load(PBACK_KEY)) ? load(PBACK_KEY) : 'band';
 let pProgress = new Map();                  // pattern id → patternProgress()
 const currentPattern = () => { const lib = loadLibrary(); return lib.find(p => p.id === patternId) || lib[0] || null; };
 const currentStage = p => pStage ?? (p && pProgress.get(p.id)?.stage) ?? 0;
@@ -736,6 +740,7 @@ function showPatternSettings() {
   $('#pExercises').hidden = mode === 'learn';
   const stage = currentStage(p);
   $$('[data-pstage]').forEach(b => b.classList.toggle('active', Number(b.dataset.pstage) === stage));
+  $$('[data-pback]').forEach(b => b.classList.toggle('active', b.dataset.pback === pBacking));
   $('#pExercises').innerHTML = PRACTICE_EXERCISES.map(id =>
     `<button data-pex="${id}" class="${id === pExercise ? 'active' : ''}">${EXERCISES[id].name}${prog?.done.has(id) ? ' ✓' : ''}</button>`).join('');
   if (patternsRunning()) return;
@@ -750,6 +755,7 @@ function showPatternSettings() {
     : `<b>Practice</b> — once on each chord, ${EXERCISES[pExercise].name.toLowerCase()}.<br><small>Start goes straight into a one-bar count-in.</small>`;
 }
 $('#pCard').addEventListener('click', () => showTab('levels'));
+$$('[data-pback]').forEach(b => b.addEventListener('click', () => { pBacking = b.dataset.pback; save(PBACK_KEY, pBacking); showSettings(); }));
 $('#pStages').addEventListener('click', e => {
   const b = e.target.closest('[data-pstage]');
   if (b) { pStage = Number(b.dataset.pstage); showSettings(); }

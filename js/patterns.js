@@ -24,7 +24,7 @@
 import { pc, degreeLabel } from './music.js';
 import { chordHTML } from './notation.js';
 import { initAudio, click, audioTimeAt, stopAll, swingAt, bassNote, kitHit, compChord } from './audio.js';
-import { walk, comp, spansOf } from './trio.js';
+import { walk, comp, spansOf, rootLine } from './trio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { EXERCISES, STAGES, SOLID, noteSemis } from './patternlib.js';
 
@@ -104,7 +104,7 @@ export function judge(run, anchors, w, now) {
 }
 
 // opts: {pattern, exercise, stage (index into STAGES, learn), mode, bpm,
-// calib, calibOffset, latency}. onEnd() on Stop.
+// backing ('band' | 'root' | 'click'), calib, calibOffset, latency}. onEnd() on Stop.
 export function startPatterns(opts, onEnd) {
   initAudio();
   requestPersistence();
@@ -175,8 +175,10 @@ function nextRun() {
   r.nextBeat = 0;                     // look-ahead: the next beat / bass note / comp hit not yet queued
   // The trio's parts for this run (a chord held a bar walks the bar).
   const spans = spansOf(r.chords.map(c => ({ key: c.key, beats: c.beats })), s.pattern.quality, s.calib);
-  r.bass = walk(spans);
-  r.comp = comp(spans, spans.reduce((a, sp) => a + sp.len, 0));
+  // Backing (boss, 2026-09-26): 'band' = the trio; 'root' = drums + the
+  // root at each pattern, nothing else; 'click' = the metronome alone.
+  r.bass = s.backing === 'band' ? walk(spans) : s.backing === 'root' ? rootLine(r.chords, s.calib, r.n) : [];
+  r.comp = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0)) : [];
   r.bassAt = 0;
   r.compAt = 0;
   schedule(now);
@@ -204,7 +206,10 @@ function schedule(now) {
   while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < horizon) {
     const b = r.nextBeat;
     if (b < BEATS) click(audioTimeAt(r.t0 + b * r.beat), b === 0);
-    else {
+    else if (s.backing === 'click') {
+      // The metronome alone, each pattern's start accented.
+      click(audioTimeAt(r.t0 + b * r.beat), (b - BEATS) % r.n === 0);
+    } else {
       const k = b - BEATS;                                        // beat of the tune
       const at = x => audioTimeAt(x);
       kitHit('ride', at(T(k) + jit(6)), (k % 2 ? 0.19 : 0.22) * (0.9 + Math.random() * 0.15));
@@ -222,7 +227,8 @@ function schedule(now) {
     const n = r.bass[r.bassAt++];
     // Each note rings into the next; a touch more on 1 and 3.
     const vel = (n.beat % 2 === 0 ? 1 : 0.9) * (0.85 + Math.random() * 0.15);
-    bassNote(n.midi, audioTimeAt(T(n.beat) - 4 + jit(14)), r.beat / 1000 + 0.02, vel);
+    // Walking: a beat each; root only: held for its pattern.
+    bassNote(n.midi, audioTimeAt(T(n.beat) - 4 + jit(14)), ((n.len || 1) * r.beat) / 1000 + 0.02, vel);
   }
   while (r.compAt < r.comp.length && T(r.comp[r.compAt].beat) < horizon) {
     const h = r.comp[r.compAt++];
@@ -269,6 +275,7 @@ function endRun() {
     pattern: { name: p.name, quality: p.quality, notes: p.notes },   // snapshot: history outlives edits
     exercise: s.exercise,
     reps: reps(),
+    backing: s.backing,               // 'band' | 'root' | 'click'
     cellBeats: s.pattern.notes.length,   // beats per cell: a note a beat (v1 runs: 4, a cell per bar)
     keys: EXERCISES[s.exercise].keys,                          // written roots, in order
     bpm: s.bpm,
