@@ -67,6 +67,15 @@ export async function allEvents(from = -Infinity, to = Infinity) {
   });
 }
 
+// Rewrite stored events in place (each keeps its `id`): data migrations
+// only (migrate.js).
+export async function putEvents(events) {
+  const tx = (await openDb()).transaction(STORE, 'readwrite');
+  const store = tx.objectStore(STORE);
+  for (const e of events) store.put(e);
+  return done(tx);
+}
+
 // Delete events with from ≤ t < to (the 90-day window prune, A8).
 export async function deleteEvents(from, to) {
   const tx = (await openDb()).transaction(STORE, 'readwrite');

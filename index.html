@@ -200,46 +200,46 @@
   .seg.game .rb { font: 24px/24px 'RealBook', Georgia, serif; letter-spacing: 2px; }
   .gear { flex: none; padding: 4px 11px; font-size: 16px; color: var(--dim); }
   .gear.active { border-color: var(--brass); color: var(--brass); }
-  .g-degrees, .g-scales, .g-patterns { display: none; flex-direction: column; gap: 9px; }
-  .g-degrees > *, .g-scales > *, .g-patterns > * { flex-shrink: 0; }
+  .g-degrees, .g-scales, .g-cells { display: none; flex-direction: column; gap: 9px; }
+  .g-degrees > *, .g-scales > *, .g-cells > * { flex-shrink: 0; }
   body[data-game="degrees"] .g-degrees, body[data-game="scales"] .g-scales, body[data-game="arpeggios"] .g-scales,
-  body[data-game="patterns"] .g-patterns { display: flex; }
+  body[data-game="cells"] .g-cells { display: flex; }
 
-  /* Patterns (P game): the pattern on top, the chord lane, the library. */
-  #pShow { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 2px 0 4px; }
-  #pShow > b { font-size: 14px; color: var(--dim); font-weight: 600; white-space: nowrap; }
-  .pshape { position: relative; display: flex; align-items: flex-start; gap: 4px; }
-  .pshape .pn { position: relative; min-width: 22px; text-align: center; font: 800 18px/22px system-ui, sans-serif;
+  /* Cells: the cell on top, the chord lane, the library. */
+  #cellShow { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 2px 0 4px; }
+  #cellShow > b { font-size: 14px; color: var(--dim); font-weight: 600; white-space: nowrap; }
+  .cellshape { position: relative; display: flex; align-items: flex-start; gap: 4px; }
+  .cellshape .cellnote { position: relative; min-width: 22px; text-align: center; font: 800 18px/22px system-ui, sans-serif;
                 color: #ffe2a8; border-radius: 6px; }
-  .pshape .pn.back { color: #9fd8ff; }      /* learn's way back, c b — the hint's blue */
-  .pshape .pn.sel { background: rgba(217,164,65,.25); outline: 1px solid var(--brass); }
-  .pshape .proot { position: absolute; left: -4px; right: -4px; height: 0; border-top: 1px dashed rgba(217,164,65,.45); }
-  #pChords { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-  .pchord { position: absolute; left: 0; top: 0; font-size: 26px; color: #ffe2a8; white-space: nowrap; }
-  #pMsg { position: absolute; left: 25%; right: 0; bottom: 8px; text-align: center; font-size: 15px; padding: 0 12px; }
-  #pMsg[hidden] { display: none; }
-  #pMsg b { color: #ffe2a8; }
-  #pMsg small { color: var(--dim); font-size: 12px; }
-  #pLib { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
-  .pcard { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: #181818; text-align: left; }
-  .pcard.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
-  .pcard .pname { font-size: 13px; font-weight: 600; min-width: 90px; }
-  .pcard .pprog { margin-left: auto; font-size: 11px; color: var(--dim); text-align: right; line-height: 1.4; }
-  .pcard .pprog b { color: var(--brass); font-weight: 600; }
-  .pcard .pact { display: flex; gap: 4px; }
-  .pcard .pact button { padding: 2px 7px; font-size: 11px; color: var(--dim); }
-  #pEdit { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #151515;
+  .cellshape .cellnote.back { color: #9fd8ff; }      /* learn's way back, c b — the hint's blue */
+  .cellshape .cellnote.sel { background: rgba(217,164,65,.25); outline: 1px solid var(--brass); }
+  .cellshape .cellroot { position: absolute; left: -4px; right: -4px; height: 0; border-top: 1px dashed rgba(217,164,65,.45); }
+  #cellChords { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .cellchord { position: absolute; left: 0; top: 0; font-size: 26px; color: #ffe2a8; white-space: nowrap; }
+  #cellMsg { position: absolute; left: 25%; right: 0; bottom: 8px; text-align: center; font-size: 15px; padding: 0 12px; }
+  #cellMsg[hidden] { display: none; }
+  #cellMsg b { color: #ffe2a8; }
+  #cellMsg small { color: var(--dim); font-size: 12px; }
+  #cellLib { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .cellcard { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: #181818; text-align: left; }
+  .cellcard.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
+  .cellcard .cellname { font-size: 13px; font-weight: 600; min-width: 90px; }
+  .cellcard .cellprog { margin-left: auto; font-size: 11px; color: var(--dim); text-align: right; line-height: 1.4; }
+  .cellcard .cellprog b { color: var(--brass); font-weight: 600; }
+  .cellcard .cellact { display: flex; gap: 4px; }
+  .cellcard .cellact button { padding: 2px 7px; font-size: 11px; color: var(--dim); }
+  #cellEdit { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #151515;
            border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
-  #pKeys button { min-width: 34px; }
-  .prow { display: flex; gap: 5px; }
-  .prow button { flex: 1; padding: 5px 0; font-size: 14px; }
-  #pName { width: 100%; }
-  #pStages[hidden], #pExercises[hidden] { display: none; }
-  #pStages .label { align-self: center; margin-right: 4px; }
+  #cellKeys button { min-width: 34px; }
+  .cellrow { display: flex; gap: 5px; }
+  .cellrow button { flex: 1; padding: 5px 0; font-size: 14px; }
+  #cellName { width: 100%; }
+  #cellStages[hidden], #cellExercises[hidden] { display: none; }
+  #cellStages .label { align-self: center; margin-right: 4px; }
   /* Play card: name over the degrees, like the scales card. */
-  #pCard .ex { flex-direction: column; align-items: flex-start; gap: 1px; }
-  #pCardName { font-weight: 600; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #pCardDeg { font-size: 15px; }
+  #cellCard .ex { flex-direction: column; align-items: flex-start; gap: 1px; }
+  #cellCardName { font-weight: 600; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cellCardDeg { font-size: 15px; }
   .row2 { display: flex; gap: 6px; }
   .row2 .seg { flex: 1; }
   .row2 .seg button { font-size: 12px; padding-left: 2px; padding-right: 2px; white-space: nowrap; }
@@ -271,7 +271,7 @@
 
   /* Scales view: the lane canvas with a message layer over it. */
   .lane-wrap { position: relative; flex: 1; min-height: 0; }
-  #lane, #plane { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #lane, #cellLane { position: absolute; inset: 0; width: 100%; height: 100%; }
   #scaleMsg { position: absolute; left: 25%; right: 0; top: 50%; transform: translateY(-50%);
               text-align: center; font-size: 16px; color: var(--ink); padding: 0 12px; }
   #scaleMsg[hidden] { display: none; }
@@ -491,27 +491,27 @@
         <div id="scaleIdle" hidden></div>
       </div>
     </div>
-    <!-- Patterns (P): the pattern on top, chords scrolling along a staff. -->
-    <div class="view" id="view-patterns" data-view="play" data-for="patterns" hidden>
+    <!-- Cells: the cell on top, chords scrolling along a staff. -->
+    <div class="view" id="view-cells" data-view="play" data-for="cells" hidden>
       <div class="stage-top">
-        <span id="pTitle"></span><span></span><span id="pInfo" class="scale-info"></span>
+        <span id="cellTitle"></span><span></span><span id="cellInfo" class="scale-info"></span>
       </div>
-      <div id="pShow"></div>
+      <div id="cellShow"></div>
       <div class="lane-wrap">
-        <canvas id="plane"></canvas>
-        <div id="pChords"></div>
-        <div id="pMsg" hidden></div>
+        <canvas id="cellLane"></canvas>
+        <div id="cellChords"></div>
+        <div id="cellMsg" hidden></div>
       </div>
     </div>
-    <!-- Patterns library: every pattern with its progress. -->
-    <div class="view" id="view-pattern-levels" data-view="levels" data-for="patterns" hidden>
+    <!-- The cell library: every cell with its progress. -->
+    <div class="view" id="view-cell-levels" data-view="levels" data-for="cells" hidden>
       <h2>Your cells</h2>
-      <div id="pLib"></div>
+      <div id="cellLib"></div>
     </div>
-    <div class="view" id="view-pattern-stats" data-view="stats" data-for="patterns" hidden>
+    <div class="view" id="view-cell-stats" data-view="stats" data-for="cells" hidden>
       <h2>Recent runs · key × note of the cell</h2>
-      <div id="pGrid"></div>
-      <div class="rm-bar"><select id="pStatSel" aria-label="Cell"></select></div>
+      <div id="cellGrid"></div>
+      <div class="rm-bar"><select id="cellStatSel" aria-label="Cell"></select></div>
     </div>
     <!-- Levels: the ladder (D6). -->
     <div class="view" id="view-levels" data-view="levels" data-for="degrees" hidden><div id="ladder"></div></div>
@@ -552,7 +552,7 @@
              numerals, like a time signature; scales as a piece of ladder. -->
         <button data-game="degrees" aria-label="Degrees" title="Degrees"><span class="gicon rb">3 5 7</span></button>
         <!-- Cells: four note heads at different heights — a cell's contour. -->
-        <button data-game="patterns" aria-label="Cells" title="Cells"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
+        <button data-game="cells" aria-label="Cells" title="Cells"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 19L9.5 9.5L14.5 14L20 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-opacity=".55"/>
           <circle cx="4" cy="19" r="2.9" fill="currentColor"/><circle cx="9.5" cy="9.5" r="2.9" fill="currentColor"/>
           <circle cx="14.5" cy="14" r="2.9" fill="currentColor"/><circle cx="20" cy="4.5" r="2.9" fill="currentColor"/></svg></button>
@@ -587,16 +587,16 @@
           <div class="chips"><button data-misses="1">1</button><button data-misses="2">2</button><button data-misses="3">3</button><button data-misses="5">5</button></div>
         </div>
       </div>
-      <div class="g-patterns">
-        <button id="pCard" class="excard"><span class="ex"><b id="pCardName"></b><b id="pCardDeg" class="degs"></b></span><span class="chg">change ›</span></button>
-        <div class="seg"><button data-pmode="learn">Learn</button><button data-pmode="practice">Practice</button></div>
+      <div class="g-cells">
+        <button id="cellCard" class="excard"><span class="ex"><b id="cellCardName"></b><b id="cellCardDeg" class="degs"></b></span><span class="chg">change ›</span></button>
+        <div class="seg"><button data-cell-mode="learn">Learn</button><button data-cell-mode="practice">Practice</button></div>
         <!-- Learn: times on each chord round the cycle of 4ths; practice: the path. -->
-        <div class="chips" id="pStages"><span class="label">Each chord</span>
-          <button data-pstage="0">×4</button><button data-pstage="1">×2</button><button data-pstage="2">×1</button></div>
-        <div class="chips" id="pExercises"></div>
+        <div class="chips" id="cellStages"><span class="label">Each chord</span>
+          <button data-cell-stage="0">×4</button><button data-cell-stage="1">×2</button><button data-cell-stage="2">×1</button></div>
+        <div class="chips" id="cellExercises"></div>
         <!-- Backing: the trio, drums + the root, or the click alone. -->
-        <div class="seg" id="pBacking"><button data-pback="click">Click</button><button data-pback="root">Root</button><button data-pback="band">Band</button></div>
-        <div id="ptempo"></div>
+        <div class="seg" id="cellBacking"><button data-cell-back="click">Click</button><button data-cell-back="root">Root</button><button data-cell-back="band">Band</button></div>
+        <div id="cellTempo"></div>
       </div>
       <div class="g-degrees">
         <button id="exerciseBtn" class="excard"><span class="ex"><b id="exerciseLabel"></b><b id="exerciseDegrees" class="degs"></b></span><span class="chg">change ›</span></button>
@@ -654,23 +654,23 @@
         (20 for a degree) came up in that key — hit on the beat is green, late or early fades it, wrong or
         missed is red. "All" pools every key.</div>
     </div>
-    <div class="pane" data-pane="levels" data-for="patterns" hidden>
+    <div class="pane" data-pane="levels" data-for="cells" hidden>
       <div class="label">Cell</div>
-      <div class="seg" id="pQual"><button data-pq="maj7">△</button><button data-pq="7">7</button><button data-pq="m7">−</button><button data-pq="m7b5">ø</button></div>
-      <div id="pEdit"></div>
-      <div class="chips keys" id="pKeys"></div>
-      <div class="prow"><button id="pDown" aria-label="Octave down">↓ lower</button><button id="pUp" aria-label="Octave up">↑ higher</button><button id="pDel" aria-label="Delete note">⌫</button></div>
-      <input id="pName" placeholder="name (optional)" autocomplete="off" spellcheck="false">
-      <div class="prow"><button id="pHear">▶ Hear</button><button id="pSave">Save</button><button id="pNew">New</button></div>
-      <div id="pHint" class="small-note"></div>
+      <div class="seg" id="cellQual"><button data-cell-q="maj7">△</button><button data-cell-q="7">7</button><button data-cell-q="m7">−</button><button data-cell-q="m7b5">ø</button></div>
+      <div id="cellEdit"></div>
+      <div class="chips keys" id="cellKeys"></div>
+      <div class="cellrow"><button id="cellDown" aria-label="Octave down">↓ lower</button><button id="cellUp" aria-label="Octave up">↑ higher</button><button id="cellDel" aria-label="Delete note">⌫</button></div>
+      <input id="cellName" placeholder="name (optional)" autocomplete="off" spellcheck="false">
+      <div class="cellrow"><button id="cellHear">▶ Hear</button><button id="cellSave">Save</button><button id="cellNew">New</button></div>
+      <div id="cellHint" class="small-note"></div>
     </div>
-    <div class="pane" data-pane="stats" data-for="patterns" hidden>
-      <div class="stat">Runs <b id="pstRuns">0</b></div>
-      <div class="stat">Today <b id="pstToday">0</b></div>
-      <div class="stat">Notes right <b id="pstHit">–</b></div>
-      <div class="stat">Solid runs <b id="pstSolid">–</b></div>
-      <div class="stat">Learn <b id="pstLearn">–</b></div>
-      <div class="stat">Practice <b id="pstPractice">–</b></div>
+    <div class="pane" data-pane="stats" data-for="cells" hidden>
+      <div class="stat">Runs <b id="cstRuns">0</b></div>
+      <div class="stat">Today <b id="cstToday">0</b></div>
+      <div class="stat">Notes right <b id="cstHit">–</b></div>
+      <div class="stat">Solid runs <b id="cstSolid">–</b></div>
+      <div class="stat">Learn <b id="cstLearn">–</b></div>
+      <div class="stat">Practice <b id="cstPractice">–</b></div>
       <div>
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>

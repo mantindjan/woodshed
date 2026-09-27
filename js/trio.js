@@ -1,5 +1,5 @@
 // The rhythm section's brain (C3): a walking bass line and comping hits
-// over a chart, as data — audio.js plays them, patterns.js schedules them.
+// over a chart, as data — audio.js plays them, cells.js schedules them.
 // Ported from the prototype the boss approved by ear (docs/trio/, 2026-09-26:
 // "YEEEES this is good"); the plan is docs/handover/IDEAS.md.
 //
@@ -116,10 +116,10 @@ export function comp(spans, totalBeats, rnd = Math.random) {
   return hits;
 }
 
-// Root only (patterns' "Root" backing): the chord's root at the start of
-// each pattern, held till the next — no fifth, which lies on ø and ° chords
+// Root only (Cells' "Root" backing): the chord's root at the start of
+// each pass of the cell, held till the next — no fifth, which lies on ø and ° chords
 // (boss, 2026-09-26). Each root near the last, around C2. `chords` =
-// [{key (written pc), beats}], `cellBeats` = the pattern's length.
+// [{key (written pc), beats}], `cellBeats` = the notes played per pass.
 export function rootLine(chords, calib, cellBeats) {
   const notes = [];
   let beat = 0, prev = 36;
@@ -132,7 +132,7 @@ export function rootLine(chords, calib, cellBeats) {
   return notes;
 }
 
-// A pattern run's chords as spans of at most a bar (a chord held longer
+// A cell run's chords as spans of at most a bar (a chord held longer
 // walks each bar). `chords` = [{key (written pc), beats}], `calib` turns
 // written into concert. Chords of 1 or 2 beats get one or two bass notes.
 export function spansOf(chords, quality, calib) {

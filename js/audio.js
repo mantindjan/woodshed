@@ -16,7 +16,7 @@
 //
 // Swing is set by tempo (swingAt).
 //
-// Trio (patterns, C3): samples from FluidR3 Mono GM (MIT, public/sounds/,
+// Trio (Cells, C3): samples from FluidR3 Mono GM (MIT, public/sounds/,
 // licence alongside) — its "Acoustic Bass" (6 zones, looped sustain) and
 // "Jazz" kit (ride, hi-hat foot, kick, snare) — plus Rhodes comping. The
 // levels are the prototype's the boss approved by ear (docs/trio/, clip 8,
@@ -143,7 +143,7 @@ function buildTrio() {
   compBus = bus(0.55, 0.35, 0.25);
 }
 
-// --- Trio samples: loaded once, on first use (patterns' Start) ---
+// --- Trio samples: loaded once, on first use (Cells' Start) ---
 // Bass zones: root (MIDI), the keys it covers, its sustain loop (frames).
 const BASS_ZONES = [
   { root: 28, lo: 0, hi: 28, loop: [76560, 78701] }, { root: 29, lo: 29, hi: 29, loop: [90123, 91133] },
@@ -245,7 +245,7 @@ export function playChord(rootConcertPc, quality, dur) {
 }
 
 // A melodic line on the Rhodes, one note every `beat` seconds from now —
-// the pattern editor's Hear (MIDI numbers, concert).
+// the cell editor's Hear (MIDI numbers, concert).
 export function playLine(midis, beat) {
   if (!ctx) return;
   const t = ctx.currentTime + 0.05;

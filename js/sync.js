@@ -19,6 +19,7 @@
 
 import { allEvents, addEvents, deleteEvents } from './events.js';
 import { invalidateSummary } from './summary.js';
+import { upgradeEvent, upgradePath, settingKey, settingValue } from './migrate.js';
 
 const REPO_KEY = 'woodshed.syncRepo';
 const TOKEN_KEY = 'woodshed.syncToken';
@@ -26,13 +27,15 @@ const STATE_KEY = 'woodshed.syncState';
 // Settings that travel in settings.json: everything but the sync credentials.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
-                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.patternSel', 'woodshed.patternEx', 'woodshed.patternBpm', 'woodshed.patternBacking', 'woodshed.scaleExercise',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.scaleExercise',
                   'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses'];
 const SETTINGS_PATH = 'settings.json';
-// The pattern library (P game): the boss's own creations, kept apart from
-// the runs and from settings, as readable JSON (one object per pattern).
-const LIBRARY_KEY = 'woodshed.patterns';
-const LIBRARY_PATH = 'patterns.json';
+// The cell library (Cells): the boss's own cells, kept apart from the runs
+// and from settings, as readable JSON (one object per cell). Before
+// 2026-09-27 it was patterns.json — still read on a restore (migrate.js).
+const LIBRARY_KEY = 'woodshed.cells';
+const LIBRARY_PATH = 'cells.json';
+const OLD_LIBRARY_PATH = 'patterns.json';
 export const WINDOW_DAYS = 90;
 const DAY_MS = 86400000;
 
@@ -167,14 +170,17 @@ async function run() {
     }
 
     // Merge a remote file's events into local (add-only); returns how many.
+    // A file under old names (patterns/…, written by a phone still on the
+    // old app) merges into its file under today's names (migrate.js).
     async function merge(path, text) {
-      const theirs = JSON.parse(text);
-      const mine = local.get(path) || [];
+      const theirs = JSON.parse(text).map(upgradeEvent);
+      const into = upgradePath(path);
+      const mine = local.get(into) || [];
       const have = new Set(mine.map(keyOf));
       const fresh = theirs.filter(e => !have.has(keyOf(e))).map(stripId);
       if (fresh.length) {
         await addEvents(fresh);
-        local.set(path, [...mine, ...fresh]);
+        local.set(into, [...mine, ...fresh]);
         result.added += fresh.length;
       }
       return theirs.length;
@@ -215,7 +221,7 @@ async function run() {
     if (!('woodshed.calib' in mine) && remote.has(SETTINGS_PATH)) {
       const file = await readFile(SETTINGS_PATH);
       const theirs = file ? JSON.parse(file.text) : {};
-      for (const k of SETTINGS) if (k in theirs) ls(k, theirs[k]);
+      for (const [k, v] of Object.entries(theirs)) if (SETTINGS.includes(settingKey(k))) ls(settingKey(k), settingValue(k, v));
       result.settingsRestored = Object.keys(theirs).length > 0;
       state.settings = file?.text;
     } else if (Object.keys(mine).length) {
@@ -227,11 +233,12 @@ async function run() {
       }
     }
 
-    // 3b. Pattern library: restore it on a device that has none, else push
+    // 3b. Cell library: restore it on a device that has none, else push
     // it when it changed.
     const lib = ls(LIBRARY_KEY);
-    if (lib === null && remote.has(LIBRARY_PATH)) {
-      const file = await readFile(LIBRARY_PATH);
+    const libPath = remote.has(LIBRARY_PATH) ? LIBRARY_PATH : remote.has(OLD_LIBRARY_PATH) ? OLD_LIBRARY_PATH : null;
+    if (lib === null && libPath) {
+      const file = await readFile(libPath);
       if (file) {
         ls(LIBRARY_KEY, JSON.stringify(JSON.parse(file.text)));
         state.library = file.text;
@@ -240,8 +247,8 @@ async function run() {
     } else if (lib !== null) {
       const text = `${JSON.stringify(JSON.parse(lib), null, 2)}\n`;
       if (text !== state.library) {
-        const sha = await writeFile(LIBRARY_PATH, text, remote.get(LIBRARY_PATH), 'woodshed: pattern library')
-          ?? await writeFile(LIBRARY_PATH, text, (await readFile(LIBRARY_PATH))?.sha, 'woodshed: pattern library');
+        const sha = await writeFile(LIBRARY_PATH, text, remote.get(LIBRARY_PATH), 'woodshed: cell library')
+          ?? await writeFile(LIBRARY_PATH, text, (await readFile(LIBRARY_PATH))?.sha, 'woodshed: cell library');
         if (sha) state.library = text;
       }
     }

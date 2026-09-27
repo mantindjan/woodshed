@@ -1,27 +1,27 @@
-// Cell library (the Cells game — called "patterns" in code and data, its
-// name until 2026-09-27): the boss's own cells, the exercises every cell
-// gets, and progress worked out from the runs.
+// Cell library (I1 Cells; the Pattern game until 2026-09-27, see
+// migrate.js): the boss's own cells, the exercises every cell gets, and
+// progress worked out from the runs.
 //
 // A CELL is 4 notes over one chord (boss, 2026-09-26/27): each note
 // is a degree of the chord plus an OCTAVE relative to the root, because
 // height matters — "5 3 1 5" from the low 5 and from the high 5 are two
-// different patterns. Semitones above the root = degree's semitones (by
+// different cells. Semitones above the root = degree's semitones (by
 // quality) + 12 × octave. A note a beat: the tempo is notes per minute
-// (mastered ≈ 240 = 4 a second), and a chord lasts the pattern × reps.
+// (mastered ≈ 240 = 4 a second), and a chord lasts the cell × reps.
 //
-// The library lives in localStorage (`woodshed.patterns`) and syncs as its
-// own readable file (`patterns.json`, sync.js), apart from the runs. Runs
-// (game `patterns`, patterns.js) carry the pattern's id AND a snapshot of
-// its notes, so history stays meaningful if a pattern is renamed or
-// deleted. Changing the notes of a pattern that has runs saves a NEW
-// pattern, so one id never means two different things.
+// The library lives in localStorage (`woodshed.cells`) and syncs as its
+// own readable file (`cells.json`, sync.js), apart from the runs. Runs
+// (game `cells`, cells.js) carry the cell's id AND a snapshot of
+// its notes, so history stays meaningful if a cell is renamed or
+// deleted. Changing the notes of a cell that has runs saves a NEW
+// cell, so one id never means two different things.
 
 import { DEG_SEMI, QUALITY_NAME, degreeLabel } from './music.js';
 
-// Degrees a pattern can use: the scale steps over the chord, and the
+// Degrees a cell can use: the scale steps over the chord, and the
 // alterations a chart asks for. 2 4 6 take the 9 11 13 of the quality
 // (so 6 on ø is ♭6, as its 13), 3 5 7 the quality's own.
-export const PATTERN_DEGREES = ['1', '2', '3', '4', '5', '6', '7', 'b9', '#9', '#11', 'b13'];
+export const CELL_DEGREES = ['1', '2', '3', '4', '5', '6', '7', 'b9', '#9', '#11', 'b13'];
 const AS = { 2: '9', 4: '11', 6: '13' };
 export function degSemi(quality, deg) {
   if (deg === '1') return 0;
@@ -62,27 +62,30 @@ const isCycle = notes => notes.length === 6 &&
 // "5 1 3 5" — degrees as written; heights are drawn, not spelled.
 export const degreesText = p => p.notes.map(n => degreeLabel(n.deg)).join(' ');
 export const autoName = p => `${QUALITY_NAME[p.quality]} ${degreesText(p)}`;
-// Two patterns are the same music when quality and notes (with heights) match.
+// Two cells are the same music when quality and notes (with heights) match.
 const same = (a, b) => a.quality === b.quality && JSON.stringify(a.notes) === JSON.stringify(b.notes);
 
-const KEY = 'woodshed.patterns';
+const KEY = 'woodshed.cells';
 export function loadLibrary() {
   let list;
   try { list = JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
-  // Written out a b c d c b before cells were 4 notes: keep a b c d, same id.
-  for (const p of list) if (isCycle(p.notes)) p.notes = p.notes.slice(0, CELL_NOTES);
+  // Written out a b c d c b before cells were 4 notes: keep a b c d, same
+  // id — and store it so, so the synced cells.json says 4 notes too.
+  const cycles = list.filter(p => isCycle(p.notes));
+  for (const p of cycles) p.notes = p.notes.slice(0, CELL_NOTES);
+  if (cycles.length) saveLibrary(list);
   return list;
 }
 export function saveLibrary(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* storage full/blocked */ }
 }
-const newId = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+const newId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
-// Save a draft {id?, name, quality, notes}. A new pattern, or an edit of one
-// never played, is stored as is; changing the notes of a played pattern
-// adds a new pattern instead (the old one and its runs stay). Returns the
-// saved pattern.
-export function savePattern(draft, played) {
+// Save a draft {id?, name, quality, notes}. A new cell, or an edit of one
+// never played, is stored as is; changing the notes of a played cell
+// adds a new cell instead (the old one and its runs stay). Returns the
+// saved cell.
+export function saveCell(draft, played) {
   const list = loadLibrary();
   const old = draft.id && list.find(p => p.id === draft.id);
   const clean = { quality: draft.quality, notes: draft.notes.map(n => ({ deg: n.deg, oct: n.oct })) };
@@ -97,7 +100,7 @@ export function savePattern(draft, played) {
   saveLibrary(list);
   return saved;
 }
-export function deletePattern(id) {
+export function deleteCell(id) {
   saveLibrary(loadLibrary().filter(p => p.id !== id));
 }
 
@@ -115,7 +118,7 @@ export const EXERCISES = {
   minor3Down: { name: 'Minor 3rds down', keys: [...cycle(0, -3, 4), ...cycle(11, -3, 4), ...cycle(10, -3, 4)] },
   // Random roots (boss, 2026-09-26): a fresh shuffle of the 12 every round
   // (exerciseKeys), never starting on the key the last round ended on. The
-  // quality stays the pattern's — a dominant pattern wants a dominant chord.
+  // quality stays the cell's — a dominant cell wants a dominant chord.
   random: { name: 'Random keys', keys: cycle(0, 1, 12), random: true },
 };
 export const PRACTICE_EXERCISES = ['chromDown', 'chromUp', 'wholeDown', 'wholeUp', 'minor3Down', 'random'];
@@ -132,14 +135,14 @@ export function exerciseKeys(id, prevLast = null, rnd = Math.random) {
 }
 export const STAGES = [4, 2, 1];          // learn: times on each chord
 
-// --- Stats: key × note of the pattern ---
-// For one pattern: the last RECENT times each note of the cell came up on
+// --- Stats: key × note of the cell ---
+// For one cell: the last RECENT times each note of the cell came up on
 // each key (and on all keys pooled), newest last. A note scores 1 hit on
 // the beat, sliding to 0.6 at the window's edge (as the scales map), 0
 // wrong or missed. Keys "<rootPc>|<j>" and "all|<j>", j = the note's place
 // in the cell.
 const RECENT = 10;
-export function patternGrid(events, id) {
+export function cellGrid(events, id) {
   const grid = new Map();
   const push = (k, a) => {
     const list = grid.get(k) || [];
@@ -148,10 +151,10 @@ export function patternGrid(events, id) {
     grid.set(k, list);
   };
   for (const e of events) {
-    if (e.game !== 'patterns' || e.patternId !== id || !e.expected) continue;
+    if (e.game !== 'cells' || e.cellId !== id || !e.expected) continue;
     // Each played note back to its place in the cell: learn's a b c d c b
     // (v3, `cellBeats` 6) and a hand-typed 6-note cycle fold onto a b c d.
-    const notes = e.pattern.notes;
+    const notes = e.cell.notes;
     const cyc = isCycle(notes) || (e.v >= 3 && e.cellBeats === 6 && notes.length === CELL_NOTES);
     const place = i => (cyc ? CYCLE[i % 6] : i % notes.length);
     e.expected.forEach(([root, , , , status, off], i) => {
@@ -165,20 +168,20 @@ export function patternGrid(events, id) {
 
 // --- Progress, from runs ---
 // A run is SOLID at ≥ 95 % of its notes hit. Learn: 2 solid runs in a row
-// at a stage move the pattern to the next (×4 → ×2 → ×1); solid at ×1 =
+// at a stage move the cell to the next (×4 → ×2 → ×1); solid at ×1 =
 // learnt, practice next. Practice: an exercise is done once solid.
 export const SOLID = 0.95;
-// Pattern runs' expected rows are [root, degree, semitones, ms, status, offset].
+// Cell runs' expected rows are [root, degree, semitones, ms, status, offset].
 export const runRate = e => e.expected.filter(x => x[4] === 'hit').length / e.expected.length;
 
 // {stage: index into STAGES to play next, learnt, done: Set of exercise ids,
-// best: {exercise|reps → best rate}} for a pattern id, from its events
+// best: {exercise|reps → best rate}} for a cell id, from its events
 // (oldest first).
-export function patternProgress(events, id) {
+export function cellProgress(events, id) {
   let stage = 0, streak = 0, learnt = false;
   const done = new Set(), best = {};
   for (const e of events) {
-    if (e.game !== 'patterns' || e.patternId !== id || !e.expected?.length) continue;
+    if (e.game !== 'cells' || e.cellId !== id || !e.expected?.length) continue;
     const rate = runRate(e);
     const k = `${e.exercise}|${e.reps}`;
     best[k] = Math.max(best[k] || 0, rate);

@@ -51,7 +51,7 @@
 import { SCALES, SAX_RANGE, NOTES, QUALITY_TEXT, pc, noteName } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
-import { pickScaleKey, PATTERNS, runPattern } from './scalelevels.js';
+import { pickScaleKey, PATTERNS } from './scalelevels.js';
 import { tempoKey, runOutcome, CLEAN_RUNS, rungUp, rungDown, inComfort } from './scaletempo.js';
 import { saveKeys, saveTempo } from './summary.js';
 

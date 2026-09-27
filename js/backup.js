@@ -9,6 +9,7 @@
 
 import { addEvents, allEvents } from './events.js';
 import { invalidateSummary } from './summary.js';
+import { upgradeEvent, settingKey, settingValue } from './migrate.js';
 
 export const FORMAT = 1;
 // localStorage keys carried in the backup (see main.js).
@@ -16,7 +17,7 @@ export const FORMAT = 1;
 // — backup files sit in Downloads/Drive.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
-                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.patternSel', 'woodshed.patternEx', 'woodshed.patternBpm', 'woodshed.patternBacking', 'woodshed.patterns', 'woodshed.scaleExercise',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.cells', 'woodshed.scaleExercise',
                   'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses', 'woodshed.syncRepo'];
 
 // Identity of an event across devices: one question = one appearance time
@@ -66,7 +67,9 @@ export async function loadBackup(text) {
 
   const have = new Set((await allEvents()).map(eventKey));
   const fresh = [];
-  for (const { id, ...e } of data.events) {
+  // An older file's events and settings under today's names (migrate.js).
+  for (const { id, ...old } of data.events) {
+    const e = upgradeEvent(old);
     const key = eventKey(e);
     if (!have.has(key)) { fresh.push(e); have.add(key); }
   }
@@ -76,8 +79,8 @@ export async function loadBackup(text) {
   }
 
   for (const [k, v] of Object.entries(data.settings || {})) {
-    if (SETTINGS.includes(k)) {
-      try { localStorage.setItem(k, v); } catch { /* storage unavailable */ }
+    if (SETTINGS.includes(settingKey(k))) {
+      try { localStorage.setItem(settingKey(k), settingValue(k, v)); } catch { /* storage unavailable */ }
     }
   }
   return { added: fresh.length, skipped: data.events.length - fresh.length };
