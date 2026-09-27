@@ -206,13 +206,14 @@ function appendRound() {
   const spans = spansOf(part.chords.map(c => ({ key: c.key, beats: c.beats })), s.pattern.quality, s.calib);
   const shift = xs => xs.map(x => ({ ...x, beat: x.beat + off }));
   // Backing (boss, 2026-09-26): 'band' = the trio; 'root' = drums + the root
-  // on the bass, doubled by ONE Rhodes note in the low mids, A2–G♯3 (the
-  // bass alone was felt more than heard on the phone; two and three octaves
-  // up sat on top of the pattern) — never a 3rd or 5th; 'click' = the
-  // metronome alone.
+  // on the bass, doubled by the Rhodes: the root in the low mids (A2–G♯3)
+  // and its octave, played hard (brighter, louder). The bass alone was felt
+  // more than heard on the phone; two and three octaves up sat on the
+  // pattern; the low-mid note alone vanished on the phone speaker (it can't
+  // play much under ~250 Hz). Never a 3rd or 5th. 'click' = the metronome.
   const bass = s.backing === 'band' ? walk(spans) : s.backing === 'root' ? rootLine(part.chords, s.calib, r.n) : [];
   const comping = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0))
-    : s.backing === 'root' ? bass.map(b => ({ beat: b.beat, len: b.len, midis: [lowMid(b.midi)] })) : [];
+    : s.backing === 'root' ? bass.map(b => ({ beat: b.beat, len: b.len, midis: [lowMid(b.midi), lowMid(b.midi) + 12], vel: 1.4 })) : [];
   r.bass.push(...shift(bass));
   r.comp.push(...shift(comping));
   r.end = part.end;
@@ -268,7 +269,7 @@ function schedule(now) {
   }
   while (r.compAt < r.comp.length && T(r.comp[r.compAt].beat) < horizon) {
     const h = r.comp[r.compAt++];
-    compChord(h.midis, audioTimeAt(T(h.beat)), (h.len * r.beat) / 1000, 0.7 + Math.random() * 0.25);
+    compChord(h.midis, audioTimeAt(T(h.beat)), (h.len * r.beat) / 1000, h.vel ?? 0.7 + Math.random() * 0.25);
   }
 }
 
