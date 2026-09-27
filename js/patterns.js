@@ -185,6 +185,9 @@ function startStream() {
   $('#pInfo').textContent = `${s.bpm} bpm`;
 }
 
+// The root's octave in the Rhodes' low mids, A2 (45) to G♯3 (56).
+const lowMid = m => { while (m < 45) m += 12; while (m > 56) m -= 12; return m; };
+
 // Add the next round at the end of the stream: its notes, chords, and the
 // band's parts for it (beats counted from the stream's first beat after
 // the count-in). Called when the stream's end comes within reach.
@@ -203,12 +206,13 @@ function appendRound() {
   const spans = spansOf(part.chords.map(c => ({ key: c.key, beats: c.beats })), s.pattern.quality, s.calib);
   const shift = xs => xs.map(x => ({ ...x, beat: x.beat + off }));
   // Backing (boss, 2026-09-26): 'band' = the trio; 'root' = drums + the root
-  // on the bass, doubled by the Rhodes two and three octaves up (the bass
-  // alone was felt more than heard on the phone) — never a 3rd or 5th;
-  // 'click' = the metronome alone.
+  // on the bass, doubled by ONE Rhodes note in the low mids, A2–G♯3 (the
+  // bass alone was felt more than heard on the phone; two and three octaves
+  // up sat on top of the pattern) — never a 3rd or 5th; 'click' = the
+  // metronome alone.
   const bass = s.backing === 'band' ? walk(spans) : s.backing === 'root' ? rootLine(part.chords, s.calib, r.n) : [];
   const comping = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0))
-    : s.backing === 'root' ? bass.map(b => ({ beat: b.beat, len: b.len, midis: [b.midi + 24, b.midi + 36] })) : [];
+    : s.backing === 'root' ? bass.map(b => ({ beat: b.beat, len: b.len, midis: [lowMid(b.midi)] })) : [];
   r.bass.push(...shift(bass));
   r.comp.push(...shift(comping));
   r.end = part.end;
@@ -479,10 +483,16 @@ function draw() {
       }
     }
   }
-  // The now line.
-  g.strokeStyle = 'rgba(217,164,65,.8)';
-  g.lineWidth = 2;
-  g.beginPath(); g.moveTo(nowX, cy - half - 34); g.lineTo(nowX, cy + half + 10); g.stroke();
+  // The now line: taller, thicker, bright and glowing, so it stands apart
+  // from the beat and chord lines (boss: "hard to distinguish").
+  g.save();
+  g.shadowColor = 'rgba(255,200,110,.9)';
+  g.shadowBlur = 10;
+  g.strokeStyle = '#ffe2a8';
+  g.lineWidth = 4;
+  g.lineCap = 'round';
+  g.beginPath(); g.moveTo(nowX, cy - half - 50); g.lineTo(nowX, cy + half + 26); g.stroke();
+  g.restore();
   // Chord symbols above the staff, at their chord change. Only the chord
   // being played (the last one started) is pinned at the left edge; older
   // ones go — at 240 the last one lingered beside it ("B7 B♭7").
