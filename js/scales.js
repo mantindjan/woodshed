@@ -42,8 +42,9 @@
 //
 // Display (practice): a canvas lane. Notes are degree discs (no note names), placed by
 // scale step and note slot, gliding toward the now line near the left. The
-// view drifts with the pattern's overall direction (its slope), so a linear
-// run arrives on a diagonal and broken thirds zigzag around it. Hits bloom
+// view follows the run (TRACK_SPAN), so a linear run arrives on a diagonal,
+// turns at the top, and broken thirds zigzag around it — the note at the
+// line always near the middle. Hits bloom
 // (additive halo, ring, sparks), bigger and brighter the closer to the beat.
 // The count-in is four dots filling, not numbers: numbers collided with the
 // degree discs (boss, 2026-09-25).
@@ -73,6 +74,7 @@ const RESTART_MS = 1500;
 // early/late tick. 30 ms was too tight on the horn (boss, 2026-09-25).
 const ON_BEAT_MS = 100;
 const MIN_RUN = 4;             // the default start has at least this many notes ahead
+const TRACK_SPAN = 2;          // the practice lane's camera averages this many notes either side
 // The app picks the start note and names it for ANNOUNCE_MS, then counts
 // in; "My note" in that time hands the choice to the player, who blows it
 // (boss, 2026-09-27: choosing was great as an option, not as the default).
@@ -124,7 +126,7 @@ const register = w => (w <= 65 ? 'low' : w <= 78 ? 'middle' : 'high');
 // ahead — every pattern goes up and back, so that covers the most horn.
 function suggestStart(scale, key, pattern) {
   const notes = scaleNotes(scale, key);
-  const root = notes.find((w, i) => pc(w - key) === 0 && PATTERNS[pattern].indices(i, notes.length).length >= MIN_RUN);
+  const root = notes.find((w, i) => pc(w - key) === 0 && PATTERNS[pattern].indices(i, notes.length, notes).length >= MIN_RUN);
   return root ?? null;
 }
 
@@ -408,7 +410,7 @@ function startRun(w, now, midi) {
   // From the start note to the edge of the range, in the level's pattern.
   // Broken thirds need two scale notes of room beyond the start note.
   const i = notes.indexOf(w);
-  const idx = PATTERNS[s.pattern].indices(i, notes.length);
+  const idx = PATTERNS[s.pattern].indices(i, notes.length, notes);
   if (!idx.length) {
     message(`No room for ${PATTERNS[s.pattern].name.toLowerCase()} from ${NOTES[pc(w)]} there — ` +
             `start ${i + 2 >= notes.length ? 'lower' : 'higher'}.`);
@@ -422,10 +424,15 @@ function startRun(w, now, midi) {
   r.beatMs = beat;
   r.step = step;                      // the lane moves one slot per note
   r.window = Math.min(MAX_WINDOW_MS, step * 0.45);
-  // Lane drift: the least-squares line through (slot, scale position) at the
-  // pattern's slope — the discs are drawn relative to it (see draw()).
-  r.slope = PATTERNS[s.pattern].slope;
-  r.base = idx.reduce((a, j, k) => a + j - r.slope * k, 0) / idx.length;
+  // The lane's camera: at each note, the mean scale position of the notes
+  // TRACK_SPAN either side of it — smooth through thirds' zigzag and a
+  // run's turn at the top. One fixed line through a whole up-and-back run
+  // sat in its middle and put the first notes below the screen (boss,
+  // 2026-09-27).
+  r.track = idx.map((_, k) => {
+    const near = idx.slice(Math.max(0, k - TRACK_SPAN), k + TRACK_SPAN + 1);
+    return near.reduce((a, j) => a + j, 0) / near.length;
+  });
   r.notes = midi === null ? [] : [[midi, 0]];   // a restart has no blown start note
   // Count-in clicks on beats 1–4 after the start note; note j at beat 5 +
   // j/2. Clicks keep going on every beat through the run.
@@ -684,6 +691,15 @@ function bloom(g, x, y, rad, acc, age) {
   g.restore();
 }
 
+// The camera's scale position at fractional slot `pos`: between the
+// tracks of the notes either side (held at the ends).
+function cameraAt(r, pos) {
+  const last = r.track.length - 1;
+  const p = Math.max(0, Math.min(last, pos));
+  const a = Math.floor(p), b = Math.min(last, a + 1);
+  return r.track[a] + (r.track[b] - r.track[a]) * (p - a);
+}
+
 function draw(r) {
   const c = canvas();
   const g = c.getContext('2d');
@@ -710,8 +726,8 @@ function draw(r) {
   r.expected.forEach((e, i) => {
     const d = i - pos;                        // note slots until this note
     const x = nowX + d * pxBeat;
-    // Height = scale position above the drift line at the current slot.
-    const y = cy - (e.i - (r.base + r.slope * pos)) * stepPx;
+    // Height = scale position above the camera at the current slot.
+    const y = cy - (e.i - cameraAt(r, pos)) * stepPx;
     if (x < -60 || x > W + 30) return;
     const root = e.deg === '1';
     const rad = root ? 22 : 19;

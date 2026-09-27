@@ -11,15 +11,14 @@
 // pair any scale with any pattern. Tempo and the miss limit stay Play
 // settings. Nothing is locked.
 
-import { SCALES, NOTES, inMiddle } from './music.js';
+import { SCALES, NOTES, inMiddle, HORN_MIDDLE } from './music.js';
 
-// Patterns: how a run walks the scale from the start note. `indices(i, n)`
-// gives the scale positions to play, from the blown start note at position
-// i of the n scale notes inside the horn's range (0 = lowest); [] when the
-// pattern has no room from there. `slope` = scale steps per played note
-// along the run, for the lane's drift (0 for there-and-back runs). `shape`
-// = how it starts, in degrees from the root, for the level card. `chip` =
-// the custom builder's label.
+// Patterns: how a run walks the scale from the start note. `indices(i, n,
+// notes)` gives the scale positions to play, from the start note at
+// position i of the n scale notes inside the horn's range (0 = lowest;
+// `notes` = their written pitches); [] when the pattern has no room from
+// there. `shape` = how it starts, in degrees from the root, for the level
+// card. `chip` = the custom builder's label.
 //
 // Every scale pattern goes UP the horn to its top edge and back DOWN to
 // the start note (boss, 2026-09-27: splitting each into an up level and a
@@ -38,11 +37,11 @@ const range = (from, to, step) => {
   return out;
 };
 export const PATTERNS = {
-  linear: { name: 'Linear', chip: 'Linear', shape: '1 2 3 4 … up and back', slope: 0,
+  linear: { name: 'Linear', chip: 'Linear', shape: '1 2 3 4 … up and back',
             indices: (i, n) => (i + 1 < n ? [...range(i, n - 1, 1), ...range(n - 2, i, -1)] : []) },
-  '3up': { name: 'Thirds ascending', chip: 'Thirds asc', shape: '1 3 · 2 4 · 3 5 … up and back', slope: 0,
+  '3up': { name: 'Thirds ascending', chip: 'Thirds asc', shape: '1 3 · 2 4 · 3 5 … up and back',
            indices: (i, n) => (i + 2 < n ? [...pairs(i, n - 3, 1, 2), ...pairs(n - 4, i, -1, 2)] : []) },
-  '3down': { name: 'Thirds descending', chip: 'Thirds desc', shape: '3 1 · 4 2 · 5 3 … up and back', slope: 0,
+  '3down': { name: 'Thirds descending', chip: 'Thirds desc', shape: '3 1 · 4 2 · 5 3 … up and back',
              indices: (i, n) => (i >= 2 && i < n ? [...pairs(i, n - 1, 1, -2), ...pairs(n - 2, i, -1, -2)] : []) },
 };
 export const PATTERN_ORDER = ['linear', '3up', '3down'];
@@ -54,26 +53,29 @@ export const OLD_PATTERNS = { up: 'linear', down: 'linear', '3up-asc': '3up', '3
                               '3down-asc': '3down', '3down-desc': '3down' };
 
 // Arpeggio mastery (F1, boss 2026-09-27), over the chord tones (the arp-*
-// "scales", index i = the root): up through the four inversions — 1357
-// 3571 5713 7135 — then down from the 1 above that last 7 — 1753 7531 5317
-// 3175 — and back up to the root: 33 notes, from the 5 below the root to
-// the 5 above the octave. Where the horn runs out (low B♭ / high F♯), the
-// groups that don't fit are dropped: C from middle-register C loses 3175
-// (no G below low B♭) and ends 5317 → C (boss: "truncate when you can't").
-// At least 1357 must fit. From the root only (`rootOnly`); learn suggests
-// the lowest root.
+// "scales", index i = the start root — by default the lowest root on the
+// horn): up through the four inversions — 1357 3571 5713 7135 — then down
+// from the HIGHEST root at or below high D (written D6, the top of the
+// horn's middle) — 1753 7531 5317 3175 — and back up to the nearest root.
+// So C7 goes up from C4 and comes down from C6; F△ up from F4, down from F5
+// (F6 is past high D); D7 down from D6 itself. Groups that run off the
+// horn are dropped (C from C4 has no G below low B♭ for 3175: 5317 → C).
+// At least 1357 must fit. From a root only (`rootOnly`).
 PATTERNS.arp = {
   name: 'Arpeggio mastery', chip: 'Arpeggio mastery', shape: '1357 3571 5713 7135 · 1753 7531 5317 3175 · 1',
-  slope: 0, rootOnly: true,
-  indices: (i, n) => {
+  rootOnly: true,
+  indices: (i, n, notes) => {
     if (i + 3 >= n) return [];
     const out = [];
     for (let g = 0; g < 4 && i + g + 3 < n; g++) for (let k = 0; k < 4; k++) out.push(i + g + k);
-    for (let g = 4; g >= 1; g--) {
-      if (i + g >= n || i + g - 3 < 0) continue;
-      for (let k = 0; k < 4; k++) out.push(i + g - k);
+    // The top root: an octave up at least, the highest at or below high D.
+    let top = i + 4;
+    for (let j = i + 4; j < n; j += 4) if (notes[j] <= HORN_MIDDLE.high) top = j;
+    for (let g = 0; g < 4; g++) {
+      if (top - g >= n || top - g - 3 < 0) continue;
+      for (let k = 0; k < 4; k++) out.push(top - g - k);
     }
-    if (out[out.length - 1] !== i) out.push(i);        // back up (or down) to the root
+    if (out[out.length - 1] !== top - 4) out.push(top - 4);   // back up to the nearest root
     return out;
   },
 };
