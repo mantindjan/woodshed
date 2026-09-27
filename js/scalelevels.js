@@ -46,9 +46,30 @@ export const PATTERNS = {
 };
 export const PATTERN_ORDER = ['up', 'down', '3up-asc', '3up-desc', '3down-asc', '3down-desc'];
 
+// Arpeggio mastery (F1, boss 2026-09-27), over the chord tones (the arp-*
+// "scales"): up through the four inversions — 1357 3571 5713 7135 — then
+// down from the root two octaves up (the 1 above the next 7, boss's
+// correction) — 1753 7531 5317 3175 1753 7531 — ending on the root: 40
+// notes, two octaves. From the root only (`rootOnly`).
+PATTERNS.arp = {
+  name: 'Arpeggio mastery', chip: 'Arpeggio mastery', shape: '1357 3571 5713 7135 · 1753 7531 5317 3175 1753 7531',
+  slope: 0, rootOnly: true,
+  indices: (i, n) => {
+    if (i + 8 >= n) return [];
+    const out = [];
+    for (let g = 0; g < 4; g++) for (let k = 0; k < 4; k++) out.push(i + g + k);
+    for (let g = 8; g >= 3; g--) for (let k = 0; k < 4; k++) out.push(i + g - k);
+    return out;
+  },
+};
+
 // Which patterns each scale's ladder has. Pentatonic gets thirds later.
-const LADDER = { major: PATTERN_ORDER, penta: ['up', 'down'] };
-export const SCALE_ORDER = ['major', 'penta'];
+const LADDER = { major: PATTERN_ORDER, penta: ['up', 'down'],
+                 'arp-maj7': ['arp'], 'arp-7': ['arp'], 'arp-m7': ['arp'], 'arp-m7b5': ['arp'] };
+// The games that run on the scales engine, and their scales in ladder order.
+export const GAME_SCALES = { scales: ['major', 'penta'], arpeggios: ['arp-maj7', 'arp-7', 'arp-m7', 'arp-m7b5'] };
+export const SCALE_ORDER = GAME_SCALES.scales;
+export const LANE_GAMES = Object.keys(GAME_SCALES);
 const ALL_KEYS = [...Array(12).keys()];
 
 const keysLabel = keys => keys.length === 12 ? 'all 12 keys' : keys.map(k => NOTES[k]).join(' ');
@@ -56,10 +77,12 @@ const keysLabel = keys => keys.length === 12 ? 'all 12 keys' : keys.map(k => NOT
 // Ids are stable (stored in events and settings); the "S1…" numbers are
 // display only and follow ladder order. ('major-up' / 'major-down' were
 // also the first day's pre-ladder ids — same meaning, so their runs count.)
-export const SCALE_LEVELS = SCALE_ORDER.flatMap(scale => LADDER[scale].map(p => ({
-  id: `${scale}-${p}`, scale, pattern: p, title: SCALES[scale].name,
+// Numbered per game: S1… for scales, A1… for arpeggios.
+export const SCALE_LEVELS = Object.entries(GAME_SCALES).flatMap(([game, scales]) => scales.flatMap(scale => LADDER[scale].map(p => ({
+  id: `${scale}-${p}`, game, scale, pattern: p, title: SCALES[scale].name,
   name: PATTERNS[p].name, keys: ALL_KEYS, keysLabel: keysLabel(ALL_KEYS),
-}))).map((l, i) => ({ ...l, num: `S${i + 1}` }));
+}))).map((l, i) => ({ ...l, num: `${game === 'arpeggios' ? 'A' : 'S'}${i + 1}` })));
+export const levelsOf = game => SCALE_LEVELS.filter(l => l.game === game);
 
 // Identity of a pick, for snapping a custom pick back onto a level.
 const pickKey = (scale, pattern, keys) => `${scale}:${pattern}:${[...keys].sort((a, b) => a - b).join(',')}`;
@@ -72,13 +95,13 @@ export function matchScaleLevel(scale, pattern, keys) {
 // {id, num, title, name, scale, pattern, keys, keysLabel}. Unknown ids (an
 // older ladder, e.g. 'major-home') fall back to the first level. A custom
 // pick saved before patterns existed runs linear up.
-export function scaleExercise(id, custom) {
+export function scaleExercise(id, custom, game = 'scales') {
   if (id === 'custom') {
     const pattern = PATTERNS[custom.pattern] ? custom.pattern : 'up';
     return { id, num: '', title: SCALES[custom.scale].name, name: PATTERNS[pattern].name, scale: custom.scale,
              pattern, keys: custom.keys, keysLabel: custom.keys.length ? keysLabel(custom.keys) : 'no key chosen' };
   }
-  return SCALE_LEVELS.find(l => l.id === id) || SCALE_LEVELS[0];
+  return SCALE_LEVELS.find(l => l.id === id && l.game === game) || levelsOf(game)[0];
 }
 
 // The pattern of a run event. Runs before patterns (event v2) carry only
@@ -110,7 +133,7 @@ export function createKeyModel(initial = []) {
   return {
     stats,
     add(e) {
-      if (e.game !== 'scales' || e.falseStart) return;   // a false start says nothing about the key
+      if (!LANE_GAMES.includes(e.game) || e.falseStart) return;   // a false start says nothing about the key
       const score = runScore(e);
       if (score === null) return;
       const k = statKey(e.scale, runPattern(e), e.keyWritten);

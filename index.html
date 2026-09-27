@@ -202,7 +202,7 @@
   .gear.active { border-color: var(--brass); color: var(--brass); }
   .g-degrees, .g-scales, .g-patterns { display: none; flex-direction: column; gap: 9px; }
   .g-degrees > *, .g-scales > *, .g-patterns > * { flex-shrink: 0; }
-  body[data-game="degrees"] .g-degrees, body[data-game="scales"] .g-scales,
+  body[data-game="degrees"] .g-degrees, body[data-game="scales"] .g-scales, body[data-game="arpeggios"] .g-scales,
   body[data-game="patterns"] .g-patterns { display: flex; }
 
   /* Patterns (P game): the pattern on top, the chord lane, the library. */
@@ -295,6 +295,10 @@
   /* Learn: skip to the next key in the hardest-first order. */
   #scaleNext { padding: 3px 10px; font-size: 12px; color: var(--brass); }
   #scaleNext[hidden] { display: none; }
+  #scaleHint { padding: 3px 10px; font-size: 12px; color: var(--dim); }
+  #scaleHint.active { color: #1a1206; background: var(--brass); border-color: var(--brass); }
+  #scaleHint[hidden] { display: none; }
+  #scalePattern.hinted { color: #ffe2a8; font-weight: 700; font-size: 15px; }   /* the chord spelled out */
   /* Auto tempo: overrule this key's tempo from the stage. */
   #scaleNudge button { padding: 2px 7px; font-size: 11px; color: var(--brass); margin-right: 3px; }
   #scaleNudge[hidden] { display: none; }
@@ -362,6 +366,7 @@
   .levelinfo .lvkeys { display: block; font-size: 12px; color: var(--dim); margin-top: 2px; }
   /* Scale custom builder: the six patterns two to a row. */
   .chips.patterns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; }
+  .chips[hidden] { display: none; }      /* the flex/grid display beats the hidden attribute otherwise */
   .chips.patterns button { font-size: 12px; padding: 4px 3px; white-space: nowrap; border-radius: 8px; }
   /* Scale card: level over pattern — "Thirds down · descending" doesn't
      fit beside "S6 · Major". */
@@ -469,10 +474,10 @@
       </div>
     </div>
     <!-- Scales (E1): the lane. -->
-    <div class="view" id="view-scales" data-view="play" data-for="scales" hidden>
+    <div class="view" id="view-scales" data-view="play" data-for="scales arpeggios" hidden>
       <div class="stage-top">
         <span class="scale-title"><b id="scaleKey"></b> <span id="scalePattern"></span></span>
-        <span><button id="scaleNext" hidden>Next key ›</button></span>
+        <span><button id="scaleNext" hidden>Next key ›</button> <button id="scaleHint" hidden>Hint</button></span>
         <span class="scale-info"><span id="scaleNudge" hidden><button data-sn="-1">‹</button><button data-sn="1">›</button></span>
           <b id="scaleBpm"></b> <span id="scaleBpmNote"></span> <span id="scaleInfo"></span></span>
       </div>
@@ -509,9 +514,9 @@
     <!-- Levels: the ladder (D6). -->
     <div class="view" id="view-levels" data-view="levels" data-for="degrees" hidden><div id="ladder"></div></div>
     <!-- Scale levels (E1 step 2): the ladder, one block per scale. -->
-    <div class="view" id="view-scale-levels" data-view="levels" data-for="scales" hidden><div id="scaleLadder"></div></div>
+    <div class="view" id="view-scale-levels" data-view="levels" data-for="scales arpeggios" hidden><div id="scaleLadder"></div></div>
     <!-- Scale stats (E1 step 3): the range map, key × written pitch. -->
-    <div class="view" id="view-scale-stats" data-view="stats" data-for="scales" hidden>
+    <div class="view" id="view-scale-stats" data-view="stats" data-for="scales arpeggios" hidden>
       <h2 id="rangeTitle">Recent runs · key × note, low B♭ to high F♯</h2>
       <div id="rangemap"></div>
       <!-- Which level's runs the map shows, and by note or by degree. -->
@@ -547,6 +552,9 @@
         <button data-game="patterns" aria-label="Patterns" title="Patterns"><span class="gicon pg">P</span></button>
         <button data-game="scales" aria-label="Scales" title="Scales"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 2v20M17 2v20M7 6h10M7 11h10M7 16h10M7 21h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+        <!-- Arpeggios: the notation sign for an arpeggiated chord, a wavy line. -->
+        <button data-game="arpeggios" aria-label="Arpeggios" title="Arpeggios"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2c3 1.5 3 3.5 0 5s-3 3.5 0 5 3 3.5 0 5-3 3.5 0 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
       </div>
       <button class="gear" data-tab="horn" aria-label="Horn, sync and backup">⚙</button>
     </div>
@@ -616,16 +624,16 @@
       <button id="playLevel">Play this ›</button>
     </div>
 
-    <div class="pane" data-pane="levels" data-for="scales" hidden>
+    <div class="pane" data-pane="levels" data-for="scales arpeggios" hidden>
       <div id="scaleLevelInfo" class="levelinfo"></div>
       <div class="label">Custom</div>
-      <div class="seg"><button data-cs="major">Major</button><button data-cs="penta">Pentatonic</button></div>
+      <div class="seg" id="customScales"></div>
       <div class="chips patterns" id="customPatterns"></div>
       <div class="chips keys" id="customKeys"></div>
       <div id="scaleCustomHint">Pick a scale, a pattern and the keys to run it in.</div>
       <button id="playScaleLevel">Play this ›</button>
     </div>
-    <div class="pane" data-pane="stats" data-for="scales" hidden>
+    <div class="pane" data-pane="stats" data-for="scales arpeggios" hidden>
       <div class="stat">Runs <b id="sstatRuns">0</b></div>
       <div class="stat">Today <b id="sstatToday">0</b></div>
       <div class="stat">Notes hit <b id="sstatHit">–</b></div>
@@ -647,7 +655,7 @@
       <div class="chips keys" id="pKeys"></div>
       <div class="prow"><button id="pDown" aria-label="Octave down">↓ lower</button><button id="pUp" aria-label="Octave up">↑ higher</button><button id="pDel" aria-label="Delete note">⌫</button></div>
       <input id="pName" placeholder="name (optional)" autocomplete="off" spellcheck="false">
-      <div class="prow"><button id="pSave">Save</button><button id="pNew">New</button></div>
+      <div class="prow"><button id="pHear">▶ Hear</button><button id="pSave">Save</button><button id="pNew">New</button></div>
       <div id="pHint" class="small-note"></div>
     </div>
     <div class="pane" data-pane="stats" data-for="patterns" hidden>

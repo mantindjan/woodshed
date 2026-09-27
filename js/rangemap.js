@@ -36,7 +36,7 @@ function recentNotes(events, view) {
     byKey.set(k, list);
   };
   for (const e of events) {
-    if (e.game !== 'scales' || !e.expected || e.falseStart) continue;
+    if (!e.expected || e.falseStart) continue;       // the caller passes one level's runs
     for (const x of e.expected) {
       if (x[3] === 'pending') continue;
       const a = { hit: x[3] === 'hit', off: x[4], score: noteScore(x) };

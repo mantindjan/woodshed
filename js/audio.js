@@ -244,6 +244,14 @@ export function playChord(rootConcertPc, quality, dur) {
   rhodesChord(rootConcertPc, quality, ctx.currentTime + 0.02, dur);
 }
 
+// A melodic line on the Rhodes, one note every `beat` seconds from now —
+// the pattern editor's Hear (MIDI numbers, concert).
+export function playLine(midis, beat) {
+  if (!ctx) return;
+  const t = ctx.currentTime + 0.05;
+  midis.forEach((m, i) => rhodesNote(m, t + i * beat, beat * 0.9, 1, 0));
+}
+
 // --- Swing ---
 // Where the swung "and" falls, as a fraction of the beat: near 3:1 at
 // ballads, 2:1 at medium, flattening toward straight eighths fast (IDEAS.md:

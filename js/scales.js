@@ -48,7 +48,7 @@
 // The count-in is four dots filling, not numbers: numbers collided with the
 // degree discs (boss, 2026-09-25).
 
-import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
+import { SCALES, SAX_RANGE, NOTES, QUALITY_TEXT, pc, noteName } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { pickScaleKey, PATTERNS, runPattern } from './scalelevels.js';
@@ -120,7 +120,7 @@ function suggestStart(scale, key, pattern) {
   const roots = notes.map((w, i) => ({ w, n: PATTERNS[pattern].indices(i, notes.length).length }))
     .filter(x => pc(x.w - key) === 0 && x.n >= MIN_RUN);
   if (!roots.length) return null;
-  return PATTERNS[pattern].slope > 0 ? roots[0].w : roots[roots.length - 1].w;
+  return PATTERNS[pattern].slope >= 0 ? roots[0].w : roots[roots.length - 1].w;   // up-and-down (arpeggios): lowest
 }
 
 let s = null;        // session state while running, else null
@@ -129,7 +129,8 @@ let wakeLock = null;
 
 export const scalesRunning = () => s !== null;
 
-// opts: {exercise: {id, scale, pattern, keys}, mode: 'learn'|'practice',
+// opts: {game ('scales' | 'arpeggios' — the same engine), exercise: {id,
+// scale, pattern, keys}, mode: 'learn'|'practice',
 // pick: 'weak'|'random', model (the weak-key model, from the cached
 // summary), tempoAuto (practice on Auto tempo), tempo (the staircase model),
 // bpm (the first run's), misses, calib, calibOffset, latency (ms)}. onEnd(recap)
@@ -232,6 +233,7 @@ export function stopScales() {
   message('');
   $('#scaleNext').hidden = true;
   $('#scaleNudge').hidden = true;
+  $('#scaleHint').hidden = true;
   draw(null);
   onEnd(recap);
 }
@@ -255,26 +257,54 @@ function nextRun() {
             // A tempo the player set for this key (stage nudges) — its run is marked `tempoSet`.
             manual: !!s.tempoAuto && s.tempo.manual(tempoKey(s.scale, s.pattern, k)) };
   $('#scaleNext').hidden = !s.order || s.order.length < 2;
+  showHint(false);                    // every new run starts without the answer
   topBar();
-  const scaleName = `<b>${NOTES[k]} ${SCALES[s.scale].name.toLowerCase()}</b>`;
+  const scaleName = `<b>${what(k)}</b>`;
   const pattern = PATTERNS[s.pattern].name.toLowerCase();
+  const rootOnly = PATTERNS[s.pattern].rootOnly;
   const start = s.mode === 'learn' ? suggestStart(s.scale, k, s.pattern) : null;
   if (start === null) {
-    message(s.run.prompt = `Blow any note of ${scaleName} to start — ${pattern}`);
+    message(s.run.prompt = rootOnly ? `Blow the root of ${scaleName} to start — ${pattern}`
+      : `Blow any note of ${scaleName} to start — ${pattern}`);
     return;
   }
   // Learn: name a start note; the sheet appears once it's blown.
   s.run.hint = { start };
   message(s.run.prompt = `Start on <b>${register(start)} ${NOTES[pc(start)]}</b> (${noteName(start)}) — ${scaleName}, ${pattern}` +
-          '<br><small>any scale note works too</small>');
+          (rootOnly ? '<br><small>or any other root with room above</small>' : '<br><small>any scale note works too</small>'));
 }
+
+// What's being played, in words: a chord symbol for an arpeggio ("B♭7",
+// "C△", "F♯ø"), else "C major".
+function what(k) {
+  const q = SCALES[s.scale].chord;
+  return q ? `${NOTES[k]}${QUALITY_TEXT[q]}` : `${NOTES[k]} ${SCALES[s.scale].name.toLowerCase()}`;
+}
+
+// The hint (arpeggios, learn — boss 2026-09-27): hidden by default; a tap
+// shows the chord spelled out ("C E G B♭", 1 3 5 7 in order) and the
+// note names under the discs, a second tap or the next run hides it.
+export function toggleHint() { if (s?.run) showHint(!s.showHint); }
+function showHint(on) {
+  s.showHint = on;
+  const chord = SCALES[s.scale].chord;
+  $('#scaleHint').hidden = !(chord && s.mode === 'learn');
+  $('#scaleHint').classList.toggle('active', on);
+  topBar();                           // the spelling goes in the top bar, beside the chord
+}
+// "C E G B♭" — the run's chord tones, 1 3 5 7 in order. Just the notes:
+// anything longer was cut off beside the chord at 844 px, and the discs
+// carry the degrees (and, with the hint on, the names).
+const spelled = k => SCALES[s.scale].steps.map(st => NOTES[pc(k + st)]).join(' ');
 
 // The key stays on screen the whole run, big (boss: the 2-second message
 // was easy to forget); the pattern sits next to it.
 function topBar() {
   const r = s?.run;
-  $('#scaleKey').textContent = r ? `${NOTES[r.key]} ${SCALES[s.scale].name.toLowerCase()}` : '';
-  $('#scalePattern').textContent = r ? PATTERNS[s.pattern].chip.toLowerCase() : '';
+  $('#scaleKey').textContent = r ? what(r.key) : '';
+  // Beside it the pattern — or, with the hint on (arpeggios), the chord spelled out.
+  $('#scalePattern').textContent = !r ? '' : s.showHint && SCALES[s.scale].chord ? spelled(r.key) : PATTERNS[s.pattern].chip.toLowerCase();
+  $('#scalePattern').classList.toggle('hinted', !!(r && s.showHint));
   // Tempo big on the right (boss: "make sure the tempo is printed on
   // screen"); ↑/↓ when Auto just moved it, "auto" while it's in charge.
   $('#scaleBpm').textContent = r ? s.bpm : '';
@@ -331,10 +361,15 @@ export function scaleNote(midi) {
 function startRun(w, now, midi) {
   const r = s.run;
   const notes = scaleNotes(s.scale, r.key);
+  if (PATTERNS[s.pattern].rootOnly && notes.includes(w) && pc(w - r.key) !== 0) {
+    message(`That's the ${degreeOf(s.scale, r.key, w)} — start on the root of <b>${what(r.key)}</b>.`);
+    return;
+  }
   if (!notes.includes(w)) {
-    message(`That's ${NOTES[pc(w)]} — not in <b>${NOTES[r.key]} ${SCALES[s.scale].name.toLowerCase()}</b>` +
+    const chord = SCALES[s.scale].chord;
+    message(`That's ${NOTES[pc(w)]} — not in <b>${chord ? what(r.key) : `${NOTES[r.key]} ${SCALES[s.scale].name.toLowerCase()}`}</b>` +
             (w < SAX_RANGE.low || w > SAX_RANGE.high ? ' (or outside low B♭–high F♯)' : '') +
-            '. Blow a scale note to start.');
+            (PATTERNS[s.pattern].rootOnly ? '. Blow its root to start.' : '. Blow a scale note to start.'));
     return;
   }
   // From the start note to the edge of the range, in the level's pattern.
@@ -426,6 +461,7 @@ function restartRun() {
   if (s.tempoAuto) s.bpm = s.tempo.tempoFor(tk, s.session);
   s.run = { key: old.key, phase: 'waiting', notes: [], expected: [], misses: 0, hint: old.hint,
             manual: !!s.tempoAuto && s.tempo.manual(tk), restarted: true };
+  showHint(false);                    // a restart hides the answer again
   topBar();
   startRun(start, performance.now(), null);
 }
@@ -448,7 +484,7 @@ function endRun(stopped, abort = null) {
     v: SCHEMA_VERSION,
     t: Date.now() - Math.round(performance.now() - r.t0),   // wall clock of the start note
     round: s.session,
-    game: 'scales',
+    game: s.game || 'scales',         // 'scales' | 'arpeggios' — the same engine
     mode: s.mode,
     exercise: s.exercise.id,          // level id or 'custom' (scalelevels.js)
     scale: s.scale,
@@ -786,9 +822,12 @@ function drawSheet(g, r, W, H) {
     // disc already carries its name, so its degree goes under instead.
     // Big enough to read on the stand (boss, 2026-09-26): about the disc's radius.
     const nameSize = L.nameSize;
-    g.fillStyle = j === 0 ? START_COLOR : 'rgba(255,226,168,.85)';
-    g.font = `700 ${nameSize}px system-ui, sans-serif`;
-    g.fillText(j === 0 ? e.deg : NOTES[pc(e.w)], x, y + L.rad + nameSize * 0.65 + 2);
+    // Arpeggios hide the names until the hint is on (the degrees are the task).
+    if (j === 0 || !SCALES[s.scale].chord || s.showHint) {
+      g.fillStyle = j === 0 ? START_COLOR : 'rgba(255,226,168,.85)';
+      g.font = `700 ${nameSize}px system-ui, sans-serif`;
+      g.fillText(j === 0 ? e.deg : NOTES[pc(e.w)], x, y + L.rad + nameSize * 0.65 + 2);
+    }
     g.globalAlpha = 1;
   });
   drawMarks(false);

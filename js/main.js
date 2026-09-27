@@ -9,7 +9,7 @@
 
 import { connectMidi } from './midi.js';
 import { QUALITY_ORDER, QUALITY_TEXT, QUALITY_NAME, DEGREES, NOTES, SCALES, WRITTEN_MIDDLE_C, degreeLabel, writtenPc } from './music.js';
-import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder,
+import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder, toggleHint,
          pauseScales, resumeScales, restartScales, scalesPaused } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { noteHTML } from './notation.js';
@@ -20,15 +20,15 @@ import { LEVELS, UNIT_TITLES, exercise as resolveExercise, customCells, matchLev
 import { getSummary } from './summary.js';
 import { sync, syncConfig, setSyncConfig, syncState } from './sync.js';
 import { renderHeatmap } from './heatmap.js';
-import { SCALE_LEVELS, SCALE_ORDER, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
+import { SCALE_LEVELS, GAME_SCALES, LANE_GAMES, levelsOf, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
 import { renderRangeMap, colour } from './rangemap.js';
 import { createTempoModel, tempoKey, pipText, pips } from './scaletempo.js';
 import { startLatency, stopLatency, latencyNote, measuring } from './latency.js';
-import { initAudio, loadTrio } from './audio.js';
+import { initAudio, loadTrio, playChord, playLine } from './audio.js';
 import { startPatterns, stopPatterns, patternNote, patternsRunning, patternHTML, esc,
          pausePatterns, resumePatterns, restartPatterns, patternsPaused } from './patterns.js';
 import { loadLibrary, savePattern, deletePattern, patternProgress, nearestOct, autoName, degreesText,
-         PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, MIN_NOTES, MAX_NOTES, patternGrid, runRate, SOLID } from './patternlib.js';
+         PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, MIN_NOTES, MAX_NOTES, patternGrid, runRate, SOLID, noteSemis } from './patternlib.js';
 
 // Settings (localStorage, all carried by the backup file).
 const CALIB_KEY = 'woodshed.calib';
@@ -76,12 +76,20 @@ let calib = load(CALIB_KEY) === null ? null : Number(load(CALIB_KEY));
 // Octave-aware calibration (E1): older calibrations only know the pitch
 // class, which the degree drill needs; scales need the octave too.
 let calibOffset = load(OFFSET_KEY) === null ? null : Number(load(OFFSET_KEY));
-const GAMES = ['degrees', 'scales', 'patterns'];
+const GAMES = ['degrees', 'scales', 'patterns', 'arpeggios'];
 let game = GAMES.includes(load(GAME_KEY)) ? load(GAME_KEY) : 'degrees';
-// Scales start on the first rung too (major, linear up).
-let scaleExerciseId = load(SCALE_EX_KEY) || SCALE_LEVELS[0].id;
-let scaleCustom = loadJSON(SCALE_CUSTOM_KEY, { scale: 'major', pattern: 'up', keys: [0] });
-const currentScaleExercise = () => resolveScaleExercise(scaleExerciseId, scaleCustom);
+// Scales and arpeggios (F1) run on the same engine, views and panes — "lane
+// games" — each with its own chosen level and custom pick.
+const isLane = g => LANE_GAMES.includes(g);
+const laneGame = () => (isLane(game) ? game : 'scales');
+const LANE_KEYS = {
+  scales: [SCALE_EX_KEY, SCALE_CUSTOM_KEY, { scale: 'major', pattern: 'up', keys: [0] }],
+  arpeggios: ['woodshed.arpExercise', 'woodshed.arpCustom', { scale: 'arp-7', pattern: 'arp', keys: [0] }],
+};
+// Each starts on its first rung (major linear up; the △ arpeggio).
+const laneEx = Object.fromEntries(LANE_GAMES.map(g => [g, load(LANE_KEYS[g][0]) || levelsOf(g)[0].id]));
+const laneCustom = Object.fromEntries(LANE_GAMES.map(g => [g, loadJSON(LANE_KEYS[g][1], LANE_KEYS[g][2])]));
+const currentScaleExercise = () => resolveScaleExercise(laneEx[laneGame()], laneCustom[laneGame()], laneGame());
 // Which level the range map shows (a level id) and how ('range' | 'degrees');
 // starts on the current exercise's level, then follows the picker.
 let mapLevel = null;
@@ -125,9 +133,10 @@ function showScaleIdle() {
   let next, how;
   if (mode === 'learn') {
     const first = learnOrder(ex.keys, keyModel, ex.scale, ex.pattern)[0];
-    next = `${NOTES[first]} major first — hardest keys first` +
+    // "C7" for an arpeggio, "C major" for a scale.
+    const name = k => (SCALES[ex.scale].chord ? `${NOTES[k]}${QUALITY_TEXT[SCALES[ex.scale].chord]}` : `${NOTES[k]} ${SCALES[ex.scale].name.toLowerCase()}`);
+    next = `${name(first)} first — hardest keys first` +
            (tempoAuto ? ` · ${tempoModel.start(tk(first))} bpm` : ` · ${fixedBpm} bpm`);
-    if (ex.scale !== 'major') next = next.replace('major', SCALES[ex.scale].name.toLowerCase());
     how = 'The whole run is laid out; a line sweeps across it in time — play along, nothing stops. ' +
           (tempoAuto ? 'A key repeats; clean runs raise its tempo, and after a step up the next key comes.'
                      : 'A key repeats until you tap Next key.');
@@ -139,7 +148,8 @@ function showScaleIdle() {
   }
   el.innerHTML = `<div class="label">${mode === 'learn' ? 'Learn' : 'Practice'} · next up</div>` +
     `<div class="big">${exName}</div><div class="what">${next}</div><div class="how">${how}</div>` +
-    '<div class="go">Press Start, then blow the first note of the run.</div>';
+    `<div class="go">Press Start, then blow ${PATTERNS[ex.pattern].rootOnly ? 'the root' : 'the first note of the run'}.` +
+    `${PATTERNS[ex.pattern].rootOnly && mode === 'learn' ? ' Stuck? Tap Hint to see the chord spelled out.' : ''}</div>`;
 }
 
 function recapHTML(r, ex, exName) {
@@ -173,7 +183,8 @@ const currentExercise = () => resolveExercise(exerciseId, custom, describe);
 // A view or pane shows when it's for this tab and (if game-specific) the
 // current game: each game has its own Play · Levels · Stats; ⚙ is shared.
 // data-for, not data-game: that attribute is reserved for the game buttons.
-const forGame = el => !el.dataset.for || el.dataset.for === game;
+// data-for may list several games ("scales arpeggios": one engine, one set of views).
+const forGame = el => !el.dataset.for || el.dataset.for.split(' ').includes(game);
 let currentTab = 'play';
 function showTab(tab) {
   currentTab = tab;
@@ -184,8 +195,8 @@ function showTab(tab) {
   $$('.view').forEach(v => { v.hidden = !(v.dataset.view === tab && forGame(v)); });
   if (game === 'degrees' && tab === 'levels') showLevels();
   if (game === 'degrees' && tab === 'stats') showStats();
-  if (game === 'scales' && tab === 'levels') showScaleLevels();
-  if (game === 'scales' && tab === 'stats') showScaleStats();
+  if (isLane(game) && tab === 'levels') showScaleLevels();
+  if (isLane(game) && tab === 'stats') showScaleStats();
   if (game === 'patterns' && tab === 'levels') showPatternLevels();
   if (game === 'patterns' && tab === 'stats') showPatternStats();
   if (tab === 'horn') showCount();
@@ -197,7 +208,7 @@ $$('button[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.
 function showHint() {
   if (calibrating) hintEl.textContent = 'Play middle C — the C in the third space of the staff.';
   else if (calib === null) hintEl.textContent = 'Not calibrated — tap Calibrate and play middle C.';
-  else if (game === 'scales' && calibOffset === null) hintEl.textContent = 'Recalibrate on middle C for scales — the octave matters.';
+  else if (isLane(game) && calibOffset === null) hintEl.textContent = `Recalibrate on middle C for ${game} — the octave matters.`;
   else hintEl.textContent = 'Calibrated · redo after changing the horn’s voice.';
   showHornWarn();
 }
@@ -208,7 +219,7 @@ function showHornWarn() {
   const el = $('#hornWarn');
   const problem = statusEl.dataset.state !== 'connected' ? 'Horn not connected'
     : calib === null ? 'Horn not calibrated'
-    : game === 'scales' && calibOffset === null ? 'Recalibrate on middle C for scales' : '';
+    : isLane(game) && calibOffset === null ? `Recalibrate on middle C for ${game}` : '';
   el.hidden = !problem;
   el.textContent = problem ? `● ${problem} — fix in ⚙ ›` : '';
 }
@@ -243,10 +254,10 @@ function showSettings() {
   $('#tempoMode').disabled = false;   // setEnabled above just locked it with the rest
   // An empty custom pick can't be played.
   startBtn.disabled = game === 'degrees' ? ex.cells.length === 0
-    : game === 'scales' ? sx.keys.length === 0 : !currentPattern();
+    : isLane(game) ? sx.keys.length === 0 : !currentPattern();
   if (game === 'patterns') showPatternSettings();
   showHint();
-  if (game === 'scales') showScaleIdle();
+  if (isLane(game)) showScaleIdle();
 }
 
 // Set when Start sent the player to ⚙ to calibrate: back to Play after.
@@ -344,7 +355,7 @@ function onRoundEnd(result) {
 startBtn.addEventListener('click', async () => {
   // Both games judge in written pitch, which needs calibration first;
   // scales also need the octave (a middle-C calibration).
-  if (calib === null || (game === 'scales' && calibOffset === null)) {
+  if (calib === null || (isLane(game) && calibOffset === null)) {
     showTab('horn');
     setCalibrating(true);
     backToPlay = true;
@@ -352,12 +363,12 @@ startBtn.addEventListener('click', async () => {
   }
   if (calibrating) setCalibrating(false);
   showRunning(true);
-  if (game === 'scales') {
+  if (isLane(game)) {
     // The weak-key model continues from the cached summary (A8): no history read.
     const model = createKeyModel((await getSummary()).keys || []);
     scaleRecap = null;
     $('#scaleIdle').hidden = true;
-    startScales({ exercise: currentScaleExercise(), mode, pick, model, latency,
+    startScales({ game, exercise: currentScaleExercise(), mode, pick, model, latency,
                   tempoAuto: autoActive(), tempo: tempoModel,
                   bpm: tempo.get(), misses, calib, calibOffset },
                 recap => { scaleRecap = recap; showRunning(false); loadTempo(); runSync(); });
@@ -402,7 +413,7 @@ stopBtn.addEventListener('click', () => {
 // --- Game switch and scale settings (E1) ---
 $$('button[data-game]').forEach(b => b.addEventListener('click', () => {
   game = b.dataset.game; save(GAME_KEY, game); showSettings();
-  if (game === 'scales') loadTempo();
+  if (isLane(game)) { mapLevel = null; loadTempo(); }
   if (game === 'patterns') loadPatternProgress();
   showTab(currentTab === 'horn' ? 'play' : currentTab);
 }));
@@ -411,7 +422,7 @@ $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Nu
 let fixedBpm = Math.max(60, Number(load(BPM_KEY)) || 80);
 // Min 60, as auto tempo's floor (boss: "the minimal tempo should be 60").
 const tempo = mountTempo($('#tempo'), { min: 60, value: fixedBpm,
-                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); if (game === 'scales') showScaleIdle(); } });
+                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); if (isLane(game)) showScaleIdle(); } });
 // Auto | Fixed: one small toggle under the bpm (a full-width row pushed the
 // exercise card off the pane at 390 px). Notes are always eighths.
 $('#tempo .bpm').insertAdjacentHTML('beforeend', '<button id="tempoMode" class="tmode"></button>');
@@ -433,6 +444,7 @@ calibBtn.addEventListener('click', () => setCalibrating(!calibrating));   // a s
 connectBtn.addEventListener('click', () => connectMidi(onNote, onStatus));
 $('#hornWarn').addEventListener('click', () => showTab('horn'));
 $('#scaleNext').addEventListener('click', nextKey);
+$('#scaleHint').addEventListener('click', toggleHint);
 $$('#scaleNudge [data-sn]').forEach(b => b.addEventListener('click', () => nudgeTempo(Number(b.dataset.sn))));
 
 // --- Levels (D6): the ladder on the stage, custom builder in the pane ---
@@ -512,9 +524,9 @@ $('#playLevel').addEventListener('click', () => showTab('play'));
 
 // --- Scale levels (E1 step 2): ladder on the stage, custom builder in the pane ---
 function selectScaleExercise(id) {
-  scaleExerciseId = id;
+  laneEx[laneGame()] = id;
   scaleRecap = null;
-  save(SCALE_EX_KEY, id);
+  save(LANE_KEYS[laneGame()][0], id);
   showSettings();
   showScaleLevels();
 }
@@ -524,16 +536,17 @@ function selectScaleExercise(id) {
 // tier of the tempo scale (60 72 84 96 112 126) the clean best has reached.
 async function showScaleLevels() {
   await loadTempo();                 // the cached summary may have been rebuilt
-  const pill = l => `<button class="lvl${l.id === scaleExerciseId ? ' active' : ''}" data-slevel="${l.id}">` +
+  const lg = laneGame();
+  const pill = l => `<button class="lvl${l.id === laneEx[lg] ? ' active' : ''}" data-slevel="${l.id}">` +
     `<b>${l.num}</b><span>${l.name}</span><i>${pipText(tempoModel.levelBest(l.scale, l.pattern))}</i></button>`;
   let h = '';
-  for (const sc of SCALE_ORDER) {
+  for (const sc of GAME_SCALES[lg]) {
     h += `<div class="tier">${SCALES[sc].name}</div><div class="lrow">` +
          SCALE_LEVELS.filter(l => l.scale === sc).map(pill).join('') + '</div>';
   }
-  const cx = resolveScaleExercise('custom', scaleCustom);
+  const cx = resolveScaleExercise('custom', laneCustom[lg], lg);
   h += `<div class="tier">Your own</div><div class="lrow">` +
-       `<button class="lvl${scaleExerciseId === 'custom' ? ' active' : ''}" data-slevel="custom">` +
+       `<button class="lvl${laneEx[lg] === 'custom' ? ' active' : ''}" data-slevel="custom">` +
        `<span>${cx.title} · ${cx.name.toLowerCase()} · ${cx.keysLabel}</span></button></div>`;
   $('#scaleLadder').innerHTML = h;
   $$('#scaleLadder [data-slevel]').forEach(b => b.addEventListener('click', () => selectScaleExercise(b.dataset.slevel)));
@@ -553,8 +566,13 @@ async function showScaleLevels() {
 // keeps its chips as tapped (an empty pick must not forget the scale).
 function showScaleCustom() {
   const ex = currentScaleExercise();
+  const lg = laneGame();
   const sets = { scale: ex.scale, pattern: ex.pattern, keys: ex.keys };
-  $$('[data-cs]').forEach(b => b.classList.toggle('active', b.dataset.cs === sets.scale));
+  // The game's scales (major / pentatonic, or the four chords), and for
+  // scales its patterns — an arpeggio has the one.
+  $('#customScales').innerHTML = GAME_SCALES[lg].map(sc =>
+    `<button data-cs="${sc}" class="${sc === sets.scale ? 'active' : ''}">${SCALES[sc].chord ? QUALITY_TEXT[SCALES[sc].chord] : SCALES[sc].name}</button>`).join('');
+  $('#customPatterns').hidden = lg === 'arpeggios';
   $('#customPatterns').innerHTML = PATTERN_ORDER.map(p =>
     `<button data-cp="${p}" class="${p === sets.pattern ? 'active' : ''}">${PATTERNS[p].chip}</button>`).join('');
   $('#customKeys').innerHTML = NOTES.map((n, k) =>
@@ -563,7 +581,7 @@ function showScaleCustom() {
   $('#scaleCustomHint').textContent = n ? `${SCALES[sets.scale].name}, ${PATTERNS[sets.pattern].name.toLowerCase()}, in ${n} key${n === 1 ? '' : 's'}` : 'Pick at least one key.';
   const change = next => {
     const level = matchScaleLevel(next.scale, next.pattern, next.keys);
-    if (!level) { scaleCustom = next; save(SCALE_CUSTOM_KEY, JSON.stringify(scaleCustom)); }
+    if (!level) { laneCustom[lg] = next; save(LANE_KEYS[lg][1], JSON.stringify(next)); }
     selectScaleExercise(level ? level.id : 'custom');
   };
   $$('[data-cs]').forEach(b => { b.onclick = () => change({ ...sets, scale: b.dataset.cs }); });
@@ -614,7 +632,6 @@ function drawRangeMap() {
   $('#sstatBest').textContent = best ? `${best} bpm` : '–';
 }
 // The picker lists every level: "S3 · Major · Thirds up · ascending".
-$('#mapLevel').innerHTML = SCALE_LEVELS.map(l => `<option value="${l.id}">${l.num} · ${l.title} · ${l.name}</option>`).join('');
 $('#mapLevel').addEventListener('change', e => { mapLevel = e.target.value; rangeSelected = null; drawRangeMap(); });
 $$('[data-mv]').forEach(b => b.addEventListener('click', () => { mapView = b.dataset.mv; rangeSelected = null; drawRangeMap(); }));
 $('#rangemap').addEventListener('click', e => {
@@ -627,11 +644,14 @@ $('#rangemap').addEventListener('click', e => {
 async function showScaleStats() {
   // First visit: the level being played (a custom pick maps to the level
   // with its scale × pattern, if the ladder has one).
-  if (!mapLevel) {
+  // The picker lists this game's levels: "S3 · Major · Thirds up · ascending", "A2 · Dominant 7 · …".
+  const levels = levelsOf(laneGame());
+  $('#mapLevel').innerHTML = levels.map(l => `<option value="${l.id}">${l.num} · ${l.title} · ${l.name}</option>`).join('');
+  if (!levels.some(l => l.id === mapLevel)) {
     const ex = currentScaleExercise();
-    mapLevel = (SCALE_LEVELS.find(l => l.scale === ex.scale && l.pattern === ex.pattern) || SCALE_LEVELS[0]).id;
+    mapLevel = (levels.find(l => l.scale === ex.scale && l.pattern === ex.pattern) || levels[0]).id;
   }
-  scaleEvents = (await allEvents()).filter(e => e.game === 'scales' && e.expected && !e.falseStart);
+  scaleEvents = (await allEvents()).filter(e => e.game === game && e.expected && !e.falseStart);
   await loadTempo();
   drawRangeMap();
 }
@@ -687,7 +707,7 @@ async function runSync() {
   showSyncStatus(res);
   // A fresh install got its settings back: reload so they take effect.
   if (res.settingsRestored) location.reload();
-  if (res.added && game === 'scales') loadTempo();     // runs from elsewhere move the staircases
+  if (res.added && isLane(game)) loadTempo();     // runs from elsewhere move the staircases
   if (res.added && !$('#view-stats').hidden) showStats();
   if (res.added && !$('#view-pattern-stats').hidden) showPatternStats();
   else if (res.added && !$('#view-scale-stats').hidden) showScaleStats();
@@ -805,6 +825,7 @@ function showEditor() {
   $('#pHint').textContent = n < MIN_NOTES ? `At least ${MIN_NOTES} notes. Each new note goes to the nearest octave; ↑ ↓ move the selected one.`
     : `${n} notes, a note a beat — at 240 bpm, ${(n / 4).toFixed(n % 4 ? 1 : 0)} s a chord.${draft.id ? ' Editing' : ' New'}${n >= MAX_NOTES ? ' · full' : ''}`;
   $('#pSave').disabled = n < MIN_NOTES;
+  $('#pHear').disabled = !n;
 }
 
 $('#pKeys').addEventListener('click', e => {
@@ -835,6 +856,16 @@ $('#pDel').addEventListener('click', () => {
 $$('[data-pq]').forEach(b => b.addEventListener('click', () => { draft.quality = b.dataset.pq; showEditor(); }));
 $('#pName').addEventListener('input', e => { draft.name = e.target.value; });
 $('#pNew').addEventListener('click', () => { editDraft(null); draft.notes = []; draft.sel = -1; showEditor(); });
+// Hear the draft (boss, 2026-09-27: "key doesn't matter, just to hear how
+// it sounds"): over a C chord of its quality, the line a note a beat at
+// 150 bpm, its root at middle C (concert), so the octaves are as drawn.
+const HEAR_BEAT = 0.4;
+$('#pHear').addEventListener('click', () => {
+  if (!draft.notes.length) return;
+  initAudio();
+  playChord(0, draft.quality, draft.notes.length * HEAR_BEAT + 0.4);
+  playLine(draft.notes.map(n => 60 + noteSemis(draft.quality, n)), HEAR_BEAT);
+});
 $('#pSave').addEventListener('click', async () => {
   // Changing the notes of a pattern that has runs makes a new pattern.
   const played = !!draft.id && (await allEvents()).some(e => e.game === 'patterns' && e.patternId === draft.id);
@@ -1005,7 +1036,7 @@ showHint();
 showSettings();
 showTab('play');   // applies the stage for the remembered game
 showSyncStatus();
-if (game === 'scales') loadTempo();   // the auto-tempo staircases, from the cached summary
+if (isLane(game)) loadTempo();   // the auto-tempo staircases, from the cached summary
 if (game === 'patterns') loadPatternProgress();
 connectMidi(onNote, onStatus);
 runSync();   // pull anything new, push anything pending (A9)

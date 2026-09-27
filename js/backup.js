@@ -17,7 +17,7 @@ export const FORMAT = 1;
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
                   'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.patternSel', 'woodshed.patternEx', 'woodshed.patternBpm', 'woodshed.patternBacking', 'woodshed.patterns', 'woodshed.scaleExercise',
-                  'woodshed.scaleCustom', 'woodshed.bpm', 'woodshed.misses', 'woodshed.syncRepo'];
+                  'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses', 'woodshed.syncRepo'];
 
 // Identity of an event across devices: one question = one appearance time
 // within one round. IndexedDB's own ids differ per device, so aren't used.

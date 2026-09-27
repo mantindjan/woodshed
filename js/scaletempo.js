@@ -47,7 +47,7 @@
 // Rebuildable from events: runs carry `tempoAuto: true` and their bpm, and
 // the model replays them in order (summary.js).
 
-import { runPattern } from './scalelevels.js';
+import { runPattern, LANE_GAMES } from './scalelevels.js';
 
 // The boss's tempo scale, eighths throughout ("a good tempo scale in general").
 export const TIERS = [60, 72, 84, 96, 112, 126];
@@ -105,7 +105,7 @@ export function createTempoModel(initial = []) {
   const model = {
     stats,
     add(e) {
-      if (e.game !== 'scales' || !e.tempoAuto || !e.expected || e.falseStart) return;
+      if (!LANE_GAMES.includes(e.game) || !e.tempoAuto || !e.expected || e.falseStart) return;
       const k = tempoKey(e.scale, runPattern(e), e.keyWritten);
       const st = stats.get(k) || { next: e.bpm, streak: 0, dir: 0, reversals: [], best: 0, round: null, placing: true };
       if (st.round !== e.round) { st.round = e.round; st.streak = 0; }   // a new session

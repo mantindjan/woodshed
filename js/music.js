@@ -79,6 +79,12 @@ export const concertPc = (written, calib) => pc(written + calib);
 export const SCALES = {
   major: { name: 'Major', steps: [0, 2, 4, 5, 7, 9, 11], degrees: ['1', '2', '3', '4', '5', '6', '7'] },
   penta: { name: 'Pentatonic', steps: [0, 2, 4, 7, 9], degrees: ['1', '2', '3', '5', '6'] },
+  // Arpeggios (F1): the chord tones as a "scale", so the scales runner can
+  // play them; `chord` names the quality for the chord symbol.
+  'arp-maj7': { name: 'Major 7', chord: 'maj7', steps: [0, 4, 7, 11], degrees: ['1', '3', '5', '7'] },
+  'arp-7': { name: 'Dominant 7', chord: '7', steps: [0, 4, 7, 10], degrees: ['1', '3', '5', '7'] },
+  'arp-m7': { name: 'Minor 7', chord: 'm7', steps: [0, 3, 7, 10], degrees: ['1', '3', '5', '7'] },
+  'arp-m7b5': { name: 'Half-diminished', chord: 'm7b5', steps: [0, 3, 6, 10], degrees: ['1', '3', '5', '7'] },
 };
 
 // The saxophone's written range, low B♭ to high F♯ (MIDI numbers of the

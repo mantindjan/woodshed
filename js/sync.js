@@ -27,7 +27,7 @@ const STATE_KEY = 'woodshed.syncState';
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
                   'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.patternSel', 'woodshed.patternEx', 'woodshed.patternBpm', 'woodshed.patternBacking', 'woodshed.scaleExercise',
-                  'woodshed.scaleCustom', 'woodshed.bpm', 'woodshed.misses'];
+                  'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses'];
 const SETTINGS_PATH = 'settings.json';
 // The pattern library (P game): the boss's own creations, kept apart from
 // the runs and from settings, as readable JSON (one object per pattern).
