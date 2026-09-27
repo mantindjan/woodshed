@@ -7,9 +7,13 @@
 // Played notes leave marks behind the line — gold right, red wrong.
 // The pattern itself, heights included, is always shown at the top.
 //
-// A run = the exercise's keys in order (patternlib.js EXERCISES), the
-// pattern `reps` times on each chord, a note a beat, after a
-// one-bar count-in. Start goes straight into the count-in: nothing to blow.
+// A ROUND = the exercise's keys in order (patternlib.js EXERCISES; a fresh
+// shuffle each round for 'random'), the pattern `reps` times on each chord,
+// a note a beat. Start goes straight into a 4-beat count-in (nothing to
+// blow), then rounds follow each other SEAMLESSLY until Stop — the next
+// round is added before the current one ends, like a play-along on repeat
+// (boss, 2026-09-26: "it should go on and repeat"). Each round is scored
+// and logged on its own once its last note is judged.
 //
 // Judging: a note is HIT if it's the right degree of that bar's chord, on
 // time (±150 ms, narrowed at fast tempos), with the pattern's heights
@@ -26,7 +30,7 @@ import { chordHTML } from './notation.js';
 import { initAudio, click, audioTimeAt, stopAll, swingAt, bassNote, kitHit, compChord } from './audio.js';
 import { walk, comp, spansOf, rootLine } from './trio.js';
 import { addEvent, requestPersistence } from './events.js';
-import { EXERCISES, STAGES, SOLID, noteSemis } from './patternlib.js';
+import { EXERCISES, STAGES, SOLID, noteSemis, exerciseKeys } from './patternlib.js';
 
 const MAX_WINDOW_MS = 150;
 const BEATS = 4;                 // the count-in (and the drums' phrase)
@@ -36,7 +40,7 @@ const BEATS = 4;                 // the count-in (and the drums' phrase)
 // mastered at ~4 notes a second = 240 bpm, where a 4-note pattern ×1
 // changes chord every second; learnt slower (70–100). Runs record
 // `cellBeats` (= the pattern's length; a v2 run from before said 2 or 1).
-const NEXT_MS = 3000;            // tally on screen before the next run
+const NEXT_MS = 3000;            // a round's tally stays up this long while the music goes on
 // Sound is queued this far ahead, as the run goes (a look-ahead scheduler).
 // Queuing the whole run at Start — 12 chords × 7 voices with their filters,
 // plus every click — piled up in the audio graph and played choppy on the
@@ -57,12 +61,13 @@ export const patternsRunning = () => s !== null;
 // The timeline of a run, pure (tests use it): count-in bar from `t0`, then
 // for each key, `reps` cells. Each expected note: {t, cell, j, key, deg,
 // semis (above the root, heights included), pc (written pitch class)}.
-export function buildRun(pattern, exerciseId, reps, bpm, t0) {
+// `keys`: an exercise id (its fixed path) or the round's keys.
+export function buildRun(pattern, keys, reps, bpm, t0) {
   const beat = 60000 / bpm;
   const n = pattern.notes.length;
   const slot = beat;                  // a note a beat
   const cellBeats = n;
-  const keys = EXERCISES[exerciseId].keys;
+  if (!Array.isArray(keys)) keys = EXERCISES[keys].keys;
   const first = t0 + BEATS * beat;
   const expected = [];
   const chords = [];
@@ -111,14 +116,14 @@ export function startPatterns(opts, onEnd) {
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
   s = { ...opts, onEnd, session: Date.now().toString(36), timers: [], streak: 0, run: null };
   showPattern(opts.pattern);
-  nextRun();
+  startStream();
   resize();
   raf = requestAnimationFrame(frame);
 }
 
-// Pause / restart, as in scales: a run under way is dropped unlogged and
-// the stage freezes; resume or restart plays the run again from its
-// count-in (same pattern, path and stage).
+// Pause / restart, as in scales: the round under way is dropped unlogged
+// and the stage freezes; resume or restart starts again from a count-in
+// (same pattern, path and stage).
 export const patternsPaused = () => !!s?.paused;
 function halt() {
   s.timers.forEach(clearTimeout);
@@ -135,13 +140,13 @@ export function pausePatterns() {
 export function resumePatterns() {
   if (!s?.paused) return;
   s.paused = false;
-  nextRun();
+  startStream();
 }
 export function restartPatterns() {
   if (!s) return;
   halt();
   s.paused = false;
-  nextRun();
+  startStream();
 }
 
 export function stopPatterns() {
@@ -162,33 +167,55 @@ export function stopPatterns() {
 
 const reps = () => (s.mode === 'learn' ? STAGES[s.stage] : 1);
 
-// A run: count-in from now; its sound is queued as it goes (schedule()).
-function nextRun() {
+// A stream: a count-in from now, then rounds added as it goes (appendRound)
+// and sound queued ahead (schedule). One `run` object holds it all: the
+// expected notes, chords and band parts of every round so far.
+function startStream() {
   const now = performance.now();
-  const r = buildRun(s.pattern, s.exercise, reps(), s.bpm, now + 300);
-  r.t0 = now + 300;
-  r.anchors = new Map();
-  r.notes = [];
-  r.phase = 'running';
-  s.run = r;
-  r.beats = Math.round((r.end - r.t0) / r.beat);
-  r.nextBeat = 0;                     // look-ahead: the next beat / bass note / comp hit not yet queued
-  // The trio's parts for this run (a chord held a bar walks the bar).
-  const spans = spansOf(r.chords.map(c => ({ key: c.key, beats: c.beats })), s.pattern.quality, s.calib);
-  // Backing (boss, 2026-09-26): 'band' = the trio; 'root' = drums + the
-  // root at each pattern, nothing else; 'click' = the metronome alone.
-  r.bass = s.backing === 'band' ? walk(spans) : s.backing === 'root' ? rootLine(r.chords, s.calib, r.n) : [];
-  // Root: the Rhodes plays the root too, two octaves up and three — the bass
-  // alone was felt more than heard on the phone (boss); still no 3rd or 5th.
-  r.comp = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0))
-    : s.backing === 'root' ? r.bass.map(n => ({ beat: n.beat, len: n.len, midis: [n.midi + 24, n.midi + 36] })) : [];
-  r.bassAt = 0;
-  r.compAt = 0;
+  const beat = 60000 / s.bpm;
+  const t0 = now + 300;
+  s.run = { t0, beat, n: s.pattern.notes.length, window: Math.min(MAX_WINDOW_MS, beat * 0.45),
+            expected: [], chords: [], bass: [], comp: [], rounds: [], anchors: new Map(), notes: [],
+            phase: 'running', cells: 0, end: t0 + BEATS * beat, beats: BEATS,
+            nextBeat: 0, bassAt: 0, compAt: 0, chordEls: [] };
+  clearChords();
+  appendRound();
   schedule(now);
-  buildChords(r);
   message('');
-  $('#pTitle').textContent = `${EXERCISES[s.exercise].name} · ×${reps()}`;
   $('#pInfo').textContent = `${s.bpm} bpm`;
+}
+
+// Add the next round at the end of the stream: its notes, chords, and the
+// band's parts for it (beats counted from the stream's first beat after
+// the count-in). Called when the stream's end comes within reach.
+function appendRound() {
+  const r = s.run;
+  const keys = exerciseKeys(s.exercise, r.chords.length ? r.chords[r.chords.length - 1].key : null);
+  const n = reps();
+  const part = buildRun(s.pattern, keys, n, s.bpm, r.end - BEATS * r.beat);
+  const round = { keys, reps: n, start: r.end, end: part.end, from: r.expected.length, to: r.expected.length + part.expected.length, logged: false };
+  for (const e of part.expected) e.cell += r.cells;
+  r.cells += keys.length * n;
+  r.expected.push(...part.expected);
+  r.chords.push(...part.chords);
+  // The band, for this round's chords (a chord held a bar walks the bar).
+  const off = Math.round((round.start - (r.t0 + BEATS * r.beat)) / r.beat);
+  const spans = spansOf(part.chords.map(c => ({ key: c.key, beats: c.beats })), s.pattern.quality, s.calib);
+  const shift = xs => xs.map(x => ({ ...x, beat: x.beat + off }));
+  // Backing (boss, 2026-09-26): 'band' = the trio; 'root' = drums + the root
+  // on the bass, doubled by the Rhodes two and three octaves up (the bass
+  // alone was felt more than heard on the phone) — never a 3rd or 5th;
+  // 'click' = the metronome alone.
+  const bass = s.backing === 'band' ? walk(spans) : s.backing === 'root' ? rootLine(part.chords, s.calib, r.n) : [];
+  const comping = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0))
+    : s.backing === 'root' ? bass.map(b => ({ beat: b.beat, len: b.len, midis: [b.midi + 24, b.midi + 36] })) : [];
+  r.bass.push(...shift(bass));
+  r.comp.push(...shift(comping));
+  r.end = part.end;
+  r.beats = Math.round((r.end - r.t0) / r.beat);
+  r.rounds.push(round);
+  addChords(part.chords);
+  if (r.rounds.length === 1) $('#pTitle').textContent = `${EXERCISES[s.exercise].name} · ×${n}`;
 }
 
 // Queue what sounds within LOOKAHEAD_MS. The count-in bar is clicks (so
@@ -196,7 +223,7 @@ function nextRun() {
 // pick by ear, docs/trio/): the jazz kit — ride on the beats and the swung
 // and of 2 and 4, hi-hat foot on 2 and 4, a feathered kick, snare ghosts
 // and a push before each 4-bar phrase — the walking bass and the Rhodes
-// comping, both worked out for the run in nextRun (trio.js). Levels are
+// comping, both worked out per round in appendRound (trio.js). Levels are
 // the prototype's. Beats are counted from bar one; T() gives page time,
 // swung on the upbeats.
 function schedule(now) {
@@ -206,6 +233,8 @@ function schedule(now) {
   const T = b => first + (Math.floor(b) + (b % 1 ? swing : 0)) * r.beat;
   const jit = ms => Math.random() * ms;                          // a band isn't a grid
   const horizon = now + LOOKAHEAD_MS;
+  // The next round is added a second before the look-ahead would need it.
+  if (r.end < horizon + 1000) appendRound();
   while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < horizon) {
     const b = r.nextBeat;
     if (b < BEATS) click(audioTimeAt(r.t0 + b * r.beat), b === 0);
@@ -250,66 +279,81 @@ export function patternNote(midi) {
   if (e?.status === 'hit') e.hitAt = arrived;
 }
 
-// Frames: close windows that have passed (in played time), and the end.
+// Frames: close windows that have passed (in played time); score each
+// round once its last note is judged.
 function expire(now) {
   const r = s.run;
   if (r.phase !== 'running') return;
+  const played = now - s.latency;
   for (const e of r.expected) {
-    if (e.status === 'pending' && now - s.latency > e.t + r.window) e.status = e.wrongAt ? 'wrong' : 'miss';
+    if (e.status === 'pending' && played > e.t + r.window) e.status = e.wrongAt ? 'wrong' : 'miss';
   }
-  if (now - s.latency > r.end && r.expected.every(e => e.status !== 'pending')) endRun();
+  for (const round of r.rounds) {
+    if (!round.logged && played > round.end + r.window) {
+      round.logged = true;
+      scoreRound(round);
+    }
+  }
 }
 
-function endRun() {
+// Log a round as one event and show its tally while the music goes on.
+// Learn: two solid rounds in a row move to the next stage — from the round
+// after the one already queued.
+function scoreRound(round) {
   const r = s.run;
-  r.phase = 'summary';
-  stopAll();
-  const hits = r.expected.filter(e => e.status === 'hit').length;
-  const rate = hits / r.expected.length;
-  const offs = r.expected.filter(e => e.status === 'hit').map(e => e.off);
+  const exp = r.expected.slice(round.from, round.to);
+  const hits = exp.filter(e => e.status === 'hit').length;
+  const rate = hits / exp.length;
+  const offs = exp.filter(e => e.status === 'hit').map(e => e.off);
   const p = s.pattern;
+  // Times as for a run of its own: from a (virtual) count-in 4 beats
+  // before its first note.
+  const base = round.start - BEATS * r.beat;
   addEvent({
     v: SCHEMA_VERSION,
-    t: Date.now() - Math.round(performance.now() - r.t0),    // wall clock of the count-in
+    t: Date.now() - Math.round(performance.now() - base),    // wall clock of the round's count-in
     round: s.session,
     game: 'patterns',
     mode: s.mode,
     patternId: p.id,
     pattern: { name: p.name, quality: p.quality, notes: p.notes },   // snapshot: history outlives edits
     exercise: s.exercise,
-    reps: reps(),
+    reps: round.reps,
     backing: s.backing,               // 'band' | 'root' | 'click'
-    cellBeats: s.pattern.notes.length,   // beats per cell: a note a beat (v1 runs: 4, a cell per bar)
-    keys: EXERCISES[s.exercise].keys,                          // written roots, in order
+    cellBeats: p.notes.length,        // beats per cell: a note a beat (v1 runs: 4, a cell per bar)
+    keys: round.keys,                 // written roots, in order (a shuffle for 'random')
     bpm: s.bpm,
     latency: s.latency,
     calib: s.calib,
     calibOffset: s.calibOffset,
     // Each expected note: [written root pc, degree, semitones above the root
-    // (heights), ms after the count-in's first click, status, timing offset ms].
-    expected: r.expected.map(e => [e.key, e.deg, e.semis, Math.round(e.t - r.t0), e.status, e.off]),
-    notes: r.notes,                                            // every note-on: [raw MIDI, ms]
+    // (heights), ms after the round's count-in, status, timing offset ms].
+    expected: exp.map(e => [e.key, e.deg, e.semis, Math.round(e.t - base), e.status, e.off]),
+    // Every note-on during the round: [raw MIDI, ms after its count-in].
+    notes: r.notes.map(([m, ms]) => [m, Math.round(r.t0 + ms - base)])
+      .filter(([, ms]) => ms >= BEATS * r.beat - r.window && ms <= round.end - base + r.window),
   });
-  // Learn: two solid runs in a row move to the next stage.
   let note = '';
   if (s.mode === 'learn') {
     s.streak = rate >= SOLID ? s.streak + 1 : 0;
     if (s.streak >= 2 && s.stage < STAGES.length - 1) {
       s.stage++;
       s.streak = 0;
-      note = `<br>Solid twice — now <b>×${STAGES[s.stage]}</b> on each chord`;
+      note = `<br>Solid twice — <b>×${STAGES[s.stage]}</b> on each chord from the next round`;
     } else if (s.streak >= 2) {
       note = '<br><b>Learnt</b> — solid ×1 round the cycle. Time for Practice.';
     } else if (rate >= SOLID) {
-      note = `<br><small>solid ${s.streak} of 2 at ×${reps()}</small>`;
+      note = `<br><small>solid ${s.streak} of 2 at ×${round.reps}</small>`;
     }
   } else if (rate >= SOLID) {
-    note = `<br><b>${EXERCISES[s.exercise].name}</b> done — solid.`;
+    note = `<br><b>${EXERCISES[s.exercise].name}</b> — solid.`;
   }
   const mean = offs.length ? Math.round(offs.reduce((a, b) => a + b, 0) / offs.length) : null;
   const drift = mean === null || Math.abs(mean) <= 15 ? '' : mean > 0 ? ` · ${mean} ms late on average` : ` · ${-mean} ms early on average`;
-  message(`<b>${hits} / ${r.expected.length} right</b>${drift}${note}`);
-  s.timers.push(setTimeout(() => { if (s) nextRun(); }, NEXT_MS));
+  const html = `<b>${hits} / ${exp.length} right</b>${drift}${note}`;
+  message(html);
+  $('#pTitle').textContent = `${EXERCISES[s.exercise].name} · ×${reps()}`;
+  s.timers.push(setTimeout(() => { if (s && !s.paused && $('#pMsg').innerHTML === html) message(''); }, NEXT_MS));
 }
 
 function message(html) {
@@ -338,10 +382,11 @@ function showPattern(p) {
 }
 
 // --- Chord symbols: HTML over the canvas (Real Book notation) ---
-function buildChords(r) {
+// Added round by round as the stream grows.
+function addChords(chords) {
   const box = $('#pChords');
-  box.innerHTML = r.chords.map(c => `<div class="pchord">${chordHTML(c.key, s.pattern.quality)}</div>`).join('');
-  r.chordEls = [...box.children];
+  box.insertAdjacentHTML('beforeend', chords.map(c => `<div class="pchord">${chordHTML(c.key, s.pattern.quality)}</div>`).join(''));
+  s.run.chordEls = [...box.children];
 }
 function clearChords() { $('#pChords').innerHTML = ''; }
 

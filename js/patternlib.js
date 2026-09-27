@@ -95,8 +95,23 @@ export const EXERCISES = {
   wholeDown: { name: 'Whole steps down', keys: [...cycle(0, -2, 6), ...cycle(11, -2, 6)] },
   wholeUp: { name: 'Whole steps up', keys: [...cycle(0, 2, 6), ...cycle(1, 2, 6)] },
   minor3Down: { name: 'Minor 3rds down', keys: [...cycle(0, -3, 4), ...cycle(11, -3, 4), ...cycle(10, -3, 4)] },
+  // Random roots (boss, 2026-09-26): a fresh shuffle of the 12 every round
+  // (exerciseKeys), never starting on the key the last round ended on. The
+  // quality stays the pattern's — a dominant pattern wants a dominant chord.
+  random: { name: 'Random keys', keys: cycle(0, 1, 12), random: true },
 };
-export const PRACTICE_EXERCISES = ['chromDown', 'chromUp', 'wholeDown', 'wholeUp', 'minor3Down'];
+export const PRACTICE_EXERCISES = ['chromDown', 'chromUp', 'wholeDown', 'wholeUp', 'minor3Down', 'random'];
+
+// The keys of one round of an exercise: its fixed path, or for 'random' a
+// shuffle whose first key isn't `prevLast`.
+export function exerciseKeys(id, prevLast = null, rnd = Math.random) {
+  const ex = EXERCISES[id];
+  if (!ex.random) return ex.keys;
+  const keys = [...ex.keys];
+  for (let i = keys.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [keys[i], keys[j]] = [keys[j], keys[i]]; }
+  if (keys[0] === prevLast) [keys[0], keys[keys.length - 1]] = [keys[keys.length - 1], keys[0]];
+  return keys;
+}
 export const STAGES = [4, 2, 1];          // learn: times on each chord
 
 // --- Stats: key × note of the pattern ---
