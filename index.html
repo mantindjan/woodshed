@@ -298,7 +298,9 @@
   #scaleHint { padding: 3px 10px; font-size: 12px; color: var(--dim); }
   #scaleHint.active { color: #1a1206; background: var(--brass); border-color: var(--brass); }
   #scaleHint[hidden] { display: none; }
-  #scalePattern.hinted { color: #ffe2a8; font-weight: 700; font-size: 15px; }   /* the chord spelled out */
+  /* The chord spelled out: a cool blue against the gold chord symbol, so
+     the two don't read as one (boss, 2026-09-27). */
+  #scalePattern.hinted { color: #9fd8ff; font-weight: 700; font-size: 15px; margin-left: 6px; }
   /* Auto tempo: overrule this key's tempo from the stage. */
   #scaleNudge button { padding: 2px 7px; font-size: 11px; color: var(--brass); margin-right: 3px; }
   #scaleNudge[hidden] { display: none; }

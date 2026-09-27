@@ -282,7 +282,7 @@ function what(k) {
 }
 
 // The hint (arpeggios, learn — boss 2026-09-27): hidden by default; a tap
-// shows the chord spelled out ("C E G B♭", 1 3 5 7 in order) and the
+// shows the chord spelled out ("C — E — G — B♭", 1 3 5 7 in order) and the
 // note names under the discs, a second tap or the next run hides it.
 export function toggleHint() { if (s?.run) showHint(!s.showHint); }
 function showHint(on) {
@@ -292,10 +292,12 @@ function showHint(on) {
   $('#scaleHint').classList.toggle('active', on);
   topBar();                           // the spelling goes in the top bar, beside the chord
 }
-// "C E G B♭" — the run's chord tones, 1 3 5 7 in order. Just the notes:
-// anything longer was cut off beside the chord at 844 px, and the discs
-// carry the degrees (and, with the hint on, the names).
-const spelled = k => SCALES[s.scale].steps.map(st => NOTES[pc(k + st)]).join(' ');
+// "C — E — G — B♭" — the run's chord tones, 1 3 5 7 in order. Just the
+// notes: anything longer was cut off beside the chord at 844 px, and the
+// discs carry the degrees (and, with the hint on, the names). Em dashes, as
+// spaces alone ran the notes together (boss, 2026-09-27); thin spaces
+// round them, or F♯△'s spelling touched Next key.
+const spelled = k => SCALES[s.scale].steps.map(st => NOTES[pc(k + st)]).join('\u2009—\u2009');
 
 // The key stays on screen the whole run, big (boss: the 2-second message
 // was easy to forget); the pattern sits next to it.
