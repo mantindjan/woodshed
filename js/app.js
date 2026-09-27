@@ -31,7 +31,7 @@ export const OFFSET_KEY = 'woodshed.calibOffset';   // horn MIDI − written, fr
 export const GAME_KEY = 'woodshed.game';
 export const MODE_KEY = 'woodshed.mode';            // learn | practice, one setting for every game
 export const PICK_KEY = 'woodshed.pick';            // weak | random: degrees' questions, lanes' keys
-export const LATENCY_KEY = 'woodshed.latency';      // ms, measured in ⚙ (latency.js); absent = 0
+export const LATENCY_KEY = 'woodshed.inputLatency'; // ms, measured in ⚙ (latency.js); absent = 0
 
 export const GAMES = ['degrees', 'scales', 'cells', 'arpeggios'];
 

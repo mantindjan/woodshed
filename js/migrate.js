@@ -7,6 +7,11 @@
 // the library `woodshed.patterns` → `woodshed.cells`; sync files
 // `patterns/<day>.json` → `cells/<day>.json`, `patterns.json` → `cells.json`.
 //
+// 2026-09-27 — clicks are scheduled to be heard on time (audio.js
+// audioTimeAt): a latency measured before (`woodshed.latency`) included the
+// phone's output delay and would now judge every note early — dropped, not
+// renamed; measured again it's `woodshed.inputLatency`.
+//
 // 2026-09-27 — the six one-way scale patterns became three there-and-back
 // ones (scalelevels.js OLD_PATTERNS): the chosen level
 // (`woodshed.scaleExercise`, 'major-3up-asc' → 'major-3up') and a custom
@@ -72,6 +77,7 @@ export async function migrateLocal() {
       localStorage.removeItem(from);
       moved = true;
     }
+    localStorage.removeItem('woodshed.latency');   // measured with the old click timing
     for (const k of ['woodshed.game', 'woodshed.scaleExercise', 'woodshed.scaleCustom']) {
       const v = localStorage.getItem(k);
       if (v !== null && settingValue(k, v) !== v) localStorage.setItem(k, settingValue(k, v));

@@ -440,6 +440,7 @@ function startRun(w, now, midi) {
                                       t: now + beat * (COUNT_IN + 1) + step * j, status: 'pending', off: null, hitAt: null }));
   const beats = COUNT_IN + Math.ceil(run.length / PER_BEAT);
   for (let b = 1; b <= beats; b++) click(audioTimeAt(now + beat * b), b === 1);
+  r.clicks = beats;
   r.phase = 'countin';
   message('');
   s.timers.push(setTimeout(() => { if (s?.run === r) r.phase = 'running'; },
@@ -691,6 +692,11 @@ function bloom(g, x, y, rad, acc, age) {
   g.restore();
 }
 
+// Where click b (1 = the first of the count-in) falls, in note slots from
+// the run's first note: notes start on click COUNT_IN + 1, PER_BEAT a click.
+const clickSlot = b => (b - COUNT_IN - 1) * PER_BEAT;
+const BEAT_LINE = 'rgba(255,255,255,.09)';
+
 // The camera's scale position at fractional slot `pos`: between the
 // tracks of the notes either side (held at the ends).
 function cameraAt(r, pos) {
@@ -722,6 +728,14 @@ function draw(r) {
   // the old spacing made the thirds look flat).
   const pxBeat = Math.min(120, W * 0.2);
   const stepPx = Math.min(38, H / 8.5);
+  // Ghost lines on the clicks (boss, 2026-09-27: "where do the beats
+  // fall?"): count-in and run alike, scrolling with the discs.
+  g.strokeStyle = BEAT_LINE; g.lineWidth = 1;
+  for (let b = 1; b <= r.clicks; b++) {
+    const x = nowX + (clickSlot(b) - pos) * pxBeat;
+    if (x < 0 || x > W) continue;
+    g.beginPath(); g.moveTo(x, 12); g.lineTo(x, H - 12); g.stroke();
+  }
   g.textAlign = 'center'; g.textBaseline = 'middle';
   r.expected.forEach((e, i) => {
     const d = i - pos;                        // note slots until this note
@@ -865,6 +879,12 @@ function drawSheet(g, r, W, H) {
     g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 4, y); g.lineTo(x, y + 5); g.lineTo(x - 4, y); g.closePath(); g.fill();
   });
   drawMarks(true);
+  // Ghost lines on the clicks: through every note that falls on one.
+  g.strokeStyle = BEAT_LINE; g.lineWidth = 1;
+  for (let j = 0; j < r.expected.length; j += PER_BEAT) {
+    const { x, band } = sheetPoint(L, j, 0);
+    g.beginPath(); g.moveTo(x, band.cy - L.bandH / 2 + 4); g.lineTo(x, band.cy + L.bandH / 2 - 4); g.stroke();
+  }
   g.textAlign = 'center'; g.textBaseline = 'middle';
   r.expected.forEach((e, j) => {
     const { x, y } = sheetPoint(L, j, e.i);

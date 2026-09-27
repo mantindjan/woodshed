@@ -287,10 +287,19 @@ export function playPing(pitchConcertPc) {
   }
 }
 
-// The audio-clock time (s) matching a performance.now() time (ms), so
-// clicks can be scheduled exactly on beats measured in page time.
+// The audio-clock time (s) at which a sound scheduled now is HEARD at a
+// given performance.now() time (ms) — so clicks land on beats measured in
+// page time, where the lanes draw them. getOutputTimestamp() pairs the
+// audio time leaving the speaker with its page time; `currentTime` alone is
+// the next buffer to be rendered, which the phone plays one output latency
+// later (100–250 ms with 'balanced' buffers): at 60 bpm clicks fell between
+// the notes on the lane (boss, 2026-09-27). Before the context reports a
+// timestamp, it falls back to currentTime less the declared output latency.
 export function audioTimeAt(perfMs) {
-  return ctx ? ctx.currentTime + (perfMs - performance.now()) / 1000 : 0;
+  if (!ctx) return 0;
+  const ts = ctx.getOutputTimestamp?.();
+  if (ts?.performanceTime > 0) return ts.contextTime + (perfMs - ts.performanceTime) / 1000;
+  return ctx.currentTime - (ctx.outputLatency || 0) + (perfMs - performance.now()) / 1000;
 }
 
 // Metronome click (B4) at audio time `time`: a white-noise burst through a

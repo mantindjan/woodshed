@@ -2,14 +2,15 @@
 // it plays. The player blows a note on each of TAKES clicks (after a
 // COUNT_IN); the MEDIAN offset between click and note-on is the latency.
 //
-// Why: the app judges timing against when it SCHEDULES a click, but the
-// click is heard later (Android audio output latency, Bluetooth), and the
-// horn's note reaches the page later still (breath gate, MIDI). Playing
-// dead on the heard click then scores as late — half the hit window gone
-// before the player does anything wrong (boss: "feels stringent",
-// 2026-09-25). One measured number covers all of it, including the
-// player's own habit of sitting ahead of or behind the click; the scale
-// runner subtracts it from every note-on before judging.
+// Why: the horn's note reaches the page later than it was played (breath
+// gate, MIDI), so playing dead on the click scores as late — half the hit
+// window gone before the player does anything wrong (boss: "feels
+// stringent", 2026-09-25). One measured number covers it, including the
+// player's own habit of sitting ahead of or behind the click; the lane
+// games subtract it from every note-on before judging. Since 2026-09-27 the
+// clicks are scheduled to be HEARD on time (audio.js audioTimeAt), so the
+// output delay is no longer part of it — numbers measured before then
+// included it, and were dropped (migrate.js; `woodshed.inputLatency`).
 //
 // The median, not the mean: one fluffed note shouldn't move it. The spread
 // (median absolute deviation) says whether the number can be trusted.

@@ -17,7 +17,7 @@ export const FORMAT = 1;
 // — backup files sit in Downloads/Drive.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
-                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.latency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.cells', 'woodshed.scaleExercise',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.inputLatency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.cells', 'woodshed.scaleExercise',
                   'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses', 'woodshed.syncRepo'];
 
 // Identity of an event across devices: one question = one appearance time
