@@ -28,7 +28,7 @@ import { initAudio, loadTrio, playChord, playLine } from './audio.js';
 import { startPatterns, stopPatterns, patternNote, patternsRunning, patternHTML, esc,
          pausePatterns, resumePatterns, restartPatterns, patternsPaused } from './patterns.js';
 import { loadLibrary, savePattern, deletePattern, patternProgress, nearestOct, autoName, degreesText,
-         PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, MIN_NOTES, MAX_NOTES, patternGrid, runRate, SOLID, noteSemis } from './patternlib.js';
+         PATTERN_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, CELL_NOTES, playedNotes, patternGrid, runRate, SOLID, noteSemis } from './patternlib.js';
 
 // Settings (localStorage, all carried by the backup file).
 const CALIB_KEY = 'woodshed.calib';
@@ -754,7 +754,7 @@ async function loadPatternProgress() {
 function showPatternSettings() {
   const p = currentPattern();
   const prog = p && pProgress.get(p.id);
-  $('#pCardName').textContent = p ? p.name : 'No pattern yet';
+  $('#pCardName').textContent = p ? p.name : 'No cell yet';
   $('#pCardDeg').textContent = p ? degreesText(p) : 'build one ›';
   $('#pStages').hidden = mode !== 'learn';
   $('#pExercises').hidden = mode === 'learn';
@@ -764,15 +764,16 @@ function showPatternSettings() {
   $('#pExercises').innerHTML = PRACTICE_EXERCISES.map(id =>
     `<button data-pex="${id}" class="${id === pExercise ? 'active' : ''}">${EXERCISES[id].name}${prog?.done.has(id) ? ' ✓' : ''}</button>`).join('');
   if (patternsRunning()) return;
-  // Idle stage: the pattern on top, what Start will do underneath.
-  $('#pShow').innerHTML = p ? `<b>${esc(p.name)}</b>${patternHTML(p)}` : '<b>Build a pattern in Levels</b>';
+  // Idle stage: what will be played on top (learn: a b c d c b), what
+  // Start will do underneath.
+  $('#pShow').innerHTML = p ? `<b>${esc(p.name)}</b>${patternHTML({ ...p, notes: playedNotes(p, mode) })}` : '<b>Build a cell in Levels</b>';
   $('#pTitle').textContent = !p ? '' : mode === 'learn' ? `Cycle of 4ths · ×${STAGES[stage]}` : EXERCISES[pExercise].name;
   const msg = $('#pMsg');
   msg.hidden = !p;
   msg.innerHTML = !p ? '' : mode === 'learn'
-    ? `<b>Learn</b> — the pattern ${STAGES[stage]}× on each chord round the cycle of 4ths. Nothing is shown ahead: ` +
+    ? `<b>Learn</b> — the cell there and back (a b c d c b), ${STAGES[stage]}× on each chord round the cycle of 4ths. Nothing is shown ahead: ` +
       'play it from the top on each chord. Two solid runs (95 %) and it moves to fewer times per chord.<br><small>Start goes straight into a one-bar count-in.</small>'
-    : `<b>Practice</b> — once on each chord, ${EXERCISES[pExercise].name.toLowerCase()}.<br><small>Start goes straight into a one-bar count-in.</small>`;
+    : `<b>Practice</b> — the 4 notes once on each chord, ${EXERCISES[pExercise].name.toLowerCase()}.<br><small>Start goes straight into a one-bar count-in.</small>`;
 }
 $('#pCard').addEventListener('click', () => showTab('levels'));
 $$('[data-pback]').forEach(b => b.addEventListener('click', () => { pBacking = b.dataset.pback; save(PBACK_KEY, pBacking); showSettings(); }));
@@ -810,7 +811,7 @@ function showPatternLevels() {
       `<span class="pname">${esc(p.name)}</span>${patternHTML(p)}` +
       `<span class="pprog">${stageText(pProgress.get(p.id))}</span>` +
       `<span class="pact"><button data-pedit="${p.id}">edit</button><button data-pdel="${p.id}">✕</button></span></div>`).join('')
-    : '<div class="small-note">No patterns yet — build one on the right (an example is loaded), then Save.</div>';
+    : '<div class="small-note">No cells yet — build one on the right (an example is loaded), then Save.</div>';
   if (!draft) editDraft(null);
   showEditor();
 }
@@ -822,15 +823,15 @@ function showEditor() {
   $('#pName').value = draft.name;
   $('#pName').placeholder = draft.notes.length ? autoName(draft) : 'name (optional)';
   const n = draft.notes.length;
-  $('#pHint').textContent = n < MIN_NOTES ? `At least ${MIN_NOTES} notes. Each new note goes to the nearest octave; ↑ ↓ move the selected one.`
-    : `${n} notes, a note a beat — at 240 bpm, ${(n / 4).toFixed(n % 4 ? 1 : 0)} s a chord.${draft.id ? ' Editing' : ' New'}${n >= MAX_NOTES ? ' · full' : ''}`;
-  $('#pSave').disabled = n < MIN_NOTES;
+  $('#pHint').textContent = n < CELL_NOTES ? `A cell is ${CELL_NOTES} notes (${n} so far). Each new note goes to the nearest octave; ↑ ↓ move the selected one.`
+    : `${draft.id ? 'Editing' : 'New'} · learn plays it there and back: ${degreesText({ notes: playedNotes(draft, 'learn') })}.`;
+  $('#pSave').disabled = n !== CELL_NOTES;
   $('#pHear').disabled = !n;
 }
 
 $('#pKeys').addEventListener('click', e => {
   const b = e.target.closest('[data-pd]');
-  if (!b || draft.notes.length >= MAX_NOTES) return;
+  if (!b || draft.notes.length >= CELL_NOTES) return;
   const at = draft.sel + 1;
   const deg = b.dataset.pd;
   draft.notes.splice(at, 0, { deg, oct: nearestOct(draft.quality, deg, draft.notes[at - 1]) });
@@ -923,7 +924,7 @@ function drawPatternStats() {
   const id = $('#pStatSel').value;
   const lib = loadLibrary();
   const p = lib.find(x => x.id === id) || pStatEvents.find(e => e.patternId === id)?.pattern;
-  if (!p) { $('#pGrid').innerHTML = '<div class="small-note">No pattern yet.</div>'; return; }
+  if (!p) { $('#pGrid').innerHTML = '<div class="small-note">No cell yet.</div>'; return; }
   const grid = patternGrid(pStatEvents, id);
   const n = p.notes.length;
   const fig = list => {
@@ -944,7 +945,7 @@ function drawPatternStats() {
     }
   }
   h += '</div>';
-  let cap = 'Tap a cell: which chord, which note of the pattern, how often right.';
+  let cap = 'Tap a square: which chord, which note of the cell, how often right.';
   if (pStatSelected) {
     const [rk, j] = pStatSelected.split('|');
     const f = fig(grid.get(pStatSelected));

@@ -206,7 +206,6 @@
   body[data-game="patterns"] .g-patterns { display: flex; }
 
   /* Patterns (P game): the pattern on top, the chord lane, the library. */
-  .seg.game .pg { font: 800 22px/24px system-ui, sans-serif; }
   #pShow { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 2px 0 4px; }
   #pShow > b { font-size: 14px; color: var(--dim); font-weight: 600; white-space: nowrap; }
   .pshape { position: relative; display: flex; align-items: flex-start; gap: 4px; }
@@ -505,13 +504,13 @@
     </div>
     <!-- Patterns library: every pattern with its progress. -->
     <div class="view" id="view-pattern-levels" data-view="levels" data-for="patterns" hidden>
-      <h2>Your patterns</h2>
+      <h2>Your cells</h2>
       <div id="pLib"></div>
     </div>
     <div class="view" id="view-pattern-stats" data-view="stats" data-for="patterns" hidden>
-      <h2>Recent runs · key × note of the pattern</h2>
+      <h2>Recent runs · key × note of the cell</h2>
       <div id="pGrid"></div>
-      <div class="rm-bar"><select id="pStatSel" aria-label="Pattern"></select></div>
+      <div class="rm-bar"><select id="pStatSel" aria-label="Cell"></select></div>
     </div>
     <!-- Levels: the ladder (D6). -->
     <div class="view" id="view-levels" data-view="levels" data-for="degrees" hidden><div id="ladder"></div></div>
@@ -551,7 +550,11 @@
         <!-- Icons (boss, 2026-09-26): degrees as "3 5 7" in the Real Book
              numerals, like a time signature; scales as a piece of ladder. -->
         <button data-game="degrees" aria-label="Degrees" title="Degrees"><span class="gicon rb">3 5 7</span></button>
-        <button data-game="patterns" aria-label="Patterns" title="Patterns"><span class="gicon pg">P</span></button>
+        <!-- Cells: four note heads at different heights — a cell's contour. -->
+        <button data-game="patterns" aria-label="Cells" title="Cells"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 19L9.5 9.5L14.5 14L20 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-opacity=".55"/>
+          <circle cx="4" cy="19" r="2.9" fill="currentColor"/><circle cx="9.5" cy="9.5" r="2.9" fill="currentColor"/>
+          <circle cx="14.5" cy="14" r="2.9" fill="currentColor"/><circle cx="20" cy="4.5" r="2.9" fill="currentColor"/></svg></button>
         <button data-game="scales" aria-label="Scales" title="Scales"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 2v20M17 2v20M7 6h10M7 11h10M7 16h10M7 21h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
         <!-- Arpeggios: the notation sign for an arpeggiated chord, a wavy line. -->
@@ -651,7 +654,7 @@
         missed is red. "All" pools every key.</div>
     </div>
     <div class="pane" data-pane="levels" data-for="patterns" hidden>
-      <div class="label">Pattern</div>
+      <div class="label">Cell</div>
       <div class="seg" id="pQual"><button data-pq="maj7">△</button><button data-pq="7">7</button><button data-pq="m7">−</button><button data-pq="m7b5">ø</button></div>
       <div id="pEdit"></div>
       <div class="chips keys" id="pKeys"></div>
@@ -671,8 +674,8 @@
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">For the pattern picked under the grid. Each cell: the last 10 times that note of
-        the pattern came up on that chord — right on the beat is green, late or early fades it, wrong or
+      <div class="small-note">For the cell picked under the grid. Each square: the last 10 times that note of
+        the cell came up on that chord (learn's c b count as c and b) — right on the beat is green, late or early fades it, wrong or
         missed is red. Figures: the last 20 runs.</div>
     </div>
     <div class="pane" data-pane="stats" data-for="degrees" hidden>

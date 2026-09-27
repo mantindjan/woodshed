@@ -1,5 +1,5 @@
-// Patterns runner (P game): play a pattern from memory over chords going
-// by. The stage shows no notes ahead (boss, 2026-09-26: "we want the player
+// Cells runner (the Cells game; "patterns" in code and data, its name
+// until 2026-09-27): play a 4-note cell from memory over chords going by. The stage shows no notes ahead (boss, 2026-09-26: "we want the player
 // to remember, to feel the pattern"): chord symbols scroll toward a fixed
 // now line along a staff: a line a beat (a note a beat), stronger where
 // each pattern starts, thickest where the chord changes; after a clicked count-in a jazz trio plays the
@@ -21,16 +21,18 @@
 // (the first right note of a cell anchors it). The right pitch anywhere in
 // the window wins over a glitch, as in scales. Latency (⚙) is subtracted.
 //
-// Learn: the pattern goes round the cycle of 4ths ×4 → ×2 → ×1; two solid
-// runs (≥ 95 %) in a row move to the next stage. Practice: another path,
-// once per chord. Runs repeat until Stop.
+// Learn: the cell as a b c d c b (playedNotes) goes round the cycle of
+// 4ths ×4 → ×2 → ×1; two solid runs (≥ 95 %) in a row move to the next
+// stage. Practice: the 4 notes, another path, once per chord. Runs repeat
+// until Stop. `s.pattern` is the cell (logged as is), `s.play` what's
+// played.
 
 import { pc, degreeLabel } from './music.js';
 import { chordHTML } from './notation.js';
 import { initAudio, click, audioTimeAt, stopAll, swingAt, bassNote, kitHit, compChord } from './audio.js';
 import { walk, comp, spansOf, rootLine } from './trio.js';
 import { addEvent, requestPersistence } from './events.js';
-import { EXERCISES, STAGES, SOLID, noteSemis, exerciseKeys } from './patternlib.js';
+import { EXERCISES, STAGES, SOLID, noteSemis, exerciseKeys, playedNotes } from './patternlib.js';
 
 const MAX_WINDOW_MS = 150;
 const BEATS = 4;                 // the count-in (and the drums' phrase)
@@ -46,7 +48,7 @@ const NEXT_MS = 3000;            // a round's tally stays up this long while the
 // plus every click — piled up in the audio graph and played choppy on the
 // phone (boss, 2026-09-26).
 const LOOKAHEAD_MS = 1500;
-const SCHEMA_VERSION = 2;         // v2: `cellBeats` (v1 runs: a cell per bar, 4)
+const SCHEMA_VERSION = 3;         // v3: learn plays a b c d c b, `cellBeats` 6; v2: `cellBeats` (v1 runs: a cell per bar, 4)
 
 const $ = sel => document.querySelector(sel);
 // Pattern names are typed by the player: escape before they meet innerHTML.
@@ -114,8 +116,9 @@ export function startPatterns(opts, onEnd) {
   initAudio();
   requestPersistence();
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
-  s = { ...opts, onEnd, session: Date.now().toString(36), timers: [], streak: 0, run: null };
-  showPattern(opts.pattern);
+  s = { ...opts, onEnd, session: Date.now().toString(36), timers: [], streak: 0, run: null,
+        play: { ...opts.pattern, notes: playedNotes(opts.pattern, opts.mode) } };
+  showPattern(s.play);
   startStream();
   resize();
   raf = requestAnimationFrame(frame);
@@ -174,7 +177,7 @@ function startStream() {
   const now = performance.now();
   const beat = 60000 / s.bpm;
   const t0 = now + 300;
-  s.run = { t0, beat, n: s.pattern.notes.length, window: Math.min(MAX_WINDOW_MS, beat * 0.45),
+  s.run = { t0, beat, n: s.play.notes.length, window: Math.min(MAX_WINDOW_MS, beat * 0.45),
             expected: [], chords: [], bass: [], comp: [], rounds: [], anchors: new Map(), notes: [],
             phase: 'running', cells: 0, end: t0 + BEATS * beat, beats: BEATS,
             nextBeat: 0, bassAt: 0, compAt: 0, chordEls: [] };
@@ -195,7 +198,7 @@ function appendRound() {
   const r = s.run;
   const keys = exerciseKeys(s.exercise, r.chords.length ? r.chords[r.chords.length - 1].key : null);
   const n = reps();
-  const part = buildRun(s.pattern, keys, n, s.bpm, r.end - BEATS * r.beat);
+  const part = buildRun(s.play, keys, n, s.bpm, r.end - BEATS * r.beat);
   const round = { keys, reps: n, start: r.end, end: part.end, from: r.expected.length, to: r.expected.length + part.expected.length, logged: false };
   for (const e of part.expected) e.cell += r.cells;
   r.cells += keys.length * n;
@@ -321,11 +324,11 @@ function scoreRound(round) {
     game: 'patterns',
     mode: s.mode,
     patternId: p.id,
-    pattern: { name: p.name, quality: p.quality, notes: p.notes },   // snapshot: history outlives edits
+    pattern: { name: p.name, quality: p.quality, notes: p.notes },   // the cell — a snapshot: history outlives edits
     exercise: s.exercise,
     reps: round.reps,
     backing: s.backing,               // 'band' | 'root' | 'click'
-    cellBeats: p.notes.length,        // beats per cell: a note a beat (v1 runs: 4, a cell per bar)
+    cellBeats: s.play.notes.length,   // beats per chord pass: a note a beat — 6 in learn (a b c d c b), 4 else (v1 runs: 4, a cell per bar)
     keys: round.keys,                 // written roots, in order (a shuffle for 'random')
     bpm: s.bpm,
     latency: s.latency,

@@ -1,7 +1,8 @@
-// Pattern library (P game): the boss's own patterns, the exercises every
-// pattern gets, and progress worked out from the runs.
+// Cell library (the Cells game — called "patterns" in code and data, its
+// name until 2026-09-27): the boss's own cells, the exercises every cell
+// gets, and progress worked out from the runs.
 //
-// A PATTERN is a cell of notes over one chord (boss, 2026-09-26): each note
+// A CELL is 4 notes over one chord (boss, 2026-09-26/27): each note
 // is a degree of the chord plus an OCTAVE relative to the root, because
 // height matters — "5 3 1 5" from the low 5 and from the high 5 are two
 // different patterns. Semitones above the root = degree's semitones (by
@@ -43,7 +44,20 @@ export function nearestOct(quality, deg, prev) {
   return best;
 }
 
-export const MIN_NOTES = 3, MAX_NOTES = 8;
+// Every cell is 4 notes, a b c d, in any order (boss, 2026-09-27; longer
+// lines are licks — scope, not built).
+export const CELL_NOTES = 4;
+
+// What gets played. Learn (the cycle of 4ths) plays a b c d c b on each
+// chord — back through the middle gets the cell under the fingers; the
+// practice paths play the 4 notes only (boss, 2026-09-27).
+const CYCLE = [0, 1, 2, 3, 2, 1];
+export const playedNotes = (p, mode) =>
+  mode === 'learn' && p.notes.length === CELL_NOTES ? CYCLE.map(i => p.notes[i]) : p.notes;
+// A 6-note a b c d c b typed out by hand (as the boss did before cells
+// were 4 notes) is that cell.
+const isCycle = notes => notes.length === 6 &&
+  JSON.stringify(CYCLE.map(i => notes[i])) === JSON.stringify(notes);
 
 // "5 1 3 5" — degrees as written; heights are drawn, not spelled.
 export const degreesText = p => p.notes.map(n => degreeLabel(n.deg)).join(' ');
@@ -53,7 +67,11 @@ const same = (a, b) => a.quality === b.quality && JSON.stringify(a.notes) === JS
 
 const KEY = 'woodshed.patterns';
 export function loadLibrary() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+  let list;
+  try { list = JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+  // Written out a b c d c b before cells were 4 notes: keep a b c d, same id.
+  for (const p of list) if (isCycle(p.notes)) p.notes = p.notes.slice(0, CELL_NOTES);
+  return list;
 }
 export function saveLibrary(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* storage full/blocked */ }
@@ -131,11 +149,15 @@ export function patternGrid(events, id) {
   };
   for (const e of events) {
     if (e.game !== 'patterns' || e.patternId !== id || !e.expected) continue;
-    const n = e.pattern.notes.length;
+    // Each played note back to its place in the cell: learn's a b c d c b
+    // (v3, `cellBeats` 6) and a hand-typed 6-note cycle fold onto a b c d.
+    const notes = e.pattern.notes;
+    const cyc = isCycle(notes) || (e.v >= 3 && e.cellBeats === 6 && notes.length === CELL_NOTES);
+    const place = i => (cyc ? CYCLE[i % 6] : i % notes.length);
     e.expected.forEach(([root, , , , status, off], i) => {
       const a = { hit: status === 'hit', off, score: status === 'hit' ? 1 - 0.4 * Math.min(Math.abs(off || 0), 150) / 150 : 0 };
-      push(`${root}|${i % n}`, a);
-      push(`all|${i % n}`, a);
+      push(`${root}|${place(i)}`, a);
+      push(`all|${place(i)}`, a);
     });
   }
   return grid;
