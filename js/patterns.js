@@ -178,7 +178,10 @@ function nextRun() {
   // Backing (boss, 2026-09-26): 'band' = the trio; 'root' = drums + the
   // root at each pattern, nothing else; 'click' = the metronome alone.
   r.bass = s.backing === 'band' ? walk(spans) : s.backing === 'root' ? rootLine(r.chords, s.calib, r.n) : [];
-  r.comp = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0)) : [];
+  // Root: the Rhodes plays the root too, two octaves up and three — the bass
+  // alone was felt more than heard on the phone (boss); still no 3rd or 5th.
+  r.comp = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0))
+    : s.backing === 'root' ? r.bass.map(n => ({ beat: n.beat, len: n.len, midis: [n.midi + 24, n.midi + 36] })) : [];
   r.bassAt = 0;
   r.compAt = 0;
   schedule(now);
