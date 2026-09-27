@@ -29,10 +29,11 @@
 //    buttons); one clean run at a tempo they chose makes it the key's new
 //    baseline (working tempo = it, clean best raised) — runs carry `tempoSet`.
 //  - False starts (`falseStart`) are void.
-//  - LEARN judges progress inside the COMFORT range (written C4–E6): the
-//    extremes (low B♭ B, high F F♯) are judged and shown everywhere, but in
-//    learn they don't decide clean / stay / broken — master the middle
-//    first (boss, 2026-09-26, after Chad LB). Practice counts every note.
+//  - Only the horn's MIDDLE decides clean / stay / broken (written C4–D6,
+//    music.js HORN_MIDDLE; countedNotes): the extremes (low B♭ B, high E♭ E
+//    F F♯) are judged and shown everywhere, but never hold the tempo back —
+//    in learn and practice alike (boss, 2026-09-26; every mode and high D
+//    as the edge, 2026-09-27).
 //
 // Per KEY of each level (scale × pattern × written key: some keys are
 // harder), whichever exercise the run came from.
@@ -47,7 +48,7 @@
 // Rebuildable from events: runs carry `tempoAuto: true` and their bpm, and
 // the model replays them in order (summary.js).
 
-import { runPattern, LANE_GAMES } from './scalelevels.js';
+import { runPattern, countedNotes, LANE_GAMES } from './scalelevels.js';
 
 // The boss's tempo scale, eighths throughout ("a good tempo scale in general").
 export const TIERS = [60, 72, 84, 96, 112, 126];
@@ -74,17 +75,12 @@ const median = xs => {
   return s.length % 2 ? s[s.length >> 1] : Math.round((s[s.length / 2 - 1] + s[s.length / 2]) / 2);
 };
 
-// The written range learn's tempo judges on (MIDI, written).
-export const COMFORT = { low: 60, high: 88 };   // C4 … E6
-export const inComfort = w => w >= COMFORT.low && w <= COMFORT.high;
-
 // 'clean' | 'stay' | 'broken' for a run event. Notes never reached in a
-// stopped run count as not hit. In learn only comfort-range notes count
-// (a run entirely outside it falls back to all its notes).
+// stopped run count as not hit. Only the middle's notes count
+// (countedNotes).
 export function runOutcome(e) {
   if (e.stopped) return 'broken';
-  let notes = e.expected;
-  if (e.mode === 'learn' && notes.some(x => inComfort(x[0]))) notes = notes.filter(x => inComfort(x[0]));
+  const notes = countedNotes(e.expected);
   const hits = notes.filter(x => x[3] === 'hit').length;
   if (hits / notes.length < STAY) return 'broken';
   const slips = notes.length - hits;

@@ -90,6 +90,15 @@ export const SCALES = {
 // The saxophone's written range, low B♭ to high F♯ (MIDI numbers of the
 // WRITTEN pitch; middle-of-the-staff C = C5 = 72).
 export const SAX_RANGE = { low: 58, high: 90 };
+// The horn's MIDDLE, low C (C4) to high D (D6), written. Outside it are the
+// extremes — low B♭ B, high E♭ E F F♯: played, judged, recorded and shown
+// everywhere (the range map shades them), but a miss there never stops a
+// run, never makes it unclean and never holds the tempo back — master the
+// middle first, work the extremes after (boss, 2026-09-26, after Chad LB;
+// widened to every mode and game and the top edge set at high D,
+// 2026-09-27).
+export const HORN_MIDDLE = { low: 60, high: 86 };
+export const inMiddle = w => w >= HORN_MIDDLE.low && w <= HORN_MIDDLE.high;
 export const WRITTEN_MIDDLE_C = 72;
 
 // Name + octave of a written MIDI note, e.g. 58 → "B♭3".

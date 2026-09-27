@@ -9,7 +9,7 @@
 // a colour change along the row. Built from the raw `expected` arrays of
 // scales events (docs/data.md).
 
-import { SCALES, SAX_RANGE, NOTES, pc, noteName } from './music.js';
+import { SCALES, SAX_RANGE, NOTES, pc, noteName, inMiddle } from './music.js';
 
 // Occurrences per cell. A degree comes up in every octave of a run, so its
 // cell fills about twice as fast; it keeps twice as many to stay as recent.
@@ -79,17 +79,20 @@ export function renderRangeMap(el, events, scale, view = 'range', selected = nul
   let h = `<div class="rm-grid ${view}" style="grid-template-columns: 28px repeat(${cols.length}, 1fr)${note}"><div></div>`;
   // Column heads: in the range view only the Cs, so the octaves read
   // without clutter; in the degree view every degree.
-  h += cols.map(c => `<div class="rm-head">${view === 'degrees' ? c : pc(c) === 0 ? noteName(c) : ''}</div>`).join('');
+  // The horn's extremes (below low C, above high D — music.js HORN_MIDDLE)
+  // are shaded: shown in full, but they don't hold progress back.
+  const edge = c => (view === 'range' && !inMiddle(c) ? ' edge' : '');
+  h += cols.map(c => `<div class="rm-head${edge(c)}">${view === 'degrees' ? c : pc(c) === 0 ? noteName(c) : ''}</div>`).join('');
   if (rowNote) h += '<div class="rm-head rm-bpm">bpm</div>';
   const rows = [['all', 'All'], ...NOTES.map((n, k) => [String(k), n])];
   for (const [rk, label] of rows) {
     h += `<div class="rm-row${rk === 'all' ? ' all' : ''}">${label}</div>`;
     for (const c of cols) {
       // Range view: in a key's row only its scale notes get a cell; the pooled row takes all.
-      if (view === 'range' && rk !== 'all' && !steps.includes(pc(c - Number(rk)))) { h += '<div class="rm-cell na"></div>'; continue; }
+      if (view === 'range' && rk !== 'all' && !steps.includes(pc(c - Number(rk)))) { h += `<div class="rm-cell na${edge(c)}"></div>`; continue; }
       const key = `${rk}|${c}`;
       const fig = figures(recent.get(key));
-      const cls = `rm-cell${fig ? '' : ' empty'}${key === selected ? ' selected' : ''}`;
+      const cls = `rm-cell${fig ? '' : ' empty'}${edge(c)}${key === selected ? ' selected' : ''}`;
       const style = fig ? ` style="background:${colour(fig.score)}"` : '';
       h += `<div class="${cls}" data-cell="${key}"${style}></div>`;
     }
@@ -97,14 +100,16 @@ export function renderRangeMap(el, events, scale, view = 'range', selected = nul
   }
   h += '</div>';
   // Caption: the selected cell in words, or how to use the map.
-  let cap = 'Tap a cell: which note, how often hit, early or late.';
+  let cap = view === 'range' ? 'Tap a cell: which note, how often hit, early or late. Shaded: the horn’s extremes — below low C, above high D.'
+    : 'Tap a cell: which note, how often hit, early or late.';
   if (selected) {
     const [rk, c] = selected.split('|');
     const fig = figures(recent.get(selected));
     const note = view === 'range' ? noteName(Number(c)) : `the ${c}`;
     const where = `${rk === 'all' ? 'All keys' : `${NOTES[Number(rk)]} ${SCALES[scale].name.toLowerCase()}`} · ${note}`;
-    cap = !fig ? `${where} — not played yet.`
-      : `${where} — ${fig.hits} of ${fig.n} hit` +
+    const extreme = view === 'range' && !inMiddle(Number(c)) ? ' (an extreme: not counted toward tempo)' : '';
+    cap = !fig ? `${where}${extreme} — not played yet.`
+      : `${where}${extreme} — ${fig.hits} of ${fig.n} hit` +
         (fig.off === null ? '' : fig.off > 15 ? ` · ${fig.off} ms late` : fig.off < -15 ? ` · ${-fig.off} ms early` : ' · on the beat');
   }
   el.innerHTML = h + `<div class="rm-cap">${cap}</div>`;

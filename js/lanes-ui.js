@@ -6,14 +6,14 @@
 
 import { $, $$, load, save, loadJSON, st, hooks } from './app.js';
 import { QUALITY_TEXT, NOTES, SCALES } from './music.js';
-import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder, toggleHint,
+import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder, toggleHint, ownStart,
          pauseScales, resumeScales, restartScales, scalesPaused } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
 import { getSummary } from './summary.js';
 import { SCALE_LEVELS, GAME_SCALES, LANE_GAMES, levelsOf, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
 import { renderRangeMap } from './rangemap.js';
-import { createTempoModel, tempoKey, pipText, pips } from './scaletempo.js';
+import { createTempoModel, tempoKey, pipText, pips, runOutcome } from './scaletempo.js';
 
 const SCALE_EX_KEY = 'woodshed.scaleExercise';   // scale level id or 'custom'
 const SCALE_CUSTOM_KEY = 'woodshed.scaleCustom'; // {scale, pattern, keys: [written pcs]}
@@ -92,7 +92,7 @@ function showScaleIdle() {
   }
   el.innerHTML = `<div class="label">${st.mode === 'learn' ? 'Learn' : 'Practice'} · next up</div>` +
     `<div class="big">${exName}</div><div class="what">${next}</div><div class="how">${how}</div>` +
-    `<div class="go">Press Start, then blow ${PATTERNS[ex.pattern].rootOnly ? 'the root' : 'the first note of the run'}.` +
+    `<div class="go">Press Start: it names the start note and counts you in — tap My note to start where you like.` +
     `${PATTERNS[ex.pattern].rootOnly && st.mode === 'learn' ? ' Stuck? Tap Hint to see the chord spelled out.' : ''}</div>`;
 }
 
@@ -128,6 +128,7 @@ $('#tempoMode').addEventListener('click', () => {
 });
 
 $('#scaleNext').addEventListener('click', nextKey);
+$('#scaleOwn').addEventListener('click', ownStart);
 $('#scaleHint').addEventListener('click', toggleHint);
 $$('#scaleNudge [data-sn]').forEach(b => b.addEventListener('click', () => nudgeTempo(Number(b.dataset.sn))));
 
@@ -231,7 +232,7 @@ function drawRangeMap() {
   const last = runs.slice(-20);
   const notes = last.flatMap(e => e.expected.filter(x => x[3] !== 'pending'));
   const hit = notes.filter(x => x[3] === 'hit').length;
-  const clean = last.filter(e => e.expected.every(x => x[3] === 'hit')).length;
+  const clean = last.filter(e => runOutcome(e) === 'clean').length;   // as the tempo judges it: the horn's middle
   $('#sstatRuns').textContent = runs.length;
   $('#sstatToday').textContent = runs.filter(e => e.t >= dayStart).length;
   $('#sstatHit').textContent = notes.length ? `${Math.round(100 * hit / notes.length)}%` : '–';

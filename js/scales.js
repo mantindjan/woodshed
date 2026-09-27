@@ -48,11 +48,11 @@
 // The count-in is four dots filling, not numbers: numbers collided with the
 // degree discs (boss, 2026-09-25).
 
-import { SCALES, SAX_RANGE, NOTES, QUALITY_TEXT, pc, noteName } from './music.js';
+import { SCALES, SAX_RANGE, NOTES, QUALITY_TEXT, pc, noteName, inMiddle } from './music.js';
 import { initAudio, click, audioTimeAt, stopAll } from './audio.js';
 import { addEvent, requestPersistence } from './events.js';
 import { pickScaleKey, PATTERNS } from './scalelevels.js';
-import { tempoKey, runOutcome, CLEAN_RUNS, rungUp, rungDown, inComfort } from './scaletempo.js';
+import { tempoKey, runOutcome, CLEAN_RUNS, rungUp, rungDown } from './scaletempo.js';
 import { saveKeys, saveTempo } from './summary.js';
 
 const MAX_WINDOW_MS = 150;     // hit window either side of a note (as G2)
@@ -72,7 +72,11 @@ const RESTART_MS = 1500;
 // A hit this close counts "on the beat"; beyond it the disc gets an
 // early/late tick. 30 ms was too tight on the horn (boss, 2026-09-25).
 const ON_BEAT_MS = 100;
-const MIN_RUN = 4;             // learn suggests a start with at least this many notes ahead
+const MIN_RUN = 4;             // the default start has at least this many notes ahead
+// The app picks the start note and names it for ANNOUNCE_MS, then counts
+// in; "My note" in that time hands the choice to the player, who blows it
+// (boss, 2026-09-27: choosing was great as an option, not as the default).
+const ANNOUNCE_MS = 2000;
 const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // v3: `pattern` replaces `direction`. v4: learn runs add `hint` (and, that
 // evening only, `waits` from the dropped lane-hold learn). v5: learn = sheet.
@@ -81,8 +85,12 @@ const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // v8: `falseStart` (run begun on another note: void) and `tempoSet` (the
 // player chose this bpm on Auto). v9: `restarted` (the app restarted the
 // run after a false start or too many errors: no start note was blown, so
-// `notes` has no start-note entry).
-const SCHEMA_VERSION = 9;
+// `notes` has no start-note entry). v10: `startBy` — 'app' (the default
+// start, counted in by the app: no start-note entry in `notes` either) or
+// 'player' (My note: blown); `hint` in practice too; the scale patterns go
+// up and back (linear, 3up, 3down); misses at the horn's extremes never
+// count toward `allowedMisses`.
+const SCHEMA_VERSION = 10;
 
 const $ = sel => document.querySelector(sel);
 
@@ -112,15 +120,12 @@ const degreeOf = (scale, key, w) => SCALES[scale].degrees[SCALES[scale].steps.in
 // to F♯5 (middle C = C5 sits in it), high above.
 const register = w => (w <= 65 ? 'low' : w <= 78 ? 'middle' : 'high');
 
-// Learn's suggested start: the root that gives the pattern the most room —
-// the lowest root for a pattern that climbs, the highest for one that
-// falls — among roots with at least a few notes of pattern ahead.
+// The default start: the lowest root with at least a few notes of pattern
+// ahead — every pattern goes up and back, so that covers the most horn.
 function suggestStart(scale, key, pattern) {
   const notes = scaleNotes(scale, key);
-  const roots = notes.map((w, i) => ({ w, n: PATTERNS[pattern].indices(i, notes.length).length }))
-    .filter(x => pc(x.w - key) === 0 && x.n >= MIN_RUN);
-  if (!roots.length) return null;
-  return PATTERNS[pattern].slope >= 0 ? roots[0].w : roots[roots.length - 1].w;   // up-and-down (arpeggios): lowest
+  const root = notes.find((w, i) => pc(w - key) === 0 && PATTERNS[pattern].indices(i, notes.length).length >= MIN_RUN);
+  return root ?? null;
 }
 
 let s = null;        // session state while running, else null
@@ -160,7 +165,7 @@ const rung = (bpm, dir) => (dir > 0 ? rungUp(bpm) : rungDown(bpm));
 export function nudgeTempo(dir) {
   if (!s?.tempoAuto || !s.run) return;
   const key = tempoKey(s.scale, s.pattern, s.run.key);
-  if (s.run.phase === 'waiting') {
+  if (s.run.phase === 'waiting' || s.run.phase === 'announce') {
     s.bpm = rung(s.bpm, dir);
     s.tempo.set(key, s.bpm, s.session);
     saveTempo(s.tempo);
@@ -198,7 +203,7 @@ function halt() {
 export function pauseScales() {
   if (!s || s.paused) return;
   halt();
-  s.paused = { run: underway(s.run) ? 'restart' : s.run.phase === 'summary' ? 'next' : 'wait' };
+  s.paused = { run: underway(s.run) ? 'restart' : s.run.phase === 'summary' ? 'next' : s.run.phase === 'announce' ? 'announce' : 'wait' };
   message('<b>Paused</b> — ▶ to carry on');
 }
 export function resumeScales() {
@@ -208,6 +213,7 @@ export function resumeScales() {
   message('');
   if (run === 'restart') restartRun();
   else if (run === 'next') nextRun();
+  else if (run === 'announce') announce();
   else message(s.run.prompt);                   // the same run, still waiting for its start note
 }
 export function restartScales() {
@@ -232,6 +238,7 @@ export function stopScales() {
   topBar();                           // empties the key, tempo and misses
   message('');
   $('#scaleNext').hidden = true;
+  $('#scaleOwn').hidden = true;
   $('#scaleNudge').hidden = true;
   $('#scaleHint').hidden = true;
   draw(null);
@@ -259,19 +266,43 @@ function nextRun() {
   $('#scaleNext').hidden = !s.order || s.order.length < 2;
   showHint(false);                    // every new run starts without the answer
   topBar();
-  const scaleName = `<b>${what(k)}</b>`;
-  const pattern = PATTERNS[s.pattern].name.toLowerCase();
+  const start = suggestStart(s.scale, k, s.pattern);
+  s.run.hint = start === null ? null : { start };
+  if (start === null) waitForNote();
+  else announce();
+}
+
+// Name the default start note, then count in from it by itself — unless
+// the player taps My note in the meantime.
+function announce() {
+  const r = s.run;
+  const start = r.hint.start;
+  r.phase = 'announce';
+  $('#scaleOwn').hidden = false;
+  message(`Starting on <b>${register(start)} ${NOTES[pc(start)]}</b> (${noteName(start)}) — <b>${what(r.key)}</b>, ` +
+          `${PATTERNS[s.pattern].name.toLowerCase()}<br><small>My note: start where you like</small>`);
+  s.timers.push(setTimeout(() => {
+    if (s?.run !== r || r.phase !== 'announce' || s.paused) return;
+    $('#scaleOwn').hidden = true;
+    r.startBy = 'app';
+    startRun(start, performance.now(), null);
+  }, ANNOUNCE_MS));
+}
+
+// The player picks the start: wait for it to be blown (also when no
+// default fits).
+function waitForNote() {
+  const r = s.run;
+  r.phase = 'waiting';
+  $('#scaleOwn').hidden = true;
   const rootOnly = PATTERNS[s.pattern].rootOnly;
-  const start = s.mode === 'learn' ? suggestStart(s.scale, k, s.pattern) : null;
-  if (start === null) {
-    message(s.run.prompt = rootOnly ? `Blow the root of ${scaleName} to start — ${pattern}`
-      : `Blow any note of ${scaleName} to start — ${pattern}`);
-    return;
-  }
-  // Learn: name a start note; the sheet appears once it's blown.
-  s.run.hint = { start };
-  message(s.run.prompt = `Start on <b>${register(start)} ${NOTES[pc(start)]}</b> (${noteName(start)}) — ${scaleName}, ${pattern}` +
-          (rootOnly ? '<br><small>or any other root — what runs off the horn is cut</small>' : '<br><small>any scale note works too</small>'));
+  message(r.prompt = `Blow ${rootOnly ? 'the root' : 'any note'} of <b>${what(r.key)}</b> to start — ${PATTERNS[s.pattern].name.toLowerCase()}` +
+          (rootOnly ? '<br><small>what runs off the horn is cut</small>' : ''));
+}
+// My note (the stage button), while a default start is being announced.
+export function ownStart() {
+  if (!s?.run || s.run.phase !== 'announce' || s.paused) return;
+  waitForNote();
 }
 
 // What's being played, in words: a chord symbol for an arpeggio ("B♭7",
@@ -336,7 +367,7 @@ export function scaleNote(midi) {
   const arrived = performance.now();
   const w = midi - s.calibOffset;
   // The start note only starts the clock: nothing to judge, so no correction.
-  if (r.phase === 'waiting') return startRun(w, arrived, midi);
+  if (r.phase === 'waiting') { r.startBy = 'player'; return startRun(w, arrived, midi); }
   if (r.phase !== 'running' && r.phase !== 'countin') return;
   r.notes.push([midi, Math.round(arrived - r.t0)]);   // raw, as received
   if (r.phase !== 'running') return;
@@ -408,9 +439,12 @@ function startRun(w, now, midi) {
                            beat * (COUNT_IN + 1) - r.window - 1));
 }
 
-// A miss. Practice counts it toward a restart; learn just carries on.
-function miss() {
+// A miss. Practice counts it toward a restart; learn just carries on. A
+// miss at the horn's extremes (music.js HORN_MIDDLE) is shown but never
+// counts: it can't stop a run.
+function miss(e) {
   const r = s.run;
+  if (!inMiddle(e.w)) return;
   r.misses++;
   topBar();
   if (s.mode === 'practice' && r.misses >= s.misses) endRun(true);
@@ -427,7 +461,7 @@ function expire(now) {
   for (const e of r.expected) {
     if (e.status === 'pending' && now - s.latency > e.t + r.window) {
       e.status = e.wrongAt ? 'wrong' : 'miss';
-      miss();
+      miss(e);
       if (r.phase !== 'running') return;
       // A run that's gone stops now rather than being played out.
       const i = r.expected.indexOf(e);
@@ -447,10 +481,11 @@ function falseStart(r) {
   return a.status !== 'hit' && b.status !== 'hit' && a.wrongW != null && r.scaleNotes.includes(a.wrongW);
 }
 
-// Wrong/missed notes in a row, ending at note i.
+// Wrong/missed notes in a row, ending at note i. The extremes are passed
+// over, neither counted nor breaking the row.
 function errorsInARow(r, i) {
   let n = 0;
-  while (i >= 0 && r.expected[i].status !== 'hit' && r.expected[i].status !== 'pending') { n++; i--; }
+  for (; i >= 0 && r.expected[i].status !== 'hit' && r.expected[i].status !== 'pending'; i--) if (inMiddle(r.expected[i].w)) n++;
   return n;
 }
 
@@ -462,7 +497,7 @@ function restartRun() {
   const tk = tempoKey(s.scale, s.pattern, old.key);
   if (s.tempoAuto) s.bpm = s.tempo.tempoFor(tk, s.session);
   s.run = { key: old.key, phase: 'waiting', notes: [], expected: [], misses: 0, hint: old.hint,
-            manual: !!s.tempoAuto && s.tempo.manual(tk), restarted: true };
+            manual: !!s.tempoAuto && s.tempo.manual(tk), restarted: true, startBy: old.startBy };
   showHint(false);                    // a restart hides the answer again
   topBar();
   startRun(start, performance.now(), null);
@@ -505,8 +540,8 @@ function endRun(stopped, abort = null) {
     notes: r.notes,                   // every note-on: [raw MIDI, ms after the start note]
     stopped,
   };
-  // Learn only: the suggested start {start: written MIDI}.
-  if (s.mode === 'learn') event.hint = r.hint;
+  event.startBy = r.startBy;         // 'app' (the default, counted in) | 'player' (My note)
+  if (r.hint) event.hint = r.hint;  // the default start {start: written MIDI}
   if (s.tempoAuto && r.manual) event.tempoSet = true;
   if (r.restarted) event.restarted = true;
   // False start: logged, marked and void — no tempo, weak-key or recap
@@ -554,20 +589,20 @@ function endRun(stopped, abort = null) {
       tempoNote += s.order.length > 1 ? ` · next: <b>${NOTES[s.order[(s.at + 1) % s.order.length]]}</b>` : '';
     }
   }
+  // Misses at the horn's extremes are shown but hold nothing back.
+  const edge = r.expected.filter(e => e.status !== 'hit' && e.status !== 'pending' && !inMiddle(e.w)).length;
+  const edgeNote = edge ? `<br><small>${edge} missed below low C / above high D — not counted</small>` : '';
   const lateness = mean === null ? '' : mean > 15 ? ` · ${mean} ms late on average` : mean < -15 ? ` · ${-mean} ms early on average` : ' · right on the beat';
   if (s.mode === 'learn') {
     // The tally sits under the sheet, which stays up to be read.
     const onBeat = hits.filter(e => Math.abs(e.off) <= ON_BEAT_MS).length;
     const drift = mean !== null && Math.abs(mean) > 15 ? lateness : '';   // "on the beat" is already said
-    // Misses at the horn's extremes are shown but don't hold learn back.
-    const edge = r.expected.filter(e => e.status !== 'hit' && !inComfort(e.w)).length;
-    const edgeNote = edge ? `<br><small>${edge} missed below low C / above high E — not counted toward the tempo</small>` : '';
     message(`<b>${hits.length} / ${r.expected.length} right</b> · ${onBeat} on the beat${drift}${edgeNote}${tempoNote}`);
     $('#scaleMsg').classList.add('tally');
   } else {
     message((stopped
       ? `<b>${r.misses} misses — start again.</b> ${hits.length} of ${r.expected.length} hit.`
-      : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`) + tempoNote);
+      : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`) + edgeNote + tempoNote);
   }
   if (abort === 'errors') {
     message(`<b>${ERRORS_IN_A_ROW} wrong in a row</b> — again from ${noteName(r.expected[0].w)}.${tempoNote}`);

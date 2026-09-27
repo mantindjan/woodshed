@@ -11,17 +11,22 @@
 // pair any scale with any pattern. Tempo and the miss limit stay Play
 // settings. Nothing is locked.
 
-import { SCALES, NOTES } from './music.js';
+import { SCALES, NOTES, inMiddle } from './music.js';
 
 // Patterns: how a run walks the scale from the start note. `indices(i, n)`
 // gives the scale positions to play, from the blown start note at position
 // i of the n scale notes inside the horn's range (0 = lowest); [] when the
 // pattern has no room from there. `slope` = scale steps per played note
-// along the run, for the lane's drift. `shape` = how it starts, in degrees
-// from the root, for the level card. `chip` = the custom builder's label.
-// Broken thirds (boss, 2026-09-25): "thirds up" = each pair played low →
-// high (1 3), "thirds down" = high → low (3 1); "ascending" / "descending"
-// = which way the pairs move through the scale.
+// along the run, for the lane's drift (0 for there-and-back runs). `shape`
+// = how it starts, in degrees from the root, for the level card. `chip` =
+// the custom builder's label.
+//
+// Every scale pattern goes UP the horn to its top edge and back DOWN to
+// the start note (boss, 2026-09-27: splitting each into an up level and a
+// down level made no sense — one run covers the horn both ways). Broken
+// thirds keep their direction both ways: "ascending" = each pair played
+// low → high (1 3 · 2 4 … then … 3 5 · 2 4 · 1 3), "descending" = high →
+// low (3 1 · 4 2 … then … 5 3 · 4 2 · 3 1).
 const pairs = (from, to, step, second) => {
   const out = [];
   for (let j = from; step > 0 ? j <= to : j >= to; j += step) out.push(j, j + second);
@@ -33,18 +38,20 @@ const range = (from, to, step) => {
   return out;
 };
 export const PATTERNS = {
-  up: { name: 'Linear up', chip: 'Linear up', shape: '1 2 3 4 …', slope: 1, indices: (i, n) => range(i, n - 1, 1) },
-  down: { name: 'Linear down', chip: 'Linear down', shape: '5 4 3 2 …', slope: -1, indices: (i, n) => range(i, 0, -1) },
-  '3up-asc': { name: 'Thirds up · ascending', chip: 'Thirds up · asc', shape: '1 3 · 2 4 · 3 5 …', slope: 0.5,
-               indices: (i, n) => pairs(i, n - 3, 1, 2) },
-  '3up-desc': { name: 'Thirds up · descending', chip: 'Thirds up · desc', shape: '5 7 · 4 6 · 3 5 …', slope: -0.5,
-                indices: (i, n) => (i + 2 < n ? pairs(i, 0, -1, 2) : []) },
-  '3down-asc': { name: 'Thirds down · ascending', chip: 'Thirds down · asc', shape: '3 1 · 4 2 · 5 3 …', slope: 0.5,
-                 indices: (i, n) => (i >= 2 ? pairs(i, n - 1, 1, -2) : []) },
-  '3down-desc': { name: 'Thirds down · descending', chip: 'Thirds down · desc', shape: '7 5 · 6 4 · 5 3 …', slope: -0.5,
-                  indices: i => pairs(i, 2, -1, -2) },
+  linear: { name: 'Linear', chip: 'Linear', shape: '1 2 3 4 … up and back', slope: 0,
+            indices: (i, n) => (i + 1 < n ? [...range(i, n - 1, 1), ...range(n - 2, i, -1)] : []) },
+  '3up': { name: 'Thirds ascending', chip: 'Thirds asc', shape: '1 3 · 2 4 · 3 5 … up and back', slope: 0,
+           indices: (i, n) => (i + 2 < n ? [...pairs(i, n - 3, 1, 2), ...pairs(n - 4, i, -1, 2)] : []) },
+  '3down': { name: 'Thirds descending', chip: 'Thirds desc', shape: '3 1 · 4 2 · 5 3 … up and back', slope: 0,
+             indices: (i, n) => (i >= 2 && i < n ? [...pairs(i, n - 1, 1, -2), ...pairs(n - 2, i, -1, -2)] : []) },
 };
-export const PATTERN_ORDER = ['up', 'down', '3up-asc', '3up-desc', '3down-asc', '3down-desc'];
+export const PATTERN_ORDER = ['linear', '3up', '3down'];
+
+// The six one-way patterns before 2026-09-27, onto the pattern each is half
+// of. Runs keep the pattern they were played with (it's what happened);
+// stats, weak keys and tempo read them through runPattern().
+export const OLD_PATTERNS = { up: 'linear', down: 'linear', '3up-asc': '3up', '3up-desc': '3up',
+                              '3down-asc': '3down', '3down-desc': '3down' };
 
 // Arpeggio mastery (F1, boss 2026-09-27), over the chord tones (the arp-*
 // "scales", index i = the root): up through the four inversions — 1357
@@ -72,7 +79,7 @@ PATTERNS.arp = {
 };
 
 // Which patterns each scale's ladder has. Pentatonic gets thirds later.
-const LADDER = { major: PATTERN_ORDER, penta: ['up', 'down'],
+const LADDER = { major: PATTERN_ORDER, penta: ['linear'],
                  'arp-maj7': ['arp'], 'arp-7': ['arp'], 'arp-m7': ['arp'], 'arp-m7b5': ['arp'] };
 // The games that run on the scales engine, and their scales in ladder order.
 export const GAME_SCALES = { scales: ['major', 'penta'], arpeggios: ['arp-maj7', 'arp-7', 'arp-m7', 'arp-m7b5'] };
@@ -83,8 +90,8 @@ const ALL_KEYS = [...Array(12).keys()];
 const keysLabel = keys => keys.length === 12 ? 'all 12 keys' : keys.map(k => NOTES[k]).join(' ');
 
 // Ids are stable (stored in events and settings); the "S1…" numbers are
-// display only and follow ladder order. ('major-up' / 'major-down' were
-// also the first day's pre-ladder ids — same meaning, so their runs count.)
+// display only and follow ladder order. Ids from before 2026-09-27
+// ('major-3up-asc' …) are renamed by migrate.js (oldLevelId).
 // Numbered per game: S1… for scales, A1… for arpeggios.
 export const SCALE_LEVELS = Object.entries(GAME_SCALES).flatMap(([game, scales]) => scales.flatMap(scale => LADDER[scale].map(p => ({
   id: `${scale}-${p}`, game, scale, pattern: p, title: SCALES[scale].name,
@@ -102,24 +109,30 @@ export function matchScaleLevel(scale, pattern, keys) {
 // Resolve an exercise id (a level id, or 'custom') to
 // {id, num, title, name, scale, pattern, keys, keysLabel}. Unknown ids (an
 // older ladder, e.g. 'major-home') fall back to the first level. A custom
-// pick saved before patterns existed runs linear up.
+// pick saved before patterns existed runs linear.
 export function scaleExercise(id, custom, game = 'scales') {
   if (id === 'custom') {
-    const pattern = PATTERNS[custom.pattern] ? custom.pattern : 'up';
+    const pattern = PATTERNS[custom.pattern] ? custom.pattern : 'linear';
     return { id, num: '', title: SCALES[custom.scale].name, name: PATTERNS[pattern].name, scale: custom.scale,
              pattern, keys: custom.keys, keysLabel: custom.keys.length ? keysLabel(custom.keys) : 'no key chosen' };
   }
   return SCALE_LEVELS.find(l => l.id === id && l.game === game) || levelsOf(game)[0];
 }
 
-// The pattern of a run event. Runs before patterns (event v2) carry only
-// `direction`, which was linear up or down.
-export const runPattern = e => e.pattern || e.direction;
+// The pattern a run counts for. Runs before patterns (event v2) carry only
+// `direction`, which was linear up or down; the one-way patterns count for
+// the there-and-back pattern they're half of (OLD_PATTERNS).
+export const runPattern = e => { const p = e.pattern || e.direction; return OLD_PATTERNS[p] || p; };
+
+// The notes of a run that count toward its score, clean or not and tempo:
+// those in the horn's middle (music.js HORN_MIDDLE) — all of them for a
+// run entirely at an extreme. Rows are `expected` rows, written pitch first.
+export const countedNotes = rows => (rows.some(x => inMiddle(x[0])) ? rows.filter(x => inMiddle(x[0])) : rows);
 
 // --- Weak keys (the D3 idea, per scale × pattern × key) ---
-// One run scores 0–1: the share of its notes that were hit. A run that was
-// stopped early counts its unplayed notes as not hit, so restarts weigh in
-// naturally. `recent` is an exponential moving average per key, α = 0.3:
+// One run scores 0–1: the share of its counted notes (countedNotes: the
+// horn's middle) that were hit. A run that was stopped early counts its
+// unplayed notes as not hit, so restarts weigh in naturally. `recent` is an exponential moving average per key, α = 0.3:
 // runs are far fewer than degree answers, so each one moves the needle
 // more. Tickets follow weakspots.js: never zero, so clean keys still come
 // round; +0.8 for a key with under 3 runs; untried = 2.2.
@@ -129,7 +142,8 @@ const UNTRIED = 2.2;
 
 export function runScore(e) {
   if (!e.expected || !e.expected.length) return null;
-  return e.expected.filter(x => x[3] === 'hit').length / e.expected.length;
+  const notes = countedNotes(e.expected);
+  return notes.filter(x => x[3] === 'hit').length / notes.length;
 }
 
 const statKey = (scale, pattern, key) => `${scale}|${pattern}|${key}`;

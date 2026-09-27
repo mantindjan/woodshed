@@ -1,11 +1,17 @@
 // Renames of stored data, so old data reads as today's (docs/data.md,
-// "Renames"). One so far:
+// "Renames"):
 //
 // 2026-09-27 — the Pattern game became Cells, everywhere: events
 // `game: 'patterns'` → 'cells', `patternId` → `cellId`, `pattern` → `cell`
 // (the snapshot of the cell); settings `woodshed.pattern*` → `woodshed.cell*`,
 // the library `woodshed.patterns` → `woodshed.cells`; sync files
 // `patterns/<day>.json` → `cells/<day>.json`, `patterns.json` → `cells.json`.
+//
+// 2026-09-27 — the six one-way scale patterns became three there-and-back
+// ones (scalelevels.js OLD_PATTERNS): the chosen level
+// (`woodshed.scaleExercise`, 'major-3up-asc' → 'major-3up') and a custom
+// pick's pattern (`woodshed.scaleCustom`). Scale runs are NOT renamed —
+// an 'up' run was played up only; runPattern() counts it for 'linear'.
 //
 // migrateLocal() rewrites this device once, at startup. upgradeEvent /
 // settingKey / upgradePath also run on everything that comes in — sync
@@ -14,6 +20,7 @@
 // untouched, so running them twice changes nothing.
 
 import { allEvents, putEvents } from './events.js';
+import { OLD_PATTERNS } from './scalelevels.js';
 
 const KEYS = {
   'woodshed.patterns': 'woodshed.cells',
@@ -26,7 +33,21 @@ const FIELDS = { patternId: 'cellId', pattern: 'cell' };
 
 // A settings key and its value under today's names.
 export const settingKey = k => KEYS[k] || k;
-export const settingValue = (k, v) => (settingKey(k) === 'woodshed.game' && v === 'patterns' ? 'cells' : v);
+export function settingValue(k, v) {
+  const key = settingKey(k);
+  if (key === 'woodshed.game') return v === 'patterns' ? 'cells' : v;
+  if (key === 'woodshed.scaleExercise') {
+    const m = /^(\w+)-(.+)$/.exec(v || '');
+    return m && OLD_PATTERNS[m[2]] ? `${m[1]}-${OLD_PATTERNS[m[2]]}` : v;
+  }
+  if (key === 'woodshed.scaleCustom') {
+    try {
+      const c = JSON.parse(v);
+      return c && OLD_PATTERNS[c.pattern] ? JSON.stringify({ ...c, pattern: OLD_PATTERNS[c.pattern] }) : v;
+    } catch { return v; }
+  }
+  return v;
+}
 // A sync path under today's names.
 export const upgradePath = p => p.replace(/^patterns\//, 'cells/');
 
@@ -51,7 +72,10 @@ export async function migrateLocal() {
       localStorage.removeItem(from);
       moved = true;
     }
-    if (localStorage.getItem('woodshed.game') === 'patterns') localStorage.setItem('woodshed.game', 'cells');
+    for (const k of ['woodshed.game', 'woodshed.scaleExercise', 'woodshed.scaleCustom']) {
+      const v = localStorage.getItem(k);
+      if (v !== null && settingValue(k, v) !== v) localStorage.setItem(k, settingValue(k, v));
+    }
     const st = JSON.parse(localStorage.getItem('woodshed.syncState') || 'null');
     const stale = Object.keys(st?.files || {}).filter(p => p !== upgradePath(p));
     if (st && (stale.length || moved)) {

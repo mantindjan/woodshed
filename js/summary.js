@@ -25,7 +25,9 @@ const KEY = 'woodshed.summary';
 // v6: learn: one slip is clean, 2 clean step up; false starts void; chosen tempo = baseline.
 // v7: tempos move by rungs of the tempo scale, not percentages.
 // v8: learn judges clean/stay/broken on the comfort range C4–E6.
-const VERSION = 8;
+// v9: every mode judges on the horn's middle C4–D6; the one-way scale
+//     patterns count for their there-and-back pattern (runPattern).
+const VERSION = 9;
 
 function read() {
   try {
