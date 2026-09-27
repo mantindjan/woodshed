@@ -241,7 +241,7 @@ function floatNote(text, bad = false) {
   el.style.top = `${disc.top - drill.top - el.offsetHeight / 2 - FLOAT_GAP_PX}px`;
 
   const sway = 4 + Math.random() * 5;           // px either side
-  const cycles = 0.5 + Math.random() * 0.5;     // wobbles on the way up
+  const cycles = 0.35 + Math.random() * 0.35;   // wobbles on the way up (was 0.5–1: slowed ~30 %, boss 2026-09-27)
   const phase = Math.random() * 2 * Math.PI;
   const rise = 45 + Math.random() * 20;         // px
   const drift = (Math.random() - 0.5) * 20;     // slow sideways lean

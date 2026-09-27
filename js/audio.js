@@ -320,12 +320,18 @@ export function click(time, accent = false) {
 }
 
 // Silence everything now. Called on every stop path, or notes hang.
+// A fast fade, not a cut: dropping a ringing note to zero in one sample
+// is a click — in the degree drill each right answer cut the last chord,
+// and fast answers crackled (boss, 2026-09-27; rendered offline, the cut
+// jumped 6× more than a clean onset; τ 2.5 ms still 2×, τ 6 ms level with
+// one). Hold the level where it is, ~18 ms down, stop once it's gone (8 τ).
+const FADE_TAU = 0.006, FADE_STOP = 0.05;
 export function stopAll() {
   if (!ctx) return;
   const t = ctx.currentTime;
   for (const { o, g } of voices) {
-    try { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0.0001, t); } catch { /* already stopped */ }
-    try { o.stop(t); } catch { /* already stopped */ }
+    try { g.gain.cancelAndHoldAtTime(t); g.gain.setTargetAtTime(0, t, FADE_TAU); } catch { /* already stopped */ }
+    try { o.stop(t + FADE_STOP); } catch { /* already stopped */ }
   }
   voices = new Set();
 }
