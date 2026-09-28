@@ -27,7 +27,7 @@ const STATE_KEY = 'woodshed.syncState';
 // Settings that travel in settings.json: everything but the sync credentials.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
-                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.inputLatency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.guideSel', 'woodshed.guidePath', 'woodshed.guideBacking', 'woodshed.guideNames', 'woodshed.guideBpm', 'woodshed.scaleExercise',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.inputLatency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.cellStage', 'woodshed.guideSel', 'woodshed.guidePath', 'woodshed.guideBacking', 'woodshed.guideNames', 'woodshed.guideBpm', 'woodshed.scaleExercise',
                   'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses'];
 const SETTINGS_PATH = 'settings.json';
 // The player's libraries — their own creations, kept apart from the runs

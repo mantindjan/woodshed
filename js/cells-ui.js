@@ -19,13 +19,13 @@ const CELL_BPM_KEY = 'woodshed.cellBpm';    // a tempo of its own (notes per min
 const CELL_BACK_KEY = 'woodshed.cellBacking';   // 'band' | 'root' | 'click'
 let cellId = load(CELL_SEL_KEY);
 let cellExercise = PRACTICE_EXERCISES.includes(load(CELL_EX_KEY)) ? load(CELL_EX_KEY) : PRACTICE_EXERCISES[0];
-let cellStage = null;                          // learn stage picked by hand; null = where progress says
+const CELL_STAGE_KEY = 'woodshed.cellStage';  // learn: ×4 / ×2 / ×1 on each chord — the player's pick
+let cellStage = [0, 1, 2].includes(Number(load(CELL_STAGE_KEY))) ? Number(load(CELL_STAGE_KEY)) : 0;
 // Backing (boss, 2026-09-26): the trio, drums + the root only (no fifth: it
 // lies on ø and ° chords), or the click alone. The band by default.
 let backing = ['band', 'root', 'click'].includes(load(CELL_BACK_KEY)) ? load(CELL_BACK_KEY) : 'band';
 let progressById = new Map();                  // cell id → cellProgress()
 const currentCell = () => { const lib = loadLibrary(); return lib.find(p => p.id === cellId) || lib[0] || null; };
-const currentStage = p => cellStage ?? (p && progressById.get(p.id)?.stage) ?? 0;
 const cellTempo = mountTempo($('#cellTempo'), { min: 60, value: Math.max(60, Number(load(CELL_BPM_KEY)) || 60),
                                           note: 'a note a beat', onChange: v => save(CELL_BPM_KEY, String(v)) });
 
@@ -43,7 +43,7 @@ function showCellSettings() {
   $('#cellCardDeg').textContent = p ? degreesText(p) : 'build one ›';
   $('#cellStages').hidden = st.mode !== 'learn';
   $('#cellExercises').hidden = st.mode === 'learn';
-  const stage = currentStage(p);
+  const stage = cellStage;
   $$('[data-cell-stage]').forEach(b => b.classList.toggle('active', Number(b.dataset.cellStage) === stage));
   $$('[data-cell-back]').forEach(b => b.classList.toggle('active', b.dataset.cellBack === backing));
   $('#cellExercises').innerHTML = PRACTICE_EXERCISES.map(id =>
@@ -57,14 +57,14 @@ function showCellSettings() {
   msg.hidden = !p;
   msg.innerHTML = !p ? '' : st.mode === 'learn'
     ? `<b>Learn</b> — the cell there and back (a b c d c b), ${STAGES[stage]}× on each chord round the cycle of 4ths. Nothing is shown ahead: ` +
-      'play it from the top on each chord. Two solid runs (95 %) and it moves to fewer times per chord.<br><small>Start goes straight into a one-bar count-in.</small>'
+      'play it from the top on each chord. A solid round (95 %) ticks the stage; pick fewer times per chord when you\'re ready.<br><small>Start goes straight into a one-bar count-in.</small>'
     : `<b>Practice</b> — the 4 notes once on each chord, ${EXERCISES[cellExercise].name.toLowerCase()}.<br><small>Start goes straight into a one-bar count-in.</small>`;
 }
 $('#cellCard').addEventListener('click', () => hooks.showTab('levels'));
 $$('[data-cell-back]').forEach(b => b.addEventListener('click', () => { backing = b.dataset.cellBack; save(CELL_BACK_KEY, backing); hooks.showSettings(); }));
 $('#cellStages').addEventListener('click', e => {
   const b = e.target.closest('[data-cell-stage]');
-  if (b) { cellStage = Number(b.dataset.cellStage); hooks.showSettings(); }
+  if (b) { cellStage = Number(b.dataset.cellStage); save(CELL_STAGE_KEY, String(cellStage)); hooks.showSettings(); }
 });
 $('#cellExercises').addEventListener('click', e => {
   const b = e.target.closest('[data-cell-ex]');
@@ -85,7 +85,7 @@ function editDraft(p) {
 
 function stageText(prog) {
   if (!prog) return 'new';
-  const marks = STAGES.map((n, i) => (prog.learnt || i < prog.stage ? `<b>×${n} ✓</b>` : `×${n}`)).join(' ');
+  const marks = STAGES.map((n, i) => (prog.solid.has(i) ? `<b>×${n} ✓</b>` : `×${n}`)).join(' ');
   return `Learn ${marks}<br>Practice ${prog.done.size} / ${PRACTICE_EXERCISES.length}`;
 }
 
@@ -160,7 +160,6 @@ $('#cellSave').addEventListener('click', async () => {
   const saved = saveCell(draft, played);
   cellId = saved.id;
   save(CELL_SEL_KEY, cellId);
-  cellStage = null;
   editDraft(saved);
   await loadCellProgress();
   showCellLevels();
@@ -186,8 +185,7 @@ $('#cellLib').addEventListener('click', e => {
   if (card) {
     cellId = card.dataset.cellSel;
     save(CELL_SEL_KEY, cellId);
-    cellStage = null;
-    showCellLevels();
+      showCellLevels();
     hooks.showSettings();
   }
 });
@@ -251,7 +249,7 @@ function drawCellStats() {
   $('#cstToday').textContent = runs.filter(e => e.t >= dayStart).length;
   $('#cstHit').textContent = notes.length ? `${Math.round(100 * notes.filter(x => x[4] === 'hit').length / notes.length)}%` : '–';
   $('#cstSolid').textContent = last.length ? `${last.filter(e => runRate(e) >= SOLID).length} / ${last.length}` : '–';
-  $('#cstLearn').textContent = prog.learnt ? 'learnt ✓' : `×${STAGES[prog.stage]}`;
+  $('#cstLearn').textContent = prog.learnt ? 'learnt ✓' : prog.solid.size ? STAGES.filter((_, i) => prog.solid.has(i)).map(n => `×${n} ✓`).join(' ') : '–';
   $('#cstPractice').textContent = `${prog.done.size} / ${PRACTICE_EXERCISES.length}`;
 }
 $('#cellGrid').addEventListener('click', e => {
@@ -269,7 +267,7 @@ async function start() {
   // If they can't load, the run goes on with the count-in and no band.
   initAudio();
   await loadTrio().catch(() => {});
-  startCells({ cell: p, mode: st.mode, exercise: st.mode === 'learn' ? 'cycle4' : cellExercise, stage: currentStage(p),
+  startCells({ cell: p, mode: st.mode, exercise: st.mode === 'learn' ? 'cycle4' : cellExercise, stage: cellStage,
                bpm: cellTempo.get(), backing: backing, calib: st.calib, calibOffset: st.calibOffset, latency: st.latency },
              () => { hooks.showRunning(false); hooks.showSettings(); loadCellProgress(); hooks.runSync(); });
 }

@@ -33,6 +33,9 @@ export const numeral = c => {
 export const cadenceText = ex => ex.chords.map(c => `${numeral(c)}${c.bars > 1 ? ` ×${c.bars}` : ''}`).join(' · ');
 
 export const BAR = 4;                         // 4/4
+// Between one key's cadence and the next, a bar of drums only — no chord,
+// no targets — to hear the change coming (boss, 2026-09-28).
+export const KEY_REST_BARS = 1;
 export const QUALITIES = ['maj7', '7', 'm7', 'm7b5'];
 export const BARS = [1, 2, 4];
 export const TONES = ['1', '3', '5', '7', '9', 'b9', '#9', '11', '#11', '13', 'b13'];
@@ -80,7 +83,7 @@ export const isPreset = ex => ex.id.startsWith('p:');
 const pcOf = n => ((n % 12) + 12) % 12;
 
 // A round: the exercise in each of `keys` (written tonics, in order), from
-// beat 0 (the first beat after the count-in). → {chords: [{key (written
+// beat 0 (the first beat after the count-in), a rest bar between keys. → {chords: [{key (written
 // root pc), q, alt, beats, start, keyIdx, chordIdx, tonic}], targets: [{from, to
 // (beats), pc (written), deg (the tone drawn), at, keyIdx, chordIdx, key
 // (the tonic)}] in time order, beats}.
@@ -88,6 +91,7 @@ export function buildRound(ex, keys, rnd = Math.random) {
   const chords = [], targets = [];
   let beat = 0;
   keys.forEach((key, keyIdx) => {
+    if (keyIdx > 0) beat += KEY_REST_BARS * BAR;
     ex.chords.forEach((c, chordIdx) => {
       const beats = c.bars * BAR;
       const root = pcOf(key + c.deg);

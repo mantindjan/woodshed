@@ -2,8 +2,9 @@
 // round the keys on a staff with bars; only the TARGETS are judged
 // (guidelib.js) — play anything in between. The targets are drawn ahead
 // on the staff: the tone in a ring on its beat, or along a bar for a
-// "late" one, with the note name under it (a setting); each key change is
-// a tall line with the new key's name. After a one-bar count-in the band (or
+// "late" one, with the note name under it (a setting); between keys a bar
+// of drums only (guidelib.js KEY_REST_BARS), then the key change: a tall
+// line with the new key's name. After a one-bar count-in the band (or
 // the click) plays ONE round; its tally comes up with Play again. Nothing
 // stops a round and there are no modes: it's all practice.
 //
@@ -103,7 +104,16 @@ function startRound() {
   const round = buildRound(s.guide, keys);
   const t0 = now + 300;
   const first = t0 + COUNT_IN * beat;
-  const { bass, comp } = bandParts(round.chords, s.backing, s.calib, BAR);
+  // The band per key, placed at its cadence's start: nothing sounds in the
+  // rest bars between keys but the drums (or the click).
+  const bass = [], comp = [];
+  keys.forEach((_, k) => {
+    const cs = round.chords.filter(c => c.keyIdx === k);
+    const parts = bandParts(cs, s.backing, s.calib, BAR);
+    const at = x => ({ ...x, beat: x.beat + cs[0].start });
+    bass.push(...parts.bass.map(at));
+    comp.push(...parts.comp.map(at));
+  });
   s.run = {
     t0, beat, countIn: COUNT_IN, beats: COUNT_IN + round.beats, nextBeat: 0, bass, comp, bassAt: 0, compAt: 0,
     window: Math.min(MAX_WINDOW_MS, beat * 0.45), keys, phase: 'running', notes: [], played: [],
@@ -274,7 +284,7 @@ function draw() {
     // From above the chord symbols to the staff's foot — the note names
     // below stay clear; the key's name under them.
     g.strokeStyle = '#ffe2a8'; g.lineWidth = 5;
-    g.beginPath(); g.moveTo(kx, cy - half - 58); g.lineTo(kx, cy + half); g.stroke();
+    g.beginPath(); g.moveTo(kx, cy - half - 78); g.lineTo(kx, cy + half); g.stroke();
     g.fillStyle = '#ffe2a8'; g.font = '800 13px system-ui, sans-serif';
     g.fillText(`key of ${NOTES[ch.tonic]}`, kx, cy + half + 32);
   }
@@ -338,15 +348,16 @@ function draw() {
   g.strokeStyle = '#ffe2a8'; g.lineWidth = 4; g.lineCap = 'round';
   g.beginPath(); g.moveTo(nowX, cy - half - 50); g.lineTo(nowX, cy + half + 26); g.stroke();
   g.restore();
-  // Chord symbols above the staff; the one being played pinned at the left.
+  // Chord symbols above the staff; the one being played pinned at the left
+  // (none during a rest bar).
   let current = -1;
-  r.chords.forEach((ch, i) => { if (ch.t <= now) current = i; });
+  r.chords.forEach((ch, i) => { if (ch.t <= now && now < ch.t + ch.beats * r.beat) current = i; });
   r.chordEls?.forEach((el, i) => {
     let cx = x(r.chords[i].t);
     if (i === current) cx = Math.max(cx, 6);
-    const vis = i >= current && cx >= 0 && cx < W + 10;
+    const vis = (i === current || r.chords[i].t > now) && cx >= 0 && cx < W + 10;
     el.style.display = vis ? '' : 'none';
-    if (vis) el.style.transform = `translate(${Math.round(cx)}px, ${Math.round(cy - half - 44)}px)`;
+    if (vis) el.style.transform = `translate(${Math.round(cx)}px, ${Math.round(cy - half - 70)}px)`;
   });
 }
 

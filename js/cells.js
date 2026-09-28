@@ -23,8 +23,8 @@
 // the window wins over a glitch, as in scales. Latency (⚙) is subtracted.
 //
 // Learn: the cell as a b c d c b (playedNotes) goes round the cycle of
-// 4ths ×4 → ×2 → ×1; two solid runs (≥ 95 %) in a row move to the next
-// stage. Practice: the 4 notes, another path, once per chord. `s.cell` is
+// 4ths ×4, ×2 or ×1 on each chord — the stage the player picks; a solid
+// round (≥ 95 %) ticks it, nothing moves on by itself (2026-09-28). Practice: the 4 notes, another path, once per chord. `s.cell` is
 // the cell (logged as is), `s.play` what's played.
 
 import { pc, degreeLabel } from './music.js';
@@ -111,7 +111,7 @@ export function startCells(opts, onEnd) {
   initAudio();
   requestPersistence();
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
-  s = { ...opts, onEnd, session: Date.now().toString(36), timers: [], streak: 0, run: null,
+  s = { ...opts, onEnd, session: Date.now().toString(36), timers: [], run: null,
         play: { ...opts.cell, notes: playedNotes(opts.cell, opts.mode) } };
   showCell(s.play);
   startStream();
@@ -274,20 +274,12 @@ function scoreRound(round) {
     notes: r.notes.map(([m, ms]) => [m, Math.round(r.t0 + ms - base)])
       .filter(([, ms]) => ms >= BEATS * r.beat - r.window && ms <= round.end - base + r.window),
   });
+  // A solid round (≥ 95 %) ticks its learn stage or practice path; the
+  // player picks what's next.
   let note = '';
-  if (s.mode === 'learn') {
-    s.streak = rate >= SOLID ? s.streak + 1 : 0;
-    if (s.streak >= 2 && s.stage < STAGES.length - 1) {
-      s.stage++;
-      s.streak = 0;
-      note = `<br>Solid twice — <b>×${STAGES[s.stage]}</b> on each chord from the next round`;
-    } else if (s.streak >= 2) {
-      note = '<br><b>Learnt</b> — solid ×1 round the cycle. Time for Practice.';
-    } else if (rate >= SOLID) {
-      note = `<br><small>solid ${s.streak} of 2 at ×${round.reps}</small>`;
-    }
-  } else if (rate >= SOLID) {
-    note = `<br><b>${EXERCISES[s.exercise].name}</b> — solid.`;
+  if (rate >= SOLID) {
+    note = s.mode !== 'learn' ? `<br><b>${EXERCISES[s.exercise].name}</b> — solid.`
+      : round.reps === 1 ? '<br><b>Solid at ×1</b> — learnt. Time for Practice.' : `<br><b>Solid at ×${round.reps}</b> ✓`;
   }
   const mean = offs.length ? Math.round(offs.reduce((a, b) => a + b, 0) / offs.length) : null;
   const drift = mean === null || Math.abs(mean) <= 15 ? '' : mean > 0 ? ` · ${mean} ms late on average` : ` · ${-mean} ms early on average`;

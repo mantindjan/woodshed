@@ -65,10 +65,10 @@ const SHEET_SUMMARY_MS = 4000; // learn: longer, to read the marks on the sheet
 // has the height to show the pattern's staircase (at 12 a row, 3 rows of
 // big discs flattened the thirds — boss, 2026-09-26).
 const SHEET_ROW = 18;
-// A run that's gone (boss, 2026-09-26): after a false start, or in learn
-// ERRORS_IN_A_ROW wrong/missed notes running, it stops, pauses RESTART_MS,
-// and the same run starts again straight into the count-in.
-const ERRORS_IN_A_ROW = 5;
+// A false start (boss, 2026-09-26) stops the run, pauses RESTART_MS, and
+// the same run starts again straight into the count-in. Nothing else stops
+// a learn run: its "5 wrong in a row" restart went (boss, 2026-09-28 — an
+// automatic stop after mistakes is practice's miss limit, not learn's).
 const RESTART_MS = 1500;
 // A hit this close counts "on the beat"; beyond it the disc gets an
 // early/late tick. 30 ms was too tight on the horn (boss, 2026-09-25).
@@ -476,7 +476,6 @@ function expire(now) {
       // A run that's gone stops now rather than being played out.
       const i = r.expected.indexOf(e);
       if (i === 1 && falseStart(r)) return endRun(true, 'false');
-      if (s.mode === 'learn' && errorsInARow(r, i) >= ERRORS_IN_A_ROW) return endRun(true, 'errors');
     }
   }
   checkDone();
@@ -489,14 +488,6 @@ function expire(now) {
 function falseStart(r) {
   const [a, b] = r.expected;
   return a.status !== 'hit' && b.status !== 'hit' && a.wrongW != null && r.scaleNotes.includes(a.wrongW);
-}
-
-// Wrong/missed notes in a row, ending at note i. The extremes are passed
-// over, neither counted nor breaking the row.
-function errorsInARow(r, i) {
-  let n = 0;
-  for (; i >= 0 && r.expected[i].status !== 'hit' && r.expected[i].status !== 'pending'; i--) if (inMiddle(r.expected[i].w)) n++;
-  return n;
 }
 
 // The same run again, straight into the count-in (no start note to blow),
@@ -518,8 +509,7 @@ function checkDone() {
   if (r && r.phase === 'running' && r.expected.every(e => e.status !== 'pending')) endRun(false);
 }
 
-// `abort`: 'false' (false start: logged, void) or 'errors' (learn: too many
-// in a row — counts as a stopped run); either way the same run restarts.
+// `abort`: 'false' (a false start: logged, void; the same run restarts).
 function endRun(stopped, abort = null) {
   const r = s.run;
   r.phase = 'summary';
@@ -613,13 +603,6 @@ function endRun(stopped, abort = null) {
     message((stopped
       ? `<b>${r.misses} misses — start again.</b> ${hits.length} of ${r.expected.length} hit.`
       : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`) + edgeNote + tempoNote);
-  }
-  if (abort === 'errors') {
-    message(`<b>${ERRORS_IN_A_ROW} wrong in a row</b> — again from ${noteName(r.expected[0].w)}.${tempoNote}`);
-    $('#scaleMsg').classList.add('tally');
-    s.advance = false;                 // same key, whatever the tempo did
-    s.timers.push(setTimeout(() => { if (s) restartRun(); }, RESTART_MS));
-    return;
   }
   s.timers.push(setTimeout(() => { if (s) nextRun(); }, s.mode === 'learn' ? SHEET_SUMMARY_MS : SUMMARY_MS));
 }

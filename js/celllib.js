@@ -167,36 +167,28 @@ export function cellGrid(events, id) {
 }
 
 // --- Progress, from runs ---
-// A run is SOLID at ≥ 95 % of its notes hit. Learn: 2 solid runs in a row
-// at a stage move the cell to the next (×4 → ×2 → ×1); solid at ×1 =
-// learnt, practice next. Practice: an exercise is done once solid.
+// A run is SOLID at ≥ 95 % of its notes hit. Learn: a stage (×4, ×2, ×1)
+// is ticked once a round at it is solid; solid at ×1 = learnt. Practice:
+// a path is done once solid. Nothing moves the player on — the stage is
+// theirs to pick (boss, 2026-09-28: "two times to count it … I can be the
+// best judge of that if I fix the tempo"; "two solid in a row" is auto
+// tempo's rule, in scales).
 export const SOLID = 0.95;
 // Cell runs' expected rows are [root, degree, semitones, ms, status, offset].
 export const runRate = e => e.expected.filter(x => x[4] === 'hit').length / e.expected.length;
 
-// {stage: index into STAGES to play next, learnt, done: Set of exercise ids,
-// best: {exercise|reps → best rate}} for a cell id, from its events
-// (oldest first).
+// {solid: Set of STAGES indexes ticked, learnt, done: Set of exercise ids,
+// best: {exercise|reps → best rate}} for a cell id, from its events.
 export function cellProgress(events, id) {
-  let stage = 0, streak = 0, learnt = false;
-  const done = new Set(), best = {};
+  const solid = new Set(), done = new Set(), best = {};
   for (const e of events) {
     if (e.game !== 'cells' || e.cellId !== id || !e.expected?.length) continue;
     const rate = runRate(e);
     const k = `${e.exercise}|${e.reps}`;
     best[k] = Math.max(best[k] || 0, rate);
-    if (e.mode === 'learn') {
-      const at = STAGES.indexOf(e.reps);
-      if (at !== stage) { streak = 0; continue; }      // only the current stage moves it
-      streak = rate >= SOLID ? streak + 1 : 0;
-      if (streak >= 2) {
-        streak = 0;
-        if (stage === STAGES.length - 1) learnt = true;
-        else stage++;
-      }
-    } else if (rate >= SOLID) {
-      done.add(e.exercise);
-    }
+    if (rate < SOLID) continue;
+    if (e.mode === 'learn' && STAGES.includes(e.reps)) solid.add(STAGES.indexOf(e.reps));
+    else if (e.mode !== 'learn') done.add(e.exercise);
   }
-  return { stage, learnt, done, best };
+  return { solid, learnt: solid.has(STAGES.length - 1), done, best };
 }
