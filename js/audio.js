@@ -230,26 +230,50 @@ function rhodesNote(midi, t, dur, vel, pan, dest = room) {
 
 // A chord: bass root an octave down, then 1 3 5 7 close (VOICING's first
 // five). rootConcertPc is a CONCERT pitch class; the root sits in octave 3
-// (MIDI 48–59).
-function rhodesChord(rootConcertPc, quality, t, dur) {
+// (MIDI 48–59). `vel` scales every voice (a softer pad under a line).
+function rhodesChord(rootConcertPc, quality, t, dur, vel = 1) {
   VOICING[quality].slice(0, 5).forEach((semi, i) => {
-    rhodesNote(48 + rootConcertPc + semi, t + rnd(0, 0.012), dur, rnd(0.85, 1), i === 0 ? 0 : (i % 2 ? -0.35 : 0.35));
+    rhodesNote(48 + rootConcertPc + semi, t + rnd(0, 0.012), dur, vel * rnd(0.85, 1), i === 0 ? 0 : (i % 2 ? -0.35 : 0.35));
   });
 }
 
 // Play a chord now (the degree drill: a new question cuts the last one).
-export function playChord(rootConcertPc, quality, dur) {
+export function playChord(rootConcertPc, quality, dur, vel = 1) {
   if (!ctx) return;
   stopAll();
-  rhodesChord(rootConcertPc, quality, ctx.currentTime + 0.02, dur);
+  rhodesChord(rootConcertPc, quality, ctx.currentTime + 0.02, dur, vel);
 }
 
-// A melodic line on the Rhodes, one note every `beat` seconds from now —
-// the cell editor's Hear (MIDI numbers, concert).
+// A melodic line over a chord, one note every `beat` seconds from now —
+// the cell editor's Hear (MIDI numbers, concert). On the ping's bell, not
+// the Rhodes: a Rhodes line in the chord's register, at full strength,
+// summed with it into the room's saturation — crackly and blurred (boss,
+// 2026-09-28: "make it clear, like in degrees").
 export function playLine(midis, beat) {
   if (!ctx) return;
   const t = ctx.currentTime + 0.05;
-  midis.forEach((m, i) => rhodesNote(m, t + i * beat, beat * 0.9, 1, 0));
+  midis.forEach((m, i) => bell(m, t + i * beat, beat * 0.92));
+}
+
+// One held bell note: the ping's sine and quiet octave, 5 ms in, settling
+// while held, then out in ~60 ms (τ 20 ms) — no click at the next note.
+function bell(midi, t, dur) {
+  const f = freq(midi);
+  for (const [mult, level] of [[1, 0.15], [2, 0.035]]) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = f * mult;
+    o.connect(g);
+    g.connect(master);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.005);
+    g.gain.setTargetAtTime(level * 0.45, t + 0.005, 0.3);
+    g.gain.setTargetAtTime(0, t + dur, 0.02);
+    o.start(t);
+    o.stop(t + dur + 0.15);
+    track(o, g);
+  }
 }
 
 // --- Swing ---

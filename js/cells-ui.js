@@ -144,13 +144,15 @@ $('#cellName').addEventListener('input', e => { draft.name = e.target.value; });
 $('#cellNew').addEventListener('click', () => { editDraft(null); draft.notes = []; draft.sel = -1; showEditor(); });
 // Hear the draft (boss, 2026-09-27: "key doesn't matter, just to hear how
 // it sounds"): over a C chord of its quality, the line a note a beat at
-// 150 bpm, its root at middle C (concert), so the octaves are as drawn.
+// 150 bpm, its root at C5 (concert), so the octaves are as drawn.
 const HEAR_BEAT = 0.4;
 $('#cellHear').addEventListener('click', () => {
   if (!draft.notes.length) return;
   initAudio();
-  playChord(0, draft.quality, draft.notes.length * HEAR_BEAT + 0.4);
-  playLine(draft.notes.map(n => 60 + noteSemis(draft.quality, n)), HEAR_BEAT);
+  // The chord soft underneath, the cell on the clear bell an octave above
+  // it (its root at C5), so the two never blur.
+  playChord(0, draft.quality, draft.notes.length * HEAR_BEAT + 0.4, 0.55);
+  playLine(draft.notes.map(n => 72 + noteSemis(draft.quality, n)), HEAR_BEAT);
 });
 $('#cellSave').addEventListener('click', async () => {
   // Changing the notes of a cell that has runs makes a new cell.
