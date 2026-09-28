@@ -17,6 +17,14 @@ export function noteHTML(pc) {
   return `<span class="rb">${letter}</span><span class="acc acc-${kind}">${acc}</span>`;
 }
 
-export function chordHTML(rootPc, quality) {
-  return noteHTML(rootPc) + `<span class="q q-${quality}">${QUALITIES[quality]}</span>`;
+export function chordHTML(rootPc, quality, alt = null) {
+  return noteHTML(rootPc) + `<span class="q q-${quality}">${QUALITIES[quality]}</span>` + (alt ? alterationHTML(alt) : '');
+}
+
+// A chord's alteration ('b9', '#11' …), small and raised after its symbol,
+// as a chart writes G7♭9: the accidental in the symbol font, the number in
+// the Real Book one (guide tones' cadences, 2026-09-28).
+export function alterationHTML(alt) {
+  const kind = alt[0] === 'b' ? 'f' : 's';
+  return `<span class="q-alt"><span class="acc acc-${kind}">${kind === 'f' ? '♭' : '♯'}</span><span class="rb">${alt.slice(1)}</span></span>`;
 }

@@ -17,7 +17,7 @@
 // A target nobody played is a MISS; one where the right pitch class came
 // only off the line is WRONG.
 
-import { NOTES } from './music.js';
+import { NOTES, degreeLabel } from './music.js';
 import { chordHTML } from './notation.js';
 import { initAudio, stopAll } from './audio.js';
 import { bandParts, scheduleBand } from './band.js';
@@ -112,7 +112,7 @@ function startRound() {
                                          status: 'pending', off: null, w: null, offLine: false, hitAt: null })),
     end: first + round.beats * beat,
   };
-  $('#guideChords').innerHTML = s.run.chords.map(c => `<div class="guidechord">${chordHTML(c.key, c.q)}</div>`).join('');
+  $('#guideChords').innerHTML = s.run.chords.map(c => `<div class="guidechord">${chordHTML(c.key, c.q, c.alt)}</div>`).join('');
   s.run.chordEls = [...$('#guideChords').children];
   scheduleBand(s.run, now, s.bpm, s.backing, k => k % BAR === 0);
   message('');
@@ -308,8 +308,10 @@ function draw() {
     }
     const mid = tg.at === LATE ? (a + b) / 2 : a;
     g.fillStyle = done && tg.status !== 'hit' ? '#fff' : done ? '#181818' : '#ffe2a8';
-    g.font = '800 16px system-ui, sans-serif';
-    g.fillText(tg.deg, mid, cy + 1);
+    // ♯11 or ♭13 is three glyphs: smaller, so it stays in the ring.
+    const label = degreeLabel(tg.deg);
+    g.font = `800 ${label.length > 2 ? 11 : label.length > 1 ? 13 : 16}px system-ui, sans-serif`;
+    g.fillText(label, mid, cy + 1);
     if (s.names) {
       g.fillStyle = 'rgba(255,226,168,.8)';
       g.font = '700 13px system-ui, sans-serif';

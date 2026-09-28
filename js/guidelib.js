@@ -6,7 +6,10 @@
 // degrees of the key, each lasting 1, 2 or 4 bars of 4/4 — plus its
 // TARGETS: on a chord, at a beat of any of its bars or "late" (anywhere in
 // the chord's last two beats, off the beat is fine), one tone or several
-// (1 3 5 7 9 11 13; several = one drawn at random in each key). It goes
+// (1 3 5 7, the colours 9 11 13 and the alterations ♭9 ♯9 ♯11 ♭13;
+// several = one drawn at random in each key). A chord may carry an
+// alteration in its symbol (V7♭9 — boss, 2026-09-28): shown on the chord,
+// its tones are what the targets say; the band still comps 3 5 7. It goes
 // round the 12 keys on a key path; the player blows through it and only
 // the targets are judged. A target's pitch is free in octave, except along
 // the line: when the next target is a step (≤ 2 semitones) from the one
@@ -18,21 +21,24 @@
 // changing a played one saves a new one, so one id never means two
 // exercises. The library syncs as its own file, guides.json.
 
-import { DEG_SEMI, QUALITY_TEXT } from './music.js';
+import { DEG_SEMI, QUALITY_TEXT, degreeLabel } from './music.js';
 
 // Chord roots as degrees of the key (semitones above the tonic), shown as
 // Roman numerals — lower case on minor and half-diminished chords.
 export const NUMERALS = ['I', '♭II', 'II', '♭III', 'III', 'IV', '♯IV', 'V', '♭VI', 'VI', '♭VII', 'VII'];
 export const numeral = c => {
   const n = NUMERALS[c.deg];
-  return `${c.q === 'm7' || c.q === 'm7b5' ? n.toLowerCase() : n}${QUALITY_TEXT[c.q]}`;
+  return `${c.q === 'm7' || c.q === 'm7b5' ? n.toLowerCase() : n}${QUALITY_TEXT[c.q]}${c.alt ? degreeLabel(c.alt) : ''}`;
 };
 export const cadenceText = ex => ex.chords.map(c => `${numeral(c)}${c.bars > 1 ? ` ×${c.bars}` : ''}`).join(' · ');
 
 export const BAR = 4;                         // 4/4
 export const QUALITIES = ['maj7', '7', 'm7', 'm7b5'];
 export const BARS = [1, 2, 4];
-export const TONES = ['1', '3', '5', '7', '9', '11', '13'];
+export const TONES = ['1', '3', '5', '7', '9', 'b9', '#9', '11', '#11', '13', 'b13'];
+export const ALTS = ['b9', '#9', '#11', 'b13'];     // a chord's alteration, shown in its symbol
+// A tone's semitones above the root (DEG_SEMI has no ♭13: 8 on every chord).
+const toneSemi = (q, deg) => (deg === 'b13' ? 8 : DEG_SEMI[q][deg]);
 export const MAX_CHORDS = 8;
 
 // Where a target sits: `at` = the beat from the chord's start (0 = its
@@ -57,7 +63,8 @@ export const FILL_ORDER = ['3on1', '7on1', 'line7', 'line3', '7to3', 'either', '
 export const fill = (chords, id) => chords.flatMap((_, i) => FILLS[id].of(i).map(t => ({ chord: i, ...t })));
 
 const ii_V_I = [{ deg: 2, q: 'm7', bars: 1 }, { deg: 7, q: '7', bars: 1 }, { deg: 0, q: 'maj7', bars: 2 }];
-const minor = [{ deg: 2, q: 'm7b5', bars: 1 }, { deg: 7, q: '7', bars: 1 }, { deg: 0, q: 'm7', bars: 2 }];
+// Minor: the V as it's played, 7♭9.
+const minor = [{ deg: 2, q: 'm7b5', bars: 1 }, { deg: 7, q: '7', bars: 1, alt: 'b9' }, { deg: 0, q: 'm7', bars: 2 }];
 const V_I = [{ deg: 7, q: '7', bars: 1 }, { deg: 0, q: 'maj7', bars: 2 }];
 const turnaround = [{ deg: 0, q: 'maj7', bars: 1 }, { deg: 9, q: 'm7', bars: 1 }, { deg: 2, q: 'm7', bars: 1 }, { deg: 7, q: '7', bars: 1 }];
 // The built-in exercises (read-only; ids start with "p:"). The tonic chord
@@ -74,7 +81,7 @@ const pcOf = n => ((n % 12) + 12) % 12;
 
 // A round: the exercise in each of `keys` (written tonics, in order), from
 // beat 0 (the first beat after the count-in). → {chords: [{key (written
-// root pc), q, beats, start, keyIdx, chordIdx, tonic}], targets: [{from, to
+// root pc), q, alt, beats, start, keyIdx, chordIdx, tonic}], targets: [{from, to
 // (beats), pc (written), deg (the tone drawn), at, keyIdx, chordIdx, key
 // (the tonic)}] in time order, beats}.
 export function buildRound(ex, keys, rnd = Math.random) {
@@ -84,12 +91,12 @@ export function buildRound(ex, keys, rnd = Math.random) {
     ex.chords.forEach((c, chordIdx) => {
       const beats = c.bars * BAR;
       const root = pcOf(key + c.deg);
-      chords.push({ key: root, q: c.q, beats, start: beat, keyIdx, chordIdx, tonic: key });
+      chords.push({ key: root, q: c.q, alt: c.alt || null, beats, start: beat, keyIdx, chordIdx, tonic: key });
       for (const tg of ex.targets.filter(t => t.chord === chordIdx && t.degs.length)) {
         if (tg.at !== LATE && tg.at >= beats) continue;         // a beat past the chord (it got shorter)
         const deg = tg.degs[Math.floor(rnd() * tg.degs.length)];
         const [a, b] = tg.at === LATE ? [beats - 2, beats] : [tg.at, tg.at];
-        targets.push({ from: beat + a, to: beat + b, pc: pcOf(root + DEG_SEMI[c.q][deg]), deg, at: tg.at,
+        targets.push({ from: beat + a, to: beat + b, pc: pcOf(root + toneSemi(c.q, deg)), deg, at: tg.at,
                        keyIdx, chordIdx, key });
       }
       beat += beats;
@@ -125,7 +132,7 @@ export const select = id => ls(SEL_KEY, id);
 export const currentGuide = () => findGuide(selectedId()) || PRESETS[0];
 
 const clean = ex => ({
-  chords: ex.chords.map(c => ({ deg: c.deg, q: c.q, bars: c.bars })),
+  chords: ex.chords.map(c => ({ deg: c.deg, q: c.q, bars: c.bars, ...(c.alt ? { alt: c.alt } : {}) })),
   targets: ex.targets.filter(t => t.degs.length).map(t => ({ chord: t.chord, at: t.at, degs: TONES.filter(d => t.degs.includes(d)) }))
     .sort((a, b) => a.chord - b.chord || (a.at === LATE) - (b.at === LATE) || a.at - b.at),
 });

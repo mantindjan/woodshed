@@ -14,7 +14,7 @@
 // selected, saved exercise.
 
 import { $, $$, load, save, st, hooks } from './app.js';
-import { NOTES, QUALITY_TEXT } from './music.js';
+import { NOTES, QUALITY_TEXT, degreeLabel } from './music.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
 import { initAudio, loadTrio } from './audio.js';
@@ -22,7 +22,7 @@ import { colour } from './rangemap.js';
 import { esc } from './cells.js';
 import { EXERCISES, PRACTICE_EXERCISES } from './celllib.js';
 import { startGuides, stopGuides, guideNote, guidesRunning, guidesPaused, pauseGuides, resumeGuides, restartGuides } from './guides.js';
-import { NUMERALS, QUALITIES, BARS, TONES, BAR, LATE, MAX_CHORDS, FILLS, FILL_ORDER, PRESETS, numeral, cadenceText, slotName,
+import { NUMERALS, QUALITIES, BARS, TONES, ALTS, BAR, LATE, MAX_CHORDS, FILLS, FILL_ORDER, PRESETS, numeral, cadenceText, slotName,
          fill, isPreset, allGuides, findGuide, selectedId, select, currentGuide, saveGuide, deleteGuide, defaultName,
          guideGrid, slotKey } from './guidelib.js';
 
@@ -38,9 +38,11 @@ let names = load(NAMES_KEY) !== 'off';
 const tempo = mountTempo($('#guideTempo'), { min: 40, value: Math.max(40, Number(load(BPM_KEY)) || 100),
                                              onChange: v => save(BPM_KEY, String(v)) });
 
+// A target's tones as shown: "3/♭9".
+const tonesText = degs => degs.map(degreeLabel).join('/');
 // What the targets say, in short: "3 · 7 late" per chord.
 const targetText = ex => ex.chords.map((c, i) => ex.targets.filter(t => t.chord === i)
-  .map(t => `${t.degs.join('/')}${t.at === LATE ? ' late' : t.at ? ` @${slotName(c, t.at).replace('beat ', '')}` : ''}`).join(' ') || '–').join(' · ');
+  .map(t => `${tonesText(t.degs)}${t.at === LATE ? ' late' : t.at ? ` @${slotName(c, t.at).replace('beat ', '')}` : ''}`).join(' ') || '–').join(' · ');
 
 // --- Play pane ---
 function render() {
@@ -105,6 +107,7 @@ function showEditor() {
       `<select data-guide-root="${i}" aria-label="Root">${NUMERALS.map((n, d) => `<option value="${d}"${d === c.deg ? ' selected' : ''}>${n}</option>`).join('')}</select>` +
       seg('guide-q', i, QUALITIES, c.q, q => QUALITY_TEXT[q]) +
       seg('guide-bars', i, BARS, c.bars, b => `${b} bar${b > 1 ? 's' : ''}`) +
+      seg('guide-alt', i, ['', ...ALTS], c.alt || '', a => (a ? degreeLabel(a) : 'plain')) +
       `<button data-guide-rm="${i}" aria-label="Remove chord"${draft.chords.length < 2 ? ' disabled' : ''}>✕</button></div>`;
     // The chord's timeline: a slot per beat, bars grouped; then "late".
     h += '<div class="guidetl">';
@@ -112,11 +115,11 @@ function showEditor() {
       const t = tg(i, at);
       const on = slot && slot.chord === i && slot.at === at;
       h += `<button class="gslot${at % BAR === 0 ? ' bar' : ''}${t ? ' set' : ''}${on ? ' on' : ''}" data-guide-slot="${i}:${at}" ` +
-           `aria-label="${slotName(c, at)}">${t ? t.degs.join('/') : at % BAR + 1}</button>`;
+           `aria-label="${slotName(c, at)}">${t ? tonesText(t.degs) : at % BAR + 1}</button>`;
     }
     const t = tg(i, LATE);
     const on = slot && slot.chord === i && slot.at === LATE;
-    h += `<button class="gslot late${t ? ' set' : ''}${on ? ' on' : ''}" data-guide-slot="${i}:${LATE}">${t ? `${t.degs.join('/')} late` : 'late'}</button></div>`;
+    h += `<button class="gslot late${t ? ' set' : ''}${on ? ' on' : ''}" data-guide-slot="${i}:${LATE}">${t ? `${tonesText(t.degs)} late` : 'late'}</button></div>`;
   });
   h += `<button id="guideAdd"${draft.chords.length >= MAX_CHORDS ? ' disabled' : ''}>+ chord</button>`;
   // The tones for the picked slot.
@@ -124,7 +127,7 @@ function showEditor() {
     const c = draft.chords[slot.chord];
     const t = tg(slot.chord, slot.at);
     h += `<div class="guidetones"><span>${numeral(c)} · ${slotName(c, slot.at)}:</span>` +
-      TONES.map(d => `<button data-guide-tone="${d}" class="${t?.degs.includes(d) ? 'active' : ''}">${d}</button>`).join('') +
+      TONES.map(d => `<button data-guide-tone="${d}" class="${t?.degs.includes(d) ? 'active' : ''}">${degreeLabel(d)}</button>`).join('') +
       `<small>${t && t.degs.length > 1 ? 'one of these, drawn in each key' : 'several = one drawn at random in each key'}</small></div>`;
   } else {
     h += '<div class="guidetones"><small>Tap a slot to set its tones.</small></div>';
@@ -176,6 +179,7 @@ $('#guideEdit').addEventListener('click', e => {
     });
   }
   for (const [attr, apply] of [['guideQ', (x, i, v) => { x.chords[i].q = v; }],
+                               ['guideAlt', (x, i, v) => { if (v) x.chords[i].alt = v; else delete x.chords[i].alt; }],
                                ['guideBars', (x, i, v) => { x.chords[i].bars = Number(v); }]]) {
     if (d[attr]) {
       const [i, v] = d[attr].split(':');
@@ -245,7 +249,7 @@ function drawStats() {
   const ex = statGuides.get($('#guideStatSel').value) || currentGuide();
   const grid = guideGrid(statEvents, ex.id);
   const cols = [...ex.targets].sort((a, b) => a.chord - b.chord || (a.at === LATE) - (b.at === LATE) || a.at - b.at)
-    .map(t => ({ k: slotKey(t.chord, t.at), head: `${numeral(ex.chords[t.chord])} ${t.degs.join('/')}${t.at === LATE ? '↗' : t.at ? `·${t.at % BAR + 1}` : ''}`, t }));
+    .map(t => ({ k: slotKey(t.chord, t.at), head: `${numeral(ex.chords[t.chord])} ${tonesText(t.degs)}${t.at === LATE ? '↗' : t.at ? `·${t.at % BAR + 1}` : ''}`, t }));
   let h = `<div class="rm-grid" style="grid-template-columns: 28px repeat(${Math.max(1, cols.length)}, 1fr)"><div></div>` +
     cols.map(c => `<div class="rm-head">${c.head}</div>`).join('');
   for (const [rk, label] of [['all', 'All'], ...NOTES.map((n, k) => [String(k), n])]) {
@@ -264,7 +268,7 @@ function drawStats() {
     const [rk, k] = statSelected.split('|');
     const c = cols.find(x => x.k === k);
     const list = grid.get(statSelected);
-    const where = `${rk === 'all' ? 'All keys' : `In ${NOTES[Number(rk)]}`} · ${c ? `${c.t.degs.join('/')} of ${numeral(ex.chords[c.t.chord])}, ${slotName(ex.chords[c.t.chord], c.t.at)}` : ''}`;
+    const where = `${rk === 'all' ? 'All keys' : `In ${NOTES[Number(rk)]}`} · ${c ? `${tonesText(c.t.degs)} of ${numeral(ex.chords[c.t.chord])}, ${slotName(ex.chords[c.t.chord], c.t.at)}` : ''}`;
     cap = list?.length ? `${where} — ${list.filter(Boolean).length} of ${list.length} landed` : `${where} — not played yet.`;
   }
   $('#guideGrid').innerHTML = h + `<div class="rm-cap">${cap}</div>`;
