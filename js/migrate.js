@@ -7,6 +7,13 @@
 // the library `woodshed.patterns` → `woodshed.cells`; sync files
 // `patterns/<day>.json` → `cells/<day>.json`, `patterns.json` → `cells.json`.
 //
+// 2026-09-28 — guide tones' first cut (a cadence + a target pattern, a
+// day old) became exercises in a library: `woodshed.guideCustom` (your
+// cadence), if you had changed it from the default, becomes a library
+// exercise "My cadence"; `woodshed.guideCadence` becomes the selection
+// `woodshed.guideSel` ('ii-V-I' → 'p:ii-V-I'); `woodshed.guidePattern`
+// goes (patterns are fills in the editor now). No rounds had been synced.
+//
 // 2026-09-27 — clicks are scheduled to be heard on time (audio.js
 // audioTimeAt): a latency measured before (`woodshed.latency`) included the
 // phone's output delay and would now judge every note early — dropped, not
@@ -64,6 +71,30 @@ export function upgradeEvent(e) {
     (k === 'game' ? [k, 'cells'] : [FIELDS[k] || k, v])));
 }
 
+const OLD_GUIDE_KEYS = ['woodshed.guideCustom', 'woodshed.guideCadence', 'woodshed.guidePattern'];
+const DEFAULT_CUSTOM = JSON.stringify({ chords: [{ deg: 2, q: 'm7', bars: 1 }, { deg: 7, q: '7', bars: 1 }, { deg: 0, q: 'maj7', bars: 2 }],
+                                        targets: [0, 1, 2].map(() => ({ deg: '3', place: 'one' })) });
+function migrateGuides() {
+  if (!OLD_GUIDE_KEYS.some(k => localStorage.getItem(k) !== null)) return;
+  const cad = localStorage.getItem('woodshed.guideCadence');
+  let sel = cad && cad !== 'custom' ? `p:${cad}` : null;
+  try {
+    const raw = localStorage.getItem('woodshed.guideCustom');
+    const c = JSON.parse(raw);
+    if (c?.chords?.length && raw !== DEFAULT_CUSTOM) {
+      const at = { one: 0, three: 2, late: 'late' };
+      const lib = JSON.parse(localStorage.getItem('woodshed.guideLib') || '[]');
+      const mine = { id: `g${Date.now().toString(36)}`, name: 'My cadence', chords: c.chords, created: Date.now(),
+                     targets: c.chords.flatMap((_, i) => (c.targets?.[i]?.deg ? [{ chord: i, at: at[c.targets[i].place] ?? 0, degs: [c.targets[i].deg] }] : [])) };
+      lib.push(mine);
+      localStorage.setItem('woodshed.guideLib', JSON.stringify(lib));
+      if (cad === 'custom') sel = mine.id;
+    }
+  } catch { /* nothing usable */ }
+  if (sel && localStorage.getItem('woodshed.guideSel') === null) localStorage.setItem('woodshed.guideSel', sel);
+  for (const k of OLD_GUIDE_KEYS) localStorage.removeItem(k);
+}
+
 // This device, once per rename: settings, the library, the sync
 // bookkeeping (old paths dropped, the library pushed again under its new
 // name), then the event log. Returns how many events were rewritten.
@@ -78,6 +109,7 @@ export async function migrateLocal() {
       moved = true;
     }
     localStorage.removeItem('woodshed.latency');   // measured with the old click timing
+    migrateGuides();
     for (const k of ['woodshed.game', 'woodshed.scaleExercise', 'woodshed.scaleCustom']) {
       const v = localStorage.getItem(k);
       if (v !== null && settingValue(k, v) !== v) localStorage.setItem(k, settingValue(k, v));

@@ -221,19 +221,37 @@
   #guideMsg b { color: #ffe2a8; }
   #guideMsg small { color: var(--dim); font-size: 12px; }
   #guideAgain { margin-top: 8px; padding: 6px 18px; font-size: 15px; font-weight: 700; color: #ffe2a8; border-color: var(--brass); }
-  #guidePatterns button, #guidePaths button { font-size: 12px; padding: 4px 8px; }
+  #guidePaths button { font-size: 12px; padding: 4px 8px; }
   /* The cadence card: name over its chords (side by side they wrapped). */
   #guideCard .ex { flex-direction: column; align-items: flex-start; gap: 2px; }
   #guideCard .ex b { white-space: nowrap; }
-  #guideCads { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .guidecad { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 9px; text-align: left; background: #181818; }
-  .guidecad.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
-  .guidecad b { font-size: 13px; }
-  .guidecad span { font-size: 12px; color: #ffe2a8; }
-  #guideEdit { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
-  .guidefrom { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-  .guidefrom .label { margin: 0 4px 0 0; }
-  .guidefrom button { font-size: 11px; padding: 2px 7px; color: var(--dim); }
+  /* Levels: the library in the pane, the editor on the stage. */
+  #guideLib { display: flex; flex-direction: column; gap: 5px; }
+  .guidecard { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 5px 8px; border: 1px solid var(--line);
+               border-radius: 8px; background: #181818; cursor: pointer; }
+  .guidecard.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
+  .guidecard.editing b { text-decoration: underline dotted var(--brass); }
+  .guidecard b { font-size: 12px; padding-right: 22px; }
+  .guidecard span { font-size: 11px; color: #ffe2a8; }
+  .guidecard i { position: absolute; right: 7px; top: 5px; font-size: 9px; color: var(--dim); font-style: normal; }
+  .guidecard button { position: absolute; right: 4px; top: 4px; padding: 1px 6px; font-size: 11px; color: var(--dim); }
+  #guideEdit { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; }
+  .guidefill { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 2px; }
+  .guidefill .label { margin: 0 4px 0 0; }
+  .guidefill button { font-size: 11px; padding: 2px 7px; color: var(--dim); }
+  .guidetl { display: flex; flex-wrap: wrap; gap: 3px; padding-left: 47px; margin-bottom: 4px; }
+  /* 22 px slots: a 4-bar chord (16 beats + late) fits one line at 844 px. */
+  .gslot { min-width: 22px; height: 24px; padding: 0 3px; font-size: 11px; color: #555; background: #141414; }
+  .gslot.bar { margin-left: 5px; color: #7a7a7a; }
+  .gslot.bar:first-child { margin-left: 0; }
+  .gslot.set { color: #181818; background: #d9a441; font-weight: 800; border-color: #d9a441; }
+  .gslot.late { margin-left: 8px; font-style: italic; }
+  .gslot.on { outline: 2px solid #9fd8ff; outline-offset: 1px; }
+  .guidetones { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 0 2px; border-top: 1px solid var(--line); margin-top: 2px; }
+  .guidetones span { font-size: 12px; color: #9fd8ff; margin-right: 4px; }
+  .guidetones button { min-width: 30px; padding: 3px 0; font-size: 13px; font-weight: 700; }
+  .guidetones button.active { background: rgba(217,164,65,.16); color: #ffe2a8; border-color: var(--brass); }
+  .guidetones small { color: var(--dim); font-size: 11px; margin-left: 6px; }
   .guiderow { display: flex; align-items: center; gap: 5px; }
   .guiderow .num { min-width: 42px; font-size: 14px; color: #ffe2a8; }
   .guiderow select { background: #181818; color: #ffe2a8; border: 1px solid var(--line); border-radius: 6px; padding: 3px; font-size: 12px; }
@@ -569,9 +587,8 @@
         <div id="guideMsg" hidden></div>
       </div>
     </div>
+    <!-- The editor for the exercise picked in the pane (its draft). -->
     <div class="view" id="view-guide-levels" data-view="levels" data-for="guides" hidden>
-      <h2>Cadences</h2>
-      <div id="guideCads"></div>
       <div id="guideEdit"></div>
     </div>
     <div class="view" id="view-guide-stats" data-view="stats" data-for="guides" hidden>
@@ -671,8 +688,6 @@
       </div>
       <div class="g-guides">
         <button id="guideCard" class="excard"><span class="ex"><b id="guideCardName"></b><b id="guideCardChords" class="degs"></b></span><span class="chg">change ›</span></button>
-        <div class="label">Targets</div>
-        <div class="chips" id="guidePatterns"></div>
         <div class="label">Keys</div>
         <div class="chips" id="guidePaths"></div>
         <div class="seg" id="guideBacking"><button data-guide-back="click">Click</button><button data-guide-back="root">Root</button><button data-guide-back="band">Band</button></div>
@@ -746,10 +761,11 @@
       <div id="cellHint" class="small-note"></div>
     </div>
     <div class="pane" data-pane="levels" data-for="guides" hidden>
-      <div class="small-note">Pick a cadence to play. Your cadence: set each chord's root (as a degree of
-        the key), quality and length; its targets (3 or 7, on 1, on 3 or late) are what the <b>Your own</b>
-        target pattern plays.</div>
-      <button id="guidePlayLevel">Play ›</button>
+      <div class="label">Exercises</div>
+      <div id="guideLib"></div>
+      <input id="guideName" placeholder="name (optional)" autocomplete="off" spellcheck="false">
+      <div class="cellrow"><button id="guideSave">Save</button><button id="guideNew">New</button><button id="guidePlayLevel">Play ›</button></div>
+      <div id="guideHint" class="small-note"></div>
     </div>
     <div class="pane" data-pane="stats" data-for="guides" hidden>
       <div class="stat">Rounds <b id="gstRounds">0</b></div>

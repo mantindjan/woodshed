@@ -27,15 +27,18 @@ const STATE_KEY = 'woodshed.syncState';
 // Settings that travel in settings.json: everything but the sync credentials.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
-                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.inputLatency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.guidePattern', 'woodshed.guidePath', 'woodshed.guideBacking', 'woodshed.guideNames', 'woodshed.guideBpm', 'woodshed.guideCadence', 'woodshed.guideCustom', 'woodshed.scaleExercise',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.inputLatency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.guideSel', 'woodshed.guidePath', 'woodshed.guideBacking', 'woodshed.guideNames', 'woodshed.guideBpm', 'woodshed.scaleExercise',
                   'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses'];
 const SETTINGS_PATH = 'settings.json';
-// The cell library (Cells): the boss's own cells, kept apart from the runs
-// and from settings, as readable JSON (one object per cell). Before
-// 2026-09-27 it was patterns.json — still read on a restore (migrate.js).
-const LIBRARY_KEY = 'woodshed.cells';
-const LIBRARY_PATH = 'cells.json';
-const OLD_LIBRARY_PATH = 'patterns.json';
+// The player's libraries — their own creations, kept apart from the runs
+// and from settings, each as its own readable JSON file (one object per
+// item): the cells (Cells; patterns.json before 2026-09-27, still read on
+// a restore — migrate.js) and the guide-tone exercises (2026-09-28).
+// `state` = where this device keeps the text it last synced.
+const LIBRARIES = [
+  { key: 'woodshed.cells', path: 'cells.json', old: 'patterns.json', state: 'library', what: 'cell library' },
+  { key: 'woodshed.guideLib', path: 'guides.json', state: 'guideLib', what: 'guide-tone exercises' },
+];
 export const WINDOW_DAYS = 90;
 const DAY_MS = 86400000;
 
@@ -233,23 +236,25 @@ async function run() {
       }
     }
 
-    // 3b. Cell library: restore it on a device that has none, else push
+    // 3b. The libraries: restore each on a device that has none, else push
     // it when it changed.
-    const lib = ls(LIBRARY_KEY);
-    const libPath = remote.has(LIBRARY_PATH) ? LIBRARY_PATH : remote.has(OLD_LIBRARY_PATH) ? OLD_LIBRARY_PATH : null;
-    if (lib === null && libPath) {
-      const file = await readFile(libPath);
-      if (file) {
-        ls(LIBRARY_KEY, JSON.stringify(JSON.parse(file.text)));
-        state.library = file.text;
-        result.settingsRestored = true;           // reload so the app sees it
-      }
-    } else if (lib !== null) {
-      const text = `${JSON.stringify(JSON.parse(lib), null, 2)}\n`;
-      if (text !== state.library) {
-        const sha = await writeFile(LIBRARY_PATH, text, remote.get(LIBRARY_PATH), 'woodshed: cell library')
-          ?? await writeFile(LIBRARY_PATH, text, (await readFile(LIBRARY_PATH))?.sha, 'woodshed: cell library');
-        if (sha) state.library = text;
+    for (const L of LIBRARIES) {
+      const lib = ls(L.key);
+      const libPath = remote.has(L.path) ? L.path : L.old && remote.has(L.old) ? L.old : null;
+      if (lib === null && libPath) {
+        const file = await readFile(libPath);
+        if (file) {
+          ls(L.key, JSON.stringify(JSON.parse(file.text)));
+          state[L.state] = file.text;
+          result.settingsRestored = true;         // reload so the app sees it
+        }
+      } else if (lib !== null) {
+        const text = `${JSON.stringify(JSON.parse(lib), null, 2)}\n`;
+        if (text !== state[L.state]) {
+          const sha = await writeFile(L.path, text, remote.get(L.path), `woodshed: ${L.what}`)
+            ?? await writeFile(L.path, text, (await readFile(L.path))?.sha, `woodshed: ${L.what}`);
+          if (sha) state[L.state] = text;
+        }
       }
     }
 

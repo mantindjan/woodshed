@@ -1,8 +1,9 @@
-// Guide tones runner (G2, boss 2026-09-28): a cadence goes round the keys
-// on a staff with bars; only the TARGETS are judged (guidelib.js) — play
-// anything in between. The targets are drawn ahead on the staff: the
-// degree in a ring on its beat, or along a bar for a "late" one, with the
-// note name under it (a setting). After a one-bar count-in the band (or
+// Guide tones runner (G2, boss 2026-09-28): an exercise's cadence goes
+// round the keys on a staff with bars; only the TARGETS are judged
+// (guidelib.js) — play anything in between. The targets are drawn ahead
+// on the staff: the tone in a ring on its beat, or along a bar for a
+// "late" one, with the note name under it (a setting); each key change is
+// a tall line with the new key's name. After a one-bar count-in the band (or
 // the click) plays ONE round; its tally comes up with Play again. Nothing
 // stops a round and there are no modes: it's all practice.
 //
@@ -22,11 +23,14 @@ import { initAudio, stopAll } from './audio.js';
 import { bandParts, scheduleBand } from './band.js';
 import { addEvent, requestPersistence } from './events.js';
 import { exerciseKeys, EXERCISES } from './celllib.js';
-import { buildRound, onTheLine, PATTERNS, BAR } from './guidelib.js';
+import { buildRound, onTheLine, BAR, LATE } from './guidelib.js';
 
 const MAX_WINDOW_MS = 150;
 const COUNT_IN = BAR;            // one bar of clicks
-const SCHEMA_VERSION = 1;
+// v2: exercises (guideId + guide snapshot, targets at any beat or late,
+// tones drawn from choices); v1 (2026-09-28, never synced): cadence +
+// pattern, places one/three/late.
+const SCHEMA_VERSION = 2;
 
 const $ = sel => document.querySelector(sel);
 
@@ -37,9 +41,9 @@ let wakeLock = null;
 export const guidesRunning = () => s !== null;
 export const guidesPaused = () => !!s?.paused;
 
-// opts: {cadence {name, chords}, pattern, custom (per-chord targets),
-// exercise (key path id), bpm, backing, names (show note names), calib,
-// calibOffset, latency}. onEnd() on Stop.
+// opts: {guide (the exercise {id, name, chords, targets}), exercise (key
+// path id), bpm, backing, names (show note names), calib, calibOffset,
+// latency}. onEnd() on Stop.
 export function startGuides(opts, onEnd) {
   initAudio();
   requestPersistence();
@@ -96,7 +100,7 @@ function startRound() {
   const now = performance.now();
   const beat = 60000 / s.bpm;
   const keys = exerciseKeys(s.exercise);
-  const round = buildRound(s.cadence, keys, s.pattern, s.custom);
+  const round = buildRound(s.guide, keys);
   const t0 = now + 300;
   const first = t0 + COUNT_IN * beat;
   const { bass, comp } = bandParts(round.chords, s.backing, s.calib, BAR);
@@ -112,7 +116,7 @@ function startRound() {
   s.run.chordEls = [...$('#guideChords').children];
   scheduleBand(s.run, now, s.bpm, s.backing, k => k % BAR === 0);
   message('');
-  $('#guideTitle').textContent = `${EXERCISES[s.exercise].name} · ${PATTERNS[s.pattern].name}`;
+  $('#guideTitle').textContent = `${s.guide.name} · ${EXERCISES[s.exercise].name}`;
   $('#guideInfo').textContent = `${s.bpm} bpm`;
 }
 
@@ -126,7 +130,7 @@ function tryHit(r, tg, w, at) {
   if (!onTheLine(w, tg.pc, prevHit(r, tg)?.w)) { tg.offLine = true; return false; }
   tg.status = 'hit';
   tg.w = w;
-  tg.off = at === null ? null : Math.round(at - (tg.place === 'late' ? Math.max(tg.t, Math.min(tg.tEnd, at)) : tg.t));
+  tg.off = at === null ? null : Math.round(at - (tg.at === LATE ? Math.max(tg.t, Math.min(tg.tEnd, at)) : tg.t));
   tg.hitAt = performance.now();
   return true;
 }
@@ -158,7 +162,7 @@ function expire(now) {
   const played = now - s.latency;
   for (const tg of r.targets) {
     if (tg.status !== 'pending' || played <= tg.tEnd + r.window) continue;
-    if (tg.place !== 'late') {
+    if (tg.at !== LATE) {
       const held = r.played.filter(p => p.t < tg.t - r.window).pop();
       const since = r.played.some(p => p.t >= tg.t - r.window && p.t <= tg.t + r.window);
       if (held && !since && tryHit(r, tg, held.w, null)) continue;
@@ -180,8 +184,8 @@ function score() {
     t: Date.now() - Math.round(performance.now() - base),      // wall clock of the count-in's first click
     round: s.session,
     game: 'guides',
-    cadence: { name: s.cadence.name, chords: s.cadence.chords },   // snapshot: history outlives edits
-    pattern: s.pattern,                // guidelib.js PATTERNS
+    guideId: s.guide.id,               // the exercise (a preset "p:…" or one of yours)
+    guide: { name: s.guide.name, chords: s.guide.chords, targets: s.guide.targets },   // snapshot: history outlives edits
     exercise: s.exercise,              // the key path (celllib.js EXERCISES)
     keys: r.keys,                      // written tonics, in order
     bpm: s.bpm,
@@ -189,11 +193,12 @@ function score() {
     latency: s.latency,
     calib: s.calib,
     calibOffset: s.calibOffset,
-    // Each target: [written tonic pc, chord index in the cadence, degree, place,
+    // Each target: [written tonic pc, chord index in the cadence, the tone drawn,
+    //   at (beat from the chord's start, or 'late'),
     //   ms after the count-in's first click (a late target: its span's start),
     //   'hit' | 'wrong' (off the line) | 'miss', timing offset ms (null if held over),
     //   written pitch played (hits)].
-    targets: r.targets.map(tg => [tg.key, tg.chordIdx, tg.deg, tg.place, Math.round(tg.t - base), tg.status, tg.off, tg.w]),
+    targets: r.targets.map(tg => [tg.key, tg.chordIdx, tg.deg, tg.at, Math.round(tg.t - base), tg.status, tg.off, tg.w]),
     notes: r.notes,                    // every note-on: [raw MIDI, ms after the count-in's first click]
   });
   message(`<b>${hits} / ${r.targets.length} targets</b>` +
@@ -259,7 +264,20 @@ function draw() {
       g.lineWidth = 2; g.strokeStyle = 'rgba(255,226,168,.7)'; g.stroke();
     }
   }
-  // Beats faint, bar lines stronger, chord changes the strongest.
+  // Beats faint, bar lines stronger, chord changes stronger still — and a
+  // KEY change the tallest, with the new key's name (boss, 2026-09-28).
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const ch of r.chords) {
+    if (ch.chordIdx !== 0 || ch.keyIdx === 0) continue;
+    const kx = x(ch.t);
+    if (kx < -20 || kx > W + 20) continue;
+    // From above the chord symbols to the staff's foot — the note names
+    // below stay clear; the key's name under them.
+    g.strokeStyle = '#ffe2a8'; g.lineWidth = 5;
+    g.beginPath(); g.moveTo(kx, cy - half - 58); g.lineTo(kx, cy + half); g.stroke();
+    g.fillStyle = '#ffe2a8'; g.font = '800 13px system-ui, sans-serif';
+    g.fillText(`key of ${NOTES[ch.tonic]}`, kx, cy + half + 32);
+  }
   for (let k = 0; k <= r.beats - COUNT_IN; k++) {
     const tk = first + k * r.beat;
     const bx = x(tk);
@@ -280,7 +298,7 @@ function draw() {
     const fill = done ? COLORS[tg.status] : 'rgba(24,24,24,.9)';
     const stroke = done ? COLORS[tg.status] : '#d9a441';
     g.lineWidth = 2;
-    if (tg.place === 'late') {
+    if (tg.at === LATE) {
       const rr = 13;
       g.beginPath(); g.roundRect(a - rr, cy - rr, b - a + 2 * rr, 2 * rr, rr);
       g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.stroke();
@@ -288,7 +306,7 @@ function draw() {
       g.beginPath(); g.arc(a, cy, 15, 0, Math.PI * 2);
       g.fillStyle = fill; g.fill(); g.strokeStyle = stroke; g.stroke();
     }
-    const mid = tg.place === 'late' ? (a + b) / 2 : a;
+    const mid = tg.at === LATE ? (a + b) / 2 : a;
     g.fillStyle = done && tg.status !== 'hit' ? '#fff' : done ? '#181818' : '#ffe2a8';
     g.font = '800 16px system-ui, sans-serif';
     g.fillText(tg.deg, mid, cy + 1);
