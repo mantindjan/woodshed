@@ -29,8 +29,8 @@
 
 import { pc, degreeLabel } from './music.js';
 import { chordHTML } from './notation.js';
-import { initAudio, click, audioTimeAt, stopAll, swingAt, bassNote, kitHit, compChord } from './audio.js';
-import { walk, comp, spansOf, rootLine } from './trio.js';
+import { initAudio, stopAll } from './audio.js';
+import { bandParts, scheduleBand } from './band.js';
 import { addEvent, requestPersistence } from './events.js';
 import { EXERCISES, STAGES, SOLID, noteSemis, exerciseKeys, playedNotes } from './celllib.js';
 
@@ -42,11 +42,6 @@ const BEATS = 4;                 // the count-in (and the drums' phrase)
 // mastered at ~4 notes a second = 240 bpm, where a 4-note cell ×1
 // changes chord every second; learnt slower (70–100). Runs record
 // `cellBeats` (= the cell's length; a v2 run from before said 2 or 1).
-// Sound is queued this far ahead, as the run goes (a look-ahead scheduler).
-// Queuing the whole run at Start — 12 chords × 7 voices with their filters,
-// plus every click — piled up in the audio graph and played choppy on the
-// phone (boss, 2026-09-26).
-const LOOKAHEAD_MS = 1500;
 const SCHEMA_VERSION = 3;         // v3: learn plays a b c d c b, `cellBeats` 6; v2: `cellBeats` (v1 runs: a cell per bar, 4)
 
 const $ = sel => document.querySelector(sel);
@@ -179,17 +174,14 @@ function startStream() {
   const t0 = now + 300;
   s.run = { t0, beat, n: s.play.notes.length, window: Math.min(MAX_WINDOW_MS, beat * 0.45),
             expected: [], chords: [], bass: [], comp: [], rounds: [], anchors: new Map(), notes: [],
-            phase: 'running', passes: 0, end: t0 + BEATS * beat, beats: BEATS,
+            phase: 'running', passes: 0, end: t0 + BEATS * beat, beats: BEATS, countIn: BEATS,
             nextBeat: 0, bassAt: 0, compAt: 0, chordEls: [] };
   clearChords();
   appendRound();
-  schedule(now);
+  scheduleBand(s.run, now, s.bpm, s.backing, k => k % s.run.n === 0);
   message('');
   $('#cellInfo').textContent = `${s.bpm} bpm`;
 }
-
-// The root's octave in the Rhodes' low mids, A2 (45) to G♯3 (56).
-const lowMid = m => { while (m < 45) m += 12; while (m > 56) m -= 12; return m; };
 
 // Add the next round at the end of the stream: its notes, chords, and the
 // band's parts for it (beats counted from the stream's first beat after
@@ -204,74 +196,17 @@ function appendRound() {
   r.passes += keys.length * n;
   r.expected.push(...part.expected);
   r.chords.push(...part.chords);
-  // The band, for this round's chords (a chord held a bar walks the bar).
+  // The band, for this round's chords (band.js; the root struck each pass).
   const off = Math.round((round.start - (r.t0 + BEATS * r.beat)) / r.beat);
-  const spans = spansOf(part.chords.map(c => ({ key: c.key, beats: c.beats })), s.cell.quality, s.calib);
+  const { bass, comp } = bandParts(part.chords.map(c => ({ key: c.key, beats: c.beats, q: s.cell.quality })), s.backing, s.calib, r.n);
   const shift = xs => xs.map(x => ({ ...x, beat: x.beat + off }));
-  // Backing (boss, 2026-09-26): 'band' = the trio; 'root' = drums + the root
-  // on the bass, doubled by the Rhodes: the root in the low mids (A2–G♯3)
-  // and its octave, played hard (brighter, louder). The bass alone was felt
-  // more than heard on the phone; two and three octaves up sat on the
-  // cell; the low-mid note alone vanished on the phone speaker (it can't
-  // play much under ~250 Hz). Never a 3rd or 5th. 'click' = the metronome.
-  const bass = s.backing === 'band' ? walk(spans) : s.backing === 'root' ? rootLine(part.chords, s.calib, r.n) : [];
-  const comping = s.backing === 'band' ? comp(spans, spans.reduce((a, sp) => a + sp.len, 0))
-    : s.backing === 'root' ? bass.map(b => ({ beat: b.beat, len: b.len, midis: [lowMid(b.midi), lowMid(b.midi) + 12], vel: 1.4 })) : [];
   r.bass.push(...shift(bass));
-  r.comp.push(...shift(comping));
+  r.comp.push(...shift(comp));
   r.end = part.end;
   r.beats = Math.round((r.end - r.t0) / r.beat);
   r.rounds.push(round);
   addChords(part.chords);
   if (r.rounds.length === 1) $('#cellTitle').textContent = `${EXERCISES[s.exercise].name} · ×${n}`;
-}
-
-// Queue what sounds within LOOKAHEAD_MS. The count-in bar is clicks (so
-// it's clear when to come in); from bar one the trio plays (C3, the boss's
-// pick by ear, docs/trio/): the jazz kit — ride on the beats and the swung
-// and of 2 and 4, hi-hat foot on 2 and 4, a feathered kick, snare ghosts
-// and a push before each 4-bar phrase — the walking bass and the Rhodes
-// comping, both worked out per round in appendRound (trio.js). Levels are
-// the prototype's. Beats are counted from bar one; T() gives page time,
-// swung on the upbeats.
-function schedule(now) {
-  const r = s.run;
-  const swing = swingAt(s.bpm);
-  const first = r.t0 + BEATS * r.beat;
-  const T = b => first + (Math.floor(b) + (b % 1 ? swing : 0)) * r.beat;
-  const jit = ms => Math.random() * ms;                          // a band isn't a grid
-  const horizon = now + LOOKAHEAD_MS;
-  while (r.nextBeat < r.beats && r.t0 + r.nextBeat * r.beat < horizon) {
-    const b = r.nextBeat;
-    if (b < BEATS) click(audioTimeAt(r.t0 + b * r.beat), b === 0);
-    else if (s.backing === 'click') {
-      // The metronome alone, each cell's start accented.
-      click(audioTimeAt(r.t0 + b * r.beat), (b - BEATS) % r.n === 0);
-    } else {
-      const k = b - BEATS;                                        // beat of the tune
-      const at = x => audioTimeAt(x);
-      kitHit('ride', at(T(k) + jit(6)), (k % 2 ? 0.19 : 0.22) * (0.9 + Math.random() * 0.15));
-      kitHit('kick', at(T(k) + jit(6)), 0.12);
-      if (k % 2 === 1) {
-        kitHit('ride', at(T(k + 0.5) + jit(6)), 0.14);
-        kitHit('hatfoot', at(T(k) + jit(4)), 0.45);
-      }
-      if (Math.random() < 0.12) kitHit('snare', at(T(k + 0.5)), 0.12);
-      if (k % 16 === 15 && Math.random() < 0.6) kitHit('snare', at(T(k + 0.5)), 0.3);
-    }
-    r.nextBeat++;
-  }
-  while (r.bassAt < r.bass.length && T(r.bass[r.bassAt].beat) < horizon) {
-    const n = r.bass[r.bassAt++];
-    // Each note rings into the next; a touch more on 1 and 3.
-    const vel = (n.beat % 2 === 0 ? 1 : 0.9) * (0.85 + Math.random() * 0.15);
-    // Walking: a beat each; root only: held for its cell.
-    bassNote(n.midi, audioTimeAt(T(n.beat) - 4 + jit(14)), ((n.len || 1) * r.beat) / 1000 + 0.02, vel);
-  }
-  while (r.compAt < r.comp.length && T(r.comp[r.compAt].beat) < horizon) {
-    const h = r.comp[r.compAt++];
-    compChord(h.midis, audioTimeAt(T(h.beat)), (h.len * r.beat) / 1000, h.vel ?? 0.7 + Math.random() * 0.25);
-  }
 }
 
 // Every note-on while the cells runner is active.
@@ -414,7 +349,8 @@ window.addEventListener('resize', () => { if (s) resize(); });
 function frame() {
   if (!s) return;
   if (s.paused) { raf = requestAnimationFrame(frame); return; }   // the stage stays as it was
-  if (s.run.phase === 'running') schedule(performance.now());
+  // The metronome alone accents each pass of the cell.
+  if (s.run.phase === 'running') scheduleBand(s.run, performance.now(), s.bpm, s.backing, k => k % s.run.n === 0);
   expire(performance.now());
   draw();
   raf = requestAnimationFrame(frame);

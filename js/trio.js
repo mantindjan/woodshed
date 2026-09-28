@@ -132,16 +132,17 @@ export function rootLine(chords, calib, cellBeats) {
   return notes;
 }
 
-// A cell run's chords as spans of at most a bar (a chord held longer
-// walks each bar). `chords` = [{key (written pc), beats}], `calib` turns
-// written into concert. Chords of 1 or 2 beats get one or two bass notes.
+// A run's chords as spans of at most a bar (a chord held longer walks each
+// bar). `chords` = [{key (written pc), beats, q?}] — a chord's own quality
+// (a cadence mixes them), else `quality` for all; `calib` turns written into
+// concert. Chords of 1 or 2 beats get one or two bass notes.
 export function spansOf(chords, quality, calib) {
   const spans = [];
   let beat = 0;
   for (const c of chords) {
     for (let left = c.beats; left > 0;) {
       const len = Math.min(4, left);
-      spans.push({ root: pcOf(c.key + calib), q: quality, start: beat, len });
+      spans.push({ root: pcOf(c.key + calib), q: c.q ?? quality, start: beat, len });
       beat += len; left -= len;
     }
   }

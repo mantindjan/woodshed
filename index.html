@@ -201,13 +201,45 @@
   .seg.game button { font-weight: 600; padding: 4px 0; display: flex; align-items: center; justify-content: center; }
   .seg.game .gicon { height: 24px; }
   .seg.game svg.gicon { width: 24px; }
-  .seg.game .rb { font: 24px/24px 'RealBook', Georgia, serif; letter-spacing: 2px; }
+  /* Five games share the switch: "3 5 7" tighter so it isn't squashed. */
+  .seg.game .rb { font: 21px/24px 'RealBook', Georgia, serif; letter-spacing: 0; white-space: nowrap; }
   .gear { flex: none; padding: 4px 11px; font-size: 16px; color: var(--dim); }
   .gear.active { border-color: var(--brass); color: var(--brass); }
-  .g-degrees, .g-scales, .g-cells { display: none; flex-direction: column; gap: 9px; }
-  .g-degrees > *, .g-scales > *, .g-cells > * { flex-shrink: 0; }
+  .g-degrees, .g-scales, .g-cells, .g-guides { display: none; flex-direction: column; gap: 9px; }
+  .g-degrees > *, .g-scales > *, .g-cells > *, .g-guides > * { flex-shrink: 0; }
   body[data-game="degrees"] .g-degrees, body[data-game="scales"] .g-scales, body[data-game="arpeggios"] .g-scales,
-  body[data-game="cells"] .g-cells { display: flex; }
+  body[data-game="cells"] .g-cells, body[data-game="guides"] .g-guides { display: flex; }
+
+  /* Guide tones: the cadence on top, the bar staff, the cadence editor. */
+  #guideShow { display: flex; align-items: baseline; gap: 12px; min-height: 30px; padding: 2px 0 4px; }
+  #guideShow > b { font-size: 14px; color: var(--dim); font-weight: 600; white-space: nowrap; }
+  #guideShow > span { font: 800 17px system-ui, sans-serif; color: #ffe2a8; }
+  #guideChords { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .guidechord { position: absolute; left: 0; top: 0; font-size: 26px; color: #ffe2a8; white-space: nowrap; }
+  #guideMsg { position: absolute; left: 22%; right: 0; bottom: 8px; text-align: center; font-size: 15px; padding: 0 12px; }
+  #guideMsg[hidden] { display: none; }
+  #guideMsg b { color: #ffe2a8; }
+  #guideMsg small { color: var(--dim); font-size: 12px; }
+  #guideAgain { margin-top: 8px; padding: 6px 18px; font-size: 15px; font-weight: 700; color: #ffe2a8; border-color: var(--brass); }
+  #guidePatterns button, #guidePaths button { font-size: 12px; padding: 4px 8px; }
+  /* The cadence card: name over its chords (side by side they wrapped). */
+  #guideCard .ex { flex-direction: column; align-items: flex-start; gap: 2px; }
+  #guideCard .ex b { white-space: nowrap; }
+  #guideCads { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .guidecad { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 9px; text-align: left; background: #181818; }
+  .guidecad.active { border-color: var(--brass); background: rgba(217,164,65,.12); }
+  .guidecad b { font-size: 13px; }
+  .guidecad span { font-size: 12px; color: #ffe2a8; }
+  #guideEdit { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+  .guidefrom { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .guidefrom .label { margin: 0 4px 0 0; }
+  .guidefrom button { font-size: 11px; padding: 2px 7px; color: var(--dim); }
+  .guiderow { display: flex; align-items: center; gap: 5px; }
+  .guiderow .num { min-width: 42px; font-size: 14px; color: #ffe2a8; }
+  .guiderow select { background: #181818; color: #ffe2a8; border: 1px solid var(--line); border-radius: 6px; padding: 3px; font-size: 12px; }
+  .guiderow .seg button { padding: 3px 6px; font-size: 11px; flex: none; }
+  .guiderow > button { padding: 2px 7px; font-size: 11px; color: var(--dim); }
+  #guideAdd { align-self: flex-start; padding: 3px 10px; font-size: 12px; color: var(--dim); }
 
   /* Cells: the cell on top, the chord lane, the library. */
   #cellShow { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 2px 0 4px; }
@@ -276,7 +308,7 @@
 
   /* Scales view: the lane canvas with a message layer over it. */
   .lane-wrap { position: relative; flex: 1; min-height: 0; }
-  #lane, #cellLane { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #lane, #cellLane, #guideLane { position: absolute; inset: 0; width: 100%; height: 100%; }
   #scaleMsg { position: absolute; left: 25%; right: 0; top: 50%; transform: translateY(-50%);
               text-align: center; font-size: 16px; color: var(--ink); padding: 0 12px; }
   #scaleMsg[hidden] { display: none; }
@@ -525,6 +557,28 @@
       <div id="cellGrid"></div>
       <div class="rm-bar"><select id="cellStatSel" aria-label="Cell"></select></div>
     </div>
+    <!-- Guide tones (G2): the cadence on top, a staff with bars, the targets ahead. -->
+    <div class="view" id="view-guides" data-view="play" data-for="guides" hidden>
+      <div class="stage-top">
+        <span id="guideTitle"></span><span></span><span id="guideInfo" class="scale-info"></span>
+      </div>
+      <div id="guideShow"></div>
+      <div class="lane-wrap">
+        <canvas id="guideLane"></canvas>
+        <div id="guideChords"></div>
+        <div id="guideMsg" hidden></div>
+      </div>
+    </div>
+    <div class="view" id="view-guide-levels" data-view="levels" data-for="guides" hidden>
+      <h2>Cadences</h2>
+      <div id="guideCads"></div>
+      <div id="guideEdit"></div>
+    </div>
+    <div class="view" id="view-guide-stats" data-view="stats" data-for="guides" hidden>
+      <h2>Recent rounds · key × guide tone</h2>
+      <div id="guideGrid"></div>
+      <div class="rm-bar"><select id="guideStatSel" aria-label="Cadence"></select></div>
+    </div>
     <!-- Levels: the ladder (D6). -->
     <div class="view" id="view-levels" data-view="levels" data-for="degrees" hidden><div id="ladder"></div></div>
     <!-- Scale levels (E1 step 2): the ladder, one block per scale. -->
@@ -573,6 +627,11 @@
         <!-- Arpeggios: the notation sign for an arpeggiated chord, a wavy line. -->
         <button data-game="arpeggios" aria-label="Arpeggios" title="Arpeggios"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 2c3 1.5 3 3.5 0 5s-3 3.5 0 5 3 3.5 0 5-3 3.5 0 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+        <!-- Guide tones: a target — land the guide tone. -->
+        <button data-game="guides" aria-label="Guide tones" title="Guide tones"><svg class="gicon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/>
+          <circle cx="12" cy="12" r="5.2" fill="none" stroke="currentColor" stroke-width="2"/>
+          <circle cx="12" cy="12" r="1.9" fill="currentColor"/></svg></button>
       </div>
       <button class="gear" data-tab="horn" aria-label="Horn, sync and backup">⚙</button>
     </div>
@@ -609,6 +668,16 @@
         <!-- Backing: the trio, drums + the root, or the click alone. -->
         <div class="seg" id="cellBacking"><button data-cell-back="click">Click</button><button data-cell-back="root">Root</button><button data-cell-back="band">Band</button></div>
         <div id="cellTempo"></div>
+      </div>
+      <div class="g-guides">
+        <button id="guideCard" class="excard"><span class="ex"><b id="guideCardName"></b><b id="guideCardChords" class="degs"></b></span><span class="chg">change ›</span></button>
+        <div class="label">Targets</div>
+        <div class="chips" id="guidePatterns"></div>
+        <div class="label">Keys</div>
+        <div class="chips" id="guidePaths"></div>
+        <div class="seg" id="guideBacking"><button data-guide-back="click">Click</button><button data-guide-back="root">Root</button><button data-guide-back="band">Band</button></div>
+        <div class="seg" id="guideNames"><button data-guide-names="on">Note names</button><button data-guide-names="off">Degrees only</button></div>
+        <div id="guideTempo"></div>
       </div>
       <div class="g-degrees">
         <button id="exerciseBtn" class="excard"><span class="ex"><b id="exerciseLabel"></b><b id="exerciseDegrees" class="degs"></b></span><span class="chg">change ›</span></button>
@@ -675,6 +744,25 @@
       <input id="cellName" placeholder="name (optional)" autocomplete="off" spellcheck="false">
       <div class="cellrow"><button id="cellHear">▶ Hear</button><button id="cellSave">Save</button><button id="cellNew">New</button></div>
       <div id="cellHint" class="small-note"></div>
+    </div>
+    <div class="pane" data-pane="levels" data-for="guides" hidden>
+      <div class="small-note">Pick a cadence to play. Your cadence: set each chord's root (as a degree of
+        the key), quality and length; its targets (3 or 7, on 1, on 3 or late) are what the <b>Your own</b>
+        target pattern plays.</div>
+      <button id="guidePlayLevel">Play ›</button>
+    </div>
+    <div class="pane" data-pane="stats" data-for="guides" hidden>
+      <div class="stat">Rounds <b id="gstRounds">0</b></div>
+      <div class="stat">Today <b id="gstToday">0</b></div>
+      <div class="stat">Targets landed <b id="gstHit">–</b></div>
+      <div class="stat">Off the line <b id="gstOff">–</b></div>
+      <div>
+        <div class="legend"></div>
+        <div class="legend-labels"><span>weak</span><span>strong</span></div>
+      </div>
+      <div class="small-note">For the cadence picked under the grid. Each square: the last 10 times that
+        chord's 3 or 7 was a target in that key — landed is green, missed red. "Off the line": the right
+        note an octave away from the step it should have been. Figures: the last 20 rounds.</div>
     </div>
     <div class="pane" data-pane="stats" data-for="cells" hidden>
       <div class="stat">Runs <b id="cstRuns">0</b></div>

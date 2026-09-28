@@ -27,7 +27,7 @@ const STATE_KEY = 'woodshed.syncState';
 // Settings that travel in settings.json: everything but the sync credentials.
 const SETTINGS = ['woodshed.calib', 'woodshed.mode', 'woodshed.pick', 'woodshed.length',
                   'woodshed.exercise', 'woodshed.custom',
-                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.inputLatency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.scaleExercise',
+                  'woodshed.calibOffset', 'woodshed.game', 'woodshed.tempoAuto', 'woodshed.inputLatency', 'woodshed.cellSel', 'woodshed.cellEx', 'woodshed.cellBpm', 'woodshed.cellBacking', 'woodshed.guidePattern', 'woodshed.guidePath', 'woodshed.guideBacking', 'woodshed.guideNames', 'woodshed.guideBpm', 'woodshed.guideCadence', 'woodshed.guideCustom', 'woodshed.scaleExercise',
                   'woodshed.scaleCustom', 'woodshed.arpExercise', 'woodshed.arpCustom', 'woodshed.bpm', 'woodshed.misses'];
 const SETTINGS_PATH = 'settings.json';
 // The cell library (Cells): the boss's own cells, kept apart from the runs

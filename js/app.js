@@ -33,7 +33,7 @@ export const MODE_KEY = 'woodshed.mode';            // learn | practice, one set
 export const PICK_KEY = 'woodshed.pick';            // weak | random: degrees' questions, lanes' keys
 export const LATENCY_KEY = 'woodshed.inputLatency'; // ms, measured in ⚙ (latency.js); absent = 0
 
-export const GAMES = ['degrees', 'scales', 'cells', 'arpeggios'];
+export const GAMES = ['degrees', 'scales', 'cells', 'arpeggios', 'guides'];
 
 // The live values. Pitch spaces: see music.js. `calib` is the MIDI pitch
 // class the horn sends for a fingered written C (converts both ways between

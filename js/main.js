@@ -3,7 +3,7 @@
 // the run controls, and ⚙ (latency, sync, backup). Each game's own panel —
 // its Play settings, Levels and Stats — is a module of its own, all with
 // the same shape (UI below): degrees-ui.js, lanes-ui.js (scales and
-// arpeggios), cells-ui.js. Shared settings and helpers: app.js.
+// arpeggios), cells-ui.js, guides-ui.js. Shared settings and helpers: app.js.
 //
 // Pitch spaces: see music.js. Calibration stores the MIDI pitch class the
 // horn sends for a fingered written C; that one number converts both ways
@@ -19,12 +19,13 @@ import { startLatency, stopLatency, latencyNote, measuring } from './latency.js'
 import { degreesUI } from './degrees-ui.js';
 import { lanesUI, isLane } from './lanes-ui.js';
 import { cellsUI } from './cells-ui.js';
+import { guidesUI } from './guides-ui.js';
 
 // Each game's panel: render() draws its Play settings; canStart(); start();
 // showLevels(), showStats(); note(midi) while it runs; running(), stop();
 // the lane games and cells also paused(), pause(), resume(), restart();
 // optional onEnter() when switched to, onSync(res) after new data arrives.
-const UI = { degrees: degreesUI, scales: lanesUI, arpeggios: lanesUI, cells: cellsUI };
+const UI = { degrees: degreesUI, scales: lanesUI, arpeggios: lanesUI, cells: cellsUI, guides: guidesUI };
 const ui = () => UI[st.game];
 
 const statusEl = $('#status');
@@ -90,6 +91,7 @@ function showSettings() {
   degreesUI.render();
   lanesUI.render();
   if (st.game === 'cells') cellsUI.render();
+  if (st.game === 'guides') guidesUI.render();
   startBtn.disabled = !ui().canStart();
   showHint();
 }
