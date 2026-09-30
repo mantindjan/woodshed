@@ -6,7 +6,7 @@
 
 import { $, $$, load, save, loadJSON, st, hooks } from './app.js';
 import { QUALITY_TEXT, NOTES, SCALES } from './music.js';
-import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, learnOrder, toggleHint, ownStart,
+import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, toggleHint, ownStart,
          pauseScales, resumeScales, restartScales, scalesPaused } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
@@ -45,7 +45,6 @@ let mapView = 'range';
 // waiting.
 let tempoAuto = load(TEMPO_AUTO_KEY) !== 'fixed';
 let tempoModel = createTempoModel();
-let keyModel = createKeyModel();   // weak keys, for learn's key order on the idle card
 let scaleRecap = null;             // the last session's recap, shown until something changes
 // What the Play strip shows on Auto: the middle of the exercise's keys'
 // starting tempos (each run then plays at its own key's, shown on stage).
@@ -57,7 +56,6 @@ function autoStartTempo() {
 async function loadTempo() {
   const sm = await getSummary();
   tempoModel = createTempoModel(sm.tempo || []);
-  keyModel = createKeyModel(sm.keys || []);
   hooks.showSettings();
 }
 
@@ -74,23 +72,15 @@ function showScaleIdle() {
   const ex = currentScaleExercise();
   const exName = `${ex.num ? `${ex.num} · ` : ''}${ex.title} · ${ex.name}`;
   if (scaleRecap) { el.innerHTML = recapHTML(scaleRecap, ex, exName); return; }
-  const tk = k => tempoKey(ex.scale, ex.pattern, k);
-  let next, how;
-  if (st.mode === 'learn') {
-    const first = learnOrder(ex.keys, keyModel, ex.scale, ex.pattern)[0];
-    // "C7" for an arpeggio, "C major" for a scale.
-    const name = k => (SCALES[ex.scale].chord ? `${NOTES[k]}${QUALITY_TEXT[SCALES[ex.scale].chord]}` : `${NOTES[k]} ${SCALES[ex.scale].name.toLowerCase()}`);
-    next = `${name(first)} first — hardest keys first` +
-           (tempoAuto ? ` · ${tempoModel.start(tk(first))} bpm` : ` · ${fixedBpm} bpm`);
-    how = 'The whole run is laid out; a line sweeps across it in time — play along, nothing stops. ' +
-          (tempoAuto ? 'A key repeats; clean runs raise its tempo, and after a step up the next key comes.'
-                     : 'A key repeats until you tap Next key.');
-  } else {
-    next = `${ex.keys.length > 1 ? (st.pick === 'weak' ? 'Keys drawn toward your weak ones' : 'Keys at random') : `${NOTES[ex.keys[0]]} only`}` +
-           (tempoAuto ? ' · each at its own tempo' : ` · ${fixedBpm} bpm`);
-    how = `Notes scroll to the line — hit each on the beat. ${misses} miss${misses === 1 ? '' : 'es'} and the run starts again.` +
-          (tempoAuto ? ' Three clean runs in a row raise that key\'s tempo; a bad one lowers it.' : '');
-  }
+  // Both modes draw keys the same way, each run (toward the weak ones —
+  // today's runs included — or evenly).
+  const next = `${ex.keys.length > 1 ? (st.pick === 'weak' ? 'Keys drawn toward your weak ones, today\'s runs included' : 'Keys at random') : `${NOTES[ex.keys[0]]} only`}` +
+               (tempoAuto ? ' · each at its own tempo' : ` · ${fixedBpm} bpm`);
+  const how = st.mode === 'learn'
+    ? 'The whole run is laid out; a line sweeps across it in time — play along, nothing stops.' +
+      (tempoAuto ? ' Clean runs raise a key\'s tempo.' : '') + ' Next key skips to another.'
+    : `Notes scroll to the line — hit each on the beat. ${misses} miss${misses === 1 ? '' : 'es'} and the run starts again.` +
+      (tempoAuto ? ' Three clean runs in a row raise that key\'s tempo; a bad one lowers it.' : '');
   el.innerHTML = `<div class="label">${st.mode === 'learn' ? 'Learn' : 'Practice'} · next up</div>` +
     `<div class="big">${exName}</div><div class="what">${next}</div><div class="how">${how}</div>` +
     `<div class="go">Press Start: it names the start note and counts you in — tap My note to start where you like.` +

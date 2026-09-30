@@ -79,6 +79,12 @@ const TRACK_SPAN = 2;          // the practice lane's camera averages this many 
 // in; "My note" in that time hands the choice to the player, who blows it
 // (boss, 2026-09-27: choosing was great as an option, not as the default).
 const ANNOUNCE_MS = 2000;
+// The learn loop (boss, 2026-09-30: "select a continuous portion … and
+// have that on auto repeat"): paused, drag across the discs to select a
+// stretch; ⟲ plays it — count-in, the stretch, a tally for LOOP_GAP_MS,
+// again — until ⟲ is tapped again. Loop passes are logged (`loop`) but
+// move no tempo, key weight or recap: they're part-runs.
+const LOOP_GAP_MS = 1400;
 const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // v3: `pattern` replaces `direction`. v4: learn runs add `hint` (and, that
 // evening only, `waits` from the dropped lane-hold learn). v5: learn = sheet.
@@ -93,8 +99,9 @@ const GLOW_MS = 650;           // how long a hit's bloom takes to settle
 // (linear, 3up, 3down) go up to the top and back to the start; misses at
 // the horn's extremes never count toward `allowedMisses`. v11: the scale
 // patterns go corner to corner — up to the top, down to the bottom of the
-// horn (same ids; `expected` says what was asked either way).
-const SCHEMA_VERSION = 11;
+// horn (same ids; `expected` says what was asked either way). v12: `loop`
+// [from, to] — a learn loop pass over part of a run (its notes from..to).
+const SCHEMA_VERSION = 12;
 
 const $ = sel => document.querySelector(sel);
 
@@ -106,18 +113,6 @@ function scaleNotes(scale, key) {
   }
   return out;
 }
-// Accidentals in each written key's signature, by pitch class (C♯ counted
-// as D♭, 5 flats; F♯ as 6 sharps) — the learn order's difficulty.
-const ACCIDENTALS = [0, 5, 2, 3, 4, 1, 6, 1, 4, 3, 2, 5];
-
-// Learn's key order: hardest first, weak keys bumped up. Difficulty =
-// accidentals + the weak-key model's tickets (0.6 for a solid key up to 4.6
-// for a weak one, 2.2 untried) — a weak C still trails a solid F♯.
-export function learnOrder(keys, model, scale, pattern) {
-  const score = k => ACCIDENTALS[k] + model.tickets(scale, pattern, k);
-  return [...keys].sort((a, b) => score(b) - score(a) || ACCIDENTALS[b] - ACCIDENTALS[a] || a - b);
-}
-
 const degreeOf = (scale, key, w) => SCALES[scale].degrees[SCALES[scale].steps.indexOf(pc(w - key))];
 
 // Where a tenor player would call a written note: low up to F4, middle up
@@ -150,9 +145,6 @@ export function startScales(opts, onEnd) {
   navigator.wakeLock?.request('screen').then(l => { wakeLock = l; }).catch(() => {});
   s = { ...opts, scale: opts.exercise.scale, pattern: opts.exercise.pattern, keys: opts.exercise.keys, onEnd,
         session: Date.now().toString(36), run: null, timers: [], moved: 0,
-        // Learn: the key order, fixed for the session, and where we are in it.
-        order: opts.mode === 'learn' ? learnOrder(opts.exercise.keys, opts.model, opts.exercise.scale, opts.exercise.pattern) : null,
-        at: 0, advance: false,
         // Session recap, handed to onEnd on Stop (main.js shows it on the
         // stage): what the session did, key by key, so progress is seen.
         recap: { t0: Date.now(), runs: 0, clean: 0, keys: [], levelBestBefore: opts.tempo.levelBest(opts.exercise.scale, opts.exercise.pattern) } };
@@ -181,14 +173,15 @@ export function nudgeTempo(dir) {
   topBar();
 }
 
-// Learn: skip to the next key now. A run in progress is dropped unlogged —
-// half a run is no evidence either way.
+// Learn: skip to another key now (a fresh draw). A run in progress is
+// dropped unlogged — half a run is no evidence either way.
 export function nextKey() {
-  if (!s?.order) return;
+  if (!s || s.mode !== 'learn') return;
+  s.loop = null;
+  s.sel = null;
   s.timers.forEach(clearTimeout);
   s.timers = [];
   stopAll();
-  s.advance = true;
   nextRun();
 }
 
@@ -207,14 +200,20 @@ function halt() {
 export function pauseScales() {
   if (!s || s.paused) return;
   halt();
-  s.paused = { run: underway(s.run) ? 'restart' : s.run.phase === 'summary' ? 'next' : s.run.phase === 'announce' ? 'announce' : 'wait' };
-  message('<b>Paused</b> — ▶ to carry on');
+  s.paused = { run: s.loop || underway(s.run) ? 'restart' : s.run.phase === 'summary' ? 'next' : s.run.phase === 'announce' ? 'announce' : 'wait' };
+  message(s.mode === 'learn' && s.run.expected.length && !s.loop
+    ? '<b>Paused</b> — tap to carry on, or drag across notes to loop them' : '<b>Paused</b> — tap or ▶ to carry on');
+  // Learn: under the sheet, like the tally — over it, it hid the discs.
+  if (s.mode === 'learn') $('#scaleMsg').classList.add('tally');
+  pauseChanged();
 }
 export function resumeScales() {
   if (!s?.paused) return;
   const { run } = s.paused;
   s.paused = null;
+  s.sel = null;
   message('');
+  pauseChanged();
   if (run === 'restart') restartRun();
   else if (run === 'next') nextRun();
   else if (run === 'announce') announce();
@@ -243,31 +242,27 @@ export function stopScales() {
   message('');
   $('#scaleNext').hidden = true;
   $('#scaleOwn').hidden = true;
+  $('#scaleLoop').hidden = true;
   $('#scaleNudge').hidden = true;
   $('#scaleHint').hidden = true;
   draw(null);
   onEnd(recap);
 }
 
-// A new run. Practice: the next key, weighted toward weak ones or even,
-// never the same twice in a row when there's a choice. Learn: the same key
-// again, or the next in the hardest-first order once it's to advance. On
-// Auto, the run takes its key's tempo.
+// A new run, learn and practice alike: the next key drawn toward the weak
+// ones (this session's runs included — the key model's session tally) or
+// evenly, never the same twice in a row when there's a choice. Learn used
+// to hold a key until its tempo stepped up, hardest keys first (boss,
+// 2026-09-30: "extremely bothering" — just play, the weak keys come back
+// on their own). On Auto, the run takes its key's tempo.
 function nextRun() {
-  let k;
-  if (s.order) {
-    if (s.advance && s.run) s.at = (s.at + 1) % s.order.length;
-    k = s.order[s.at];
-  } else {
-    k = pickScaleKey(s.model, { scale: s.scale, pattern: s.pattern, keys: s.keys, pick: s.pick, prev: s.run?.key });
-  }
+  const k = pickScaleKey(s.model, { scale: s.scale, pattern: s.pattern, keys: s.keys, pick: s.pick, prev: s.run?.key });
   if (k !== s.run?.key) s.moved = 0;  // the ↑/↓ is about this key's last run
-  s.advance = false;
   if (s.tempoAuto) s.bpm = s.tempo.tempoFor(tempoKey(s.scale, s.pattern, k), s.session);
   s.run = { key: k, phase: 'waiting', notes: [], expected: [], misses: 0, hint: null,
             // A tempo the player set for this key (stage nudges) — its run is marked `tempoSet`.
             manual: !!s.tempoAuto && s.tempo.manual(tempoKey(s.scale, s.pattern, k)) };
-  $('#scaleNext').hidden = !s.order || s.order.length < 2;
+  $('#scaleNext').hidden = s.mode !== 'learn' || s.keys.length < 2;
   showHint(false);                    // every new run starts without the answer
   topBar();
   const start = suggestStart(s.scale, k, s.pattern);
@@ -418,6 +413,14 @@ function startRun(w, now, midi) {
             `start ${i + 2 >= notes.length ? 'lower' : 'higher'}.`);
     return;
   }
+  launch(r, idx, notes, now, midi);
+}
+
+// Start run `r` over scale positions `idx` of `notes` (the scale in the
+// horn's range): times from `now` (the start note, or a restart's tap), a
+// count-in, then a note every eighth. `midi`: the blown start note, or
+// null (the app counted in).
+function launch(r, idx, notes, now, midi) {
   const run = idx.map(j => notes[j]);
   const beat = 60000 / s.bpm;
   const step = beat / PER_BEAT;       // time between scale notes
@@ -475,7 +478,7 @@ function expire(now) {
       if (r.phase !== 'running') return;
       // A run that's gone stops now rather than being played out.
       const i = r.expected.indexOf(e);
-      if (i === 1 && falseStart(r)) return endRun(true, 'false');
+      if (i === 1 && !r.loop && falseStart(r)) return endRun(true, 'false');
     }
   }
   checkDone();
@@ -493,6 +496,7 @@ function falseStart(r) {
 // The same run again, straight into the count-in (no start note to blow),
 // at the key's tempo now.
 function restartRun() {
+  if (s.loop) return startLoopPass();
   const old = s.run;
   const start = old.expected[0].w;
   const tk = tempoKey(s.scale, s.pattern, old.key);
@@ -544,6 +548,15 @@ function endRun(stopped, abort = null) {
   if (r.hint) event.hint = r.hint;  // the default start {start: written MIDI}
   if (s.tempoAuto && r.manual) event.tempoSet = true;
   if (r.restarted) event.restarted = true;
+  // A loop pass: logged as the part it is; nothing else moves; again.
+  if (r.loop) {
+    event.loop = r.loop;
+    addEvent(event);
+    message(`<b>${hits.length} / ${r.expected.length}</b> · loop — again`);
+    $('#scaleMsg').classList.add('tally');
+    s.timers.push(setTimeout(() => { if (s?.loop && !s.paused) startLoopPass(); }, LOOP_GAP_MS));
+    return;
+  }
   // False start: logged, marked and void — no tempo, weak-key or recap
   // change; the same run again.
   if (abort === 'false') {
@@ -556,8 +569,11 @@ function endRun(stopped, abort = null) {
     return;
   }
   addEvent(event);
-  // The key model adapts within the session; the summary keeps it for next time.
+  // The key model adapts within the session — its recent score and the
+  // session tally (a bad run weighs heavily now) — the summary keeps the
+  // score for next time.
   s.model.add(event);
+  s.model.live(event);
   saveKeys(s.model);
   // Recap: per key, where the session took it. `from` is the key's first
   // run's tempo, `to` where it'll play next; the clean best before and after.
@@ -583,11 +599,6 @@ function endRun(stopped, abort = null) {
     const name = NOTES[r.key];
     tempoNote = s.moved > 0 ? `<br>${name} tempo up → <b>${next}</b>` : s.moved < 0 ? `<br>${name} tempo down → <b>${next}</b>`
       : `<br><small>clean ${s.tempo.streak(key)} of ${CLEAN_RUNS[s.mode]} at ${next}</small>`;
-    // Learn: a tempo step up means this key is done for now — next key.
-    if (s.order && s.moved > 0) {
-      s.advance = true;
-      tempoNote += s.order.length > 1 ? ` · next: <b>${NOTES[s.order[(s.at + 1) % s.order.length]]}</b>` : '';
-    }
   }
   // Misses at the horn's extremes are shown but hold nothing back.
   const edge = r.expected.filter(e => e.status !== 'hit' && e.status !== 'pending' && !inMiddle(e.w)).length;
@@ -605,6 +616,114 @@ function endRun(stopped, abort = null) {
       : `<b>${hits.length} / ${r.expected.length} hit</b>${lateness}`) + edgeNote + tempoNote);
   }
   s.timers.push(setTimeout(() => { if (s) nextRun(); }, s.mode === 'learn' ? SHEET_SUMMARY_MS : SUMMARY_MS));
+}
+
+// --- The learn loop ---
+// The play/pause button and the loop button follow the state (main.js
+// listens for the play/pause icon).
+function pauseChanged() {
+  document.dispatchEvent(new Event('woodshed:pause'));
+  const sel = s?.sel && s.sel.a !== s.sel.b;
+  const btn = $('#scaleLoop');
+  btn.hidden = !s || !(s.loop || (s.paused && sel));
+  btn.classList.toggle('active', !!s?.loop);
+  btn.setAttribute('aria-label', s?.loop ? 'Stop the loop' : 'Loop the selection');
+}
+
+// One pass over the looped stretch of the run it was taken from.
+function startLoopPass() {
+  const { a, b, base } = s.loop;
+  s.run = { key: base.key, phase: 'waiting', notes: [], expected: [], misses: 0, hint: base.hint,
+            manual: false, restarted: true, startBy: base.startBy, loop: [a, b] };
+  message('');
+  launch(s.run, base.expected.slice(a, b + 1).map(e => e.i), base.scaleNotes, performance.now(), null);
+}
+
+// ⟲: start looping the selection, or stop the loop — back, paused, to the
+// whole run it came from (resume plays it from the top).
+export function toggleLoop() {
+  if (!s) return;
+  if (s.loop) {
+    halt();
+    s.run = s.loop.base;
+    s.loop = null;
+    s.sel = null;
+    s.paused = { run: 'restart' };
+    message('<b>Paused</b> — tap to carry on with the whole run');
+    $('#scaleMsg').classList.add('tally');
+    pauseChanged();
+    draw(s.run);
+    return;
+  }
+  if (!s.paused || !s.sel || s.sel.a === s.sel.b) return;
+  const a = Math.min(s.sel.a, s.sel.b), b = Math.max(s.sel.a, s.sel.b);
+  s.loop = { a, b, base: s.run };
+  s.sel = null;
+  s.paused = null;
+  pauseChanged();
+  startLoopPass();
+}
+
+// The stage under a finger: a tap pauses or carries on (any lane game,
+// either mode); in learn, paused, a drag from disc to disc selects a
+// stretch to loop.
+const TAP_SLOP = 8;
+let touch = null;
+function stagePoint(e) {
+  const b = $('#lane').getBoundingClientRect();
+  return { x: e.clientX - b.left, y: e.clientY - b.top, W: b.width, H: b.height };
+}
+// The disc nearest a point on the learn sheet (within reach when `strict`).
+function discAt(p, strict) {
+  const r = s.run;
+  const L = sheetLayout(r, p.W, p.H);
+  let best = null, bd = Infinity;
+  r.expected.forEach((e, j) => {
+    const q = sheetPoint(L, j, e.i);
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d < bd) { bd = d; best = j; }
+  });
+  return !strict || bd <= L.rad * 1.8 ? best : null;
+}
+$('#lane').addEventListener('pointerdown', e => {
+  if (!s) return;
+  const p = stagePoint(e);
+  touch = { x: p.x, y: p.y, moved: false, selecting: false };
+  if (s.paused && s.mode === 'learn' && !s.loop && s.run?.expected.length) {
+    const j = discAt(p, true);
+    if (j !== null) {
+      touch.selecting = true;
+      s.sel = { a: j, b: j };
+      $('#lane').setPointerCapture(e.pointerId);
+      draw(s.run);
+    }
+  }
+});
+$('#lane').addEventListener('pointermove', e => {
+  if (!touch || !s) return;
+  const p = stagePoint(e);
+  if (Math.hypot(p.x - touch.x, p.y - touch.y) > TAP_SLOP) touch.moved = true;
+  if (touch.selecting) {
+    s.sel.b = discAt(p, false);
+    draw(s.run);
+  }
+});
+$('#lane').addEventListener('pointerup', () => {
+  if (!touch || !s) { touch = null; return; }
+  const { moved, selecting } = touch;
+  touch = null;
+  if (selecting && s.sel.a !== s.sel.b) { pauseChanged(); return; }   // a stretch: ⟲ shows
+  if (moved) return;
+  if (s.paused) resumeScales();
+  else if (s.loop || underway(s.run)) pauseScales();
+});
+$('#scaleLoop').addEventListener('click', toggleLoop);
+// Where disc j of the learn sheet is, in page coordinates (tests drag
+// across the discs with it).
+export function discPoint(j) {
+  const b = $('#lane').getBoundingClientRect();
+  const q = sheetPoint(sheetLayout(s.run, b.width, b.height), j, s.run.expected[j].i);
+  return { x: b.left + q.x, y: b.top + q.y };
 }
 
 // --- Drawing ---
@@ -864,6 +983,15 @@ function drawSheet(g, r, W, H) {
     g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 4, y); g.lineTo(x, y + 5); g.lineTo(x - 4, y); g.closePath(); g.fill();
   });
   drawMarks(true);
+  // The stretch being selected for a loop: a blue ring on each of its discs.
+  if (s.sel) {
+    const [a, b] = [Math.min(s.sel.a, s.sel.b), Math.max(s.sel.a, s.sel.b)];
+    g.strokeStyle = '#9fd8ff'; g.lineWidth = 3;
+    for (let j = a; j <= b; j++) {
+      const { x, y } = sheetPoint(L, j, r.expected[j].i);
+      g.beginPath(); g.arc(x, y, L.rad + 5, 0, Math.PI * 2); g.stroke();
+    }
+  }
   // Ghost lines on the clicks: through every note that falls on one.
   g.strokeStyle = BEAT_LINE; g.lineWidth = 1;
   for (let j = 0; j < r.expected.length; j += PER_BEAT) {

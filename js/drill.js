@@ -93,7 +93,7 @@ export async function startRound(calib, onEnd, { length = 20, pick = 'weak', exe
     calib, onEnd, length,
     round: Date.now().toString(36),   // groups this round's events
     exercise,
-    index: 0, answered: 0, firstTry: 0, q: null,
+    index: 0, answered: 0, firstTry: 0, q: null, right: 0, wrong: 0,
     score: 0, streak: 0, bestStreak: 0,   // D5
     times: [],        // ms from chord to correct note, per answered question
     model: null,      // weak-spot model, from the cached summary (A8)
@@ -120,7 +120,8 @@ function ask() {
   s.q = pickQuestion(s.q, s.useWeak ? s.model : null, s.exercise.cells);
   s.index++;
   const { root, quality, degree } = s.q;
-  $('#progress').textContent = `${s.index} / ${s.length || '∞'}`;
+  // The running tally (boss, 2026-09-30), beside the count.
+  $('#progress').textContent = `${s.index} / ${s.length || '∞'}${s.answered ? ` · ${s.right} right · ${s.wrong} wrong` : ''}`;
   $('#chord').innerHTML = chordHTML(root, quality);
   const label = degreeLabel(degree);
   $('#degree').textContent = label;
@@ -287,9 +288,12 @@ function finish(ok, pauseMs) {
   };
   addEvent(event);
   s.answered++;
-  // The weak-spot model learns within the round too, and the cached
+  // The weak-spot model learns within the round too — its recent score and
+  // the session tally (misses this round weigh heavily) — and the cached
   // summary keeps up so the next round starts from here.
   s.model.add(event);
+  s.model.live(event);
+  if (ok) s.right++; else s.wrong++;
   saveWeak(s.model);
 
   s.timer = setTimeout(s.length && s.index >= s.length ? endRound : ask, pauseMs);

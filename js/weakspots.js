@@ -10,7 +10,11 @@
 //
 // Questions are a weighted random draw, never "always the weakest": tickets
 // = 0.6 + 4 × (1 − recent), +0.8 while a cell has fewer than 6 answers; a
-// never-tried cell gets 2.2. Nothing ever drops to zero, so mastered cells
+// never-tried cell gets 2.2. On top, the SESSION: each miss in this round
+// adds SESSION_MISS tickets to its cell and cell+root, each right answer
+// there since takes half a miss back — so a degree fumbled 5–7 times in a
+// session keeps coming back now, not next week (boss, 2026-09-30: "make
+// sure the weak keys are actualised on what's been played so far"). Nothing ever drops to zero, so mastered cells
 // still come round. Pick a cell by tickets, then a root inside it the same
 // way. Weights from docs/handover/SOLVED.md; speed tiers from the boss after
 // playing, 2026-09-24: < 1 s blazing, < 1.5 good, < 2 to improve, else slow
@@ -28,6 +32,9 @@ const SLOW_FLOOR = 0.6;
 const ALPHA = 0.15;
 const UNTRIED = 2.2;
 const FEW_ANSWERS = 6;
+export const SESSION_MISS = 1.5;
+// A key's session weight: misses count, rights since take half a miss back.
+export const sessionTickets = t => (t ? SESSION_MISS * Math.max(0, t.miss - 0.5 * t.right) : 0);
 
 // Score of one right answer by its reaction time.
 export function speedScore(ms) {
@@ -58,6 +65,8 @@ const rootKey = (quality, degree, root) => `${quality}|${degree}|${root}`;
 // cached summary (A8), so a round starts without reading history.
 export function createModel(initial = []) {
   const stats = new Map(initial.map(([k, v]) => [k, { ...v }]));   // key → {n, recent}
+  const session = new Map();                                        // key → {miss, right}: this round only, never saved
+  const tally = (key, right) => { const t = session.get(key) || { miss: 0, right: 0 }; t[right ? 'right' : 'miss']++; session.set(key, t); };
 
   function bump(key, score) {
     const st = stats.get(key);
@@ -76,8 +85,14 @@ export function createModel(initial = []) {
       bump(cellKey(e.quality, degree), score);
       bump(rootKey(e.quality, degree, e.rootWritten), score);
     },
-    cellTickets: (quality, degree) => tickets(stats.get(cellKey(quality, degree))),
-    rootTickets: (quality, degree, root) => tickets(stats.get(rootKey(quality, degree, root))),
+    // An answer played now (the drill, after add): the session tally.
+    live(e) {
+      if (e.game !== 'degrees' || !e.notes?.length) return;
+      tally(cellKey(e.quality, e.degrees[0]), e.ok);
+      tally(rootKey(e.quality, e.degrees[0], e.rootWritten), e.ok);
+    },
+    cellTickets: (quality, degree) => tickets(stats.get(cellKey(quality, degree))) + sessionTickets(session.get(cellKey(quality, degree))),
+    rootTickets: (quality, degree, root) => tickets(stats.get(rootKey(quality, degree, root))) + sessionTickets(session.get(rootKey(quality, degree, root))),
   };
 }
 

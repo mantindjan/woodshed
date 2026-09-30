@@ -101,7 +101,7 @@ export function createTempoModel(initial = []) {
   const model = {
     stats,
     add(e) {
-      if (!LANE_GAMES.includes(e.game) || !e.tempoAuto || !e.expected || e.falseStart) return;
+      if (!LANE_GAMES.includes(e.game) || !e.tempoAuto || !e.expected || e.falseStart || e.loop) return;   // a loop pass is a part-run
       const k = tempoKey(e.scale, runPattern(e), e.keyWritten);
       const st = stats.get(k) || { next: e.bpm, streak: 0, dir: 0, reversals: [], best: 0, round: null, placing: true };
       if (st.round !== e.round) { st.round = e.round; st.streak = 0; }   // a new session

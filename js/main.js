@@ -186,6 +186,8 @@ function showPlayPause() {
   $('#scalePlay').innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
   $('#scalePlay').setAttribute('aria-label', paused ? 'Resume' : 'Pause');
 }
+// The stage can pause and carry on too (a tap on the lane, scales.js).
+document.addEventListener('woodshed:pause', () => { if (ui().running()) showPlayPause(); });
 $('#scalePlay').addEventListener('click', () => {
   if (ui().paused()) ui().resume(); else ui().pause();
   showPlayPause();

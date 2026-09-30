@@ -12,6 +12,7 @@
 // settings. Nothing is locked.
 
 import { SCALES, NOTES, inMiddle, HORN_MIDDLE } from './music.js';
+import { sessionTickets } from './weakspots.js';
 
 // Patterns: how a run walks the scale from the start note. `indices(i, n,
 // notes)` gives the scale positions to play, from the start note at
@@ -153,12 +154,17 @@ const statKey = (scale, pattern, key) => `${scale}|${pattern}|${key}`;
 
 // Running stats per scale × pattern × key. Feed events oldest first.
 // `initial` = saved stats ([[key, {n, recent}], …]) from the cached summary.
+// On top, this SESSION (as weakspots.js): a run under 80 % of its counted
+// notes is a miss for its key, adding SESSION_MISS tickets; a better run
+// takes half a miss back — so a key fumbled today comes back today.
+const SESSION_GOOD = 0.8;
 export function createKeyModel(initial = []) {
   const stats = new Map(initial.map(([k, v]) => [k, { ...v }]));
+  const session = new Map();                      // statKey → {miss, right}: this session only, never saved
   return {
     stats,
     add(e) {
-      if (!LANE_GAMES.includes(e.game) || e.falseStart) return;   // a false start says nothing about the key
+      if (!LANE_GAMES.includes(e.game) || e.falseStart || e.loop) return;   // a false start or a loop pass says nothing about the key
       const score = runScore(e);
       if (score === null) return;
       const k = statKey(e.scale, runPattern(e), e.keyWritten);
@@ -166,10 +172,21 @@ export function createKeyModel(initial = []) {
       if (!st) stats.set(k, { n: 1, recent: score });
       else { st.n++; st.recent += ALPHA * (score - st.recent); }
     },
+    // A run played now (the runner, after add): the session tally.
+    live(e) {
+      if (!LANE_GAMES.includes(e.game) || e.falseStart || e.loop) return;
+      const score = runScore(e);
+      if (score === null) return;
+      const k = statKey(e.scale, runPattern(e), e.keyWritten);
+      const t = session.get(k) || { miss: 0, right: 0 };
+      t[score >= SESSION_GOOD ? 'right' : 'miss']++;
+      session.set(k, t);
+    },
     tickets(scale, pattern, key) {
-      const st = stats.get(statKey(scale, pattern, key));
-      if (!st) return UNTRIED;
-      return 0.6 + 4 * (1 - st.recent) + (st.n < FEW_RUNS ? 0.8 : 0);
+      const k = statKey(scale, pattern, key);
+      const st = stats.get(k);
+      const base = st ? 0.6 + 4 * (1 - st.recent) + (st.n < FEW_RUNS ? 0.8 : 0) : UNTRIED;
+      return base + sessionTickets(session.get(k));
     },
   };
 }

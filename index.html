@@ -327,6 +327,12 @@
 
   /* Scales view: the lane canvas with a message layer over it. */
   .lane-wrap { position: relative; flex: 1; min-height: 0; }
+  #lane { touch-action: none; }             /* the stage takes taps and drags (pause, the learn loop) */
+  #scaleLoop { position: absolute; right: 10px; bottom: 10px; width: 52px; height: 52px; padding: 10px; border-radius: 50%;
+               color: #9fd8ff; border: 2px solid #9fd8ff; background: rgba(20,20,20,.85); }
+  #scaleLoop[hidden] { display: none; }
+  #scaleLoop.active { background: #9fd8ff; color: #181818; }
+  #scaleLoop svg { width: 100%; height: 100%; }
   #lane, #cellLane, #guideLane { position: absolute; inset: 0; width: 100%; height: 100%; }
   #scaleMsg { position: absolute; left: 25%; right: 0; top: 50%; transform: translateY(-50%);
               text-align: center; font-size: 16px; color: var(--ink); padding: 0 12px; }
@@ -557,6 +563,10 @@
       <div class="lane-wrap">
         <canvas id="lane"></canvas>
         <div id="scaleMsg" hidden></div>
+        <!-- The learn loop: paused, drag across discs, then this (scales.js). -->
+        <button id="scaleLoop" hidden aria-label="Loop the selection"><svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 12a8 8 0 1 1-2.34-5.66" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+          <path d="M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <!-- Before Start: what's next and how this mode works; after Stop:
              the session recap (main.js showScaleIdle). -->
         <div id="scaleIdle" hidden></div>
