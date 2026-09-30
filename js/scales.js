@@ -200,9 +200,10 @@ function halt() {
 export function pauseScales() {
   if (!s || s.paused) return;
   halt();
-  s.paused = { run: s.loop || underway(s.run) ? 'restart' : s.run.phase === 'summary' ? 'next' : s.run.phase === 'announce' ? 'announce' : 'wait' };
+  s.paused = { run: s.loop || underway(s.run) ? 'restart' : s.run.phase === 'summary' ? 'next' : s.run.phase === 'announce' ? 'announce' : 'wait',
+               at: performance.now() };   // the frozen clock the stage is drawn at
   message(s.mode === 'learn' && s.run.expected.length && !s.loop
-    ? '<b>Paused</b> — tap to carry on, or drag across notes to loop them' : '<b>Paused</b> — tap or ▶ to carry on');
+    ? '<b>Paused</b> — ▶ to carry on; drag across notes to loop them' : '<b>Paused</b> — ▶ to carry on');
   // Learn: under the sheet, like the tally — over it, it hid the discs.
   if (s.mode === 'learn') $('#scaleMsg').classList.add('tally');
   pauseChanged();
@@ -648,8 +649,8 @@ export function toggleLoop() {
     s.run = s.loop.base;
     s.loop = null;
     s.sel = null;
-    s.paused = { run: 'restart' };
-    message('<b>Paused</b> — tap to carry on with the whole run');
+    s.paused = { run: 'restart', at: performance.now() };
+    message('<b>Paused</b> — ▶ to carry on with the whole run');
     $('#scaleMsg').classList.add('tally');
     pauseChanged();
     draw(s.run);
@@ -664,10 +665,12 @@ export function toggleLoop() {
   startLoopPass();
 }
 
-// The stage under a finger: a tap pauses or carries on (any lane game,
-// either mode); in learn, paused, a drag from disc to disc selects a
-// stretch to loop.
-const TAP_SLOP = 8;
+// The stage under a finger (learn): touching a disc FREEZES everything on
+// the spot — pauses — and starts a selection there; a drag extends it
+// (across rows too), a touch on another disc starts over, a touch off the
+// discs clears it. ⟲ loops it; ▶ carries on. A tap never pauses or
+// resumes by itself (boss, 2026-09-30: "remove the tapping … keep the
+// button"). Not while a loop plays: ⟲ first.
 let touch = null;
 function stagePoint(e) {
   const b = $('#lane').getBoundingClientRect();
@@ -686,36 +689,29 @@ function discAt(p, strict) {
   return !strict || bd <= L.rad * 1.8 ? best : null;
 }
 $('#lane').addEventListener('pointerdown', e => {
-  if (!s) return;
+  if (!s || s.mode !== 'learn' || s.loop || !s.run?.expected.length) return;
   const p = stagePoint(e);
-  touch = { x: p.x, y: p.y, moved: false, selecting: false };
-  if (s.paused && s.mode === 'learn' && !s.loop && s.run?.expected.length) {
-    const j = discAt(p, true);
-    if (j !== null) {
-      touch.selecting = true;
-      s.sel = { a: j, b: j };
-      $('#lane').setPointerCapture(e.pointerId);
-      draw(s.run);
-    }
+  const j = discAt(p, true);
+  if (j === null) {                                  // off the discs: select off
+    if (s.sel) { s.sel = null; draw(s.run); pauseChanged(); }
+    return;
   }
+  if (!s.paused) pauseScales();                      // freeze where it is
+  s.sel = { a: j, b: j };
+  touch = true;
+  $('#lane').setPointerCapture(e.pointerId);
+  draw(s.run);
+  pauseChanged();
 });
 $('#lane').addEventListener('pointermove', e => {
-  if (!touch || !s) return;
-  const p = stagePoint(e);
-  if (Math.hypot(p.x - touch.x, p.y - touch.y) > TAP_SLOP) touch.moved = true;
-  if (touch.selecting) {
-    s.sel.b = discAt(p, false);
-    draw(s.run);
-  }
+  if (!touch || !s?.sel) return;
+  s.sel.b = discAt(stagePoint(e), false);
+  draw(s.run);
 });
 $('#lane').addEventListener('pointerup', () => {
-  if (!touch || !s) { touch = null; return; }
-  const { moved, selecting } = touch;
+  if (!touch) return;
   touch = null;
-  if (selecting && s.sel.a !== s.sel.b) { pauseChanged(); return; }   // a stretch: ⟲ shows
-  if (moved) return;
-  if (s.paused) resumeScales();
-  else if (s.loop || underway(s.run)) pauseScales();
+  pauseChanged();                                    // ⟲ shows for a stretch of 2+
 });
 $('#scaleLoop').addEventListener('click', toggleLoop);
 // Where disc j of the learn sheet is, in page coordinates (tests drag
@@ -727,6 +723,10 @@ export function discPoint(j) {
 }
 
 // --- Drawing ---
+// The clock the stage is drawn at: frozen while paused, so nothing moves
+// on a redraw (a selection being dragged redraws; the playhead crept on
+// with the live clock — boss, 2026-09-30).
+const drawNow = () => (s?.paused ? s.paused.at : performance.now());
 const canvas = () => $('#lane');
 function resize() {
   const c = canvas();
@@ -825,7 +825,7 @@ function draw(r) {
   g.beginPath(); g.moveTo(nowX, 12); g.lineTo(nowX, H - 12); g.stroke();
   if (!r || !r.expected.length) return;
 
-  const now = performance.now();
+  const now = drawNow();
   const pos = slotAt(r, now);
   // Discs big enough to read, and a scale step tall enough relative to them
   // that the pattern's staircase shows (boss, 2026-09-26: bigger discs on
@@ -903,7 +903,7 @@ function disc(g, e, x, y, rad, root, named, start = false) {
 // Count-in: four dots across the top, one filling (and blooming) per click.
 function countIn(g, r, W) {
   if (r.phase !== 'countin') return;
-  const now = performance.now();
+  const now = drawNow();
   const filled = Math.min(COUNT_IN, Math.floor((now - r.t0) / r.beatMs));
   for (let b = 0; b < COUNT_IN; b++) {
     const x = W * 0.6 + (b - (COUNT_IN - 1) / 2) * 30;
@@ -965,7 +965,7 @@ function scalePos(notes, w) {
 function drawSheet(g, r, W, H) {
   if (!r || !r.expected.length) return;
   const L = sheetLayout(r, W, H);
-  const now = performance.now();
+  const now = drawNow();
   // Played marks: a small diamond per note-on after the count-in, where it
   // was played (time × pitch). Right pitch for the nearest note: gold, drawn
   // UNDER the discs so it only peeks out when early or late; wrong pitch:
