@@ -17,6 +17,7 @@
 // cell, so one id never means two different things.
 
 import { DEG_SEMI, QUALITY_NAME, degreeLabel } from './music.js';
+import { createRating, timedScore } from './rating.js';
 
 // Degrees a cell can use: the scale steps over the chord, and the
 // alterations a chart asks for. 2 4 6 take the 9 11 13 of the quality
@@ -136,20 +137,13 @@ export function exerciseKeys(id, prevLast = null, rnd = Math.random) {
 export const STAGES = [4, 2, 1];          // learn: times on each chord
 
 // --- Stats: key × note of the cell ---
-// For one cell: the last RECENT times each note of the cell came up on
-// each key (and on all keys pooled), newest last. A note scores 1 hit on
-// the beat, sliding to 0.6 at the window's edge (as the scales map), 0
-// wrong or missed. Keys "<rootPc>|<j>" and "all|<j>", j = the note's place
-// in the cell.
-const RECENT = 10;
+// For one cell, rated as every game rates (rating.js): each time a note of
+// the cell came up on each key (and on all keys pooled, and "level" for the
+// whole cell) — 1 hit on the beat, sliding to 0.6 at the window's edge, 0
+// wrong or missed. Keys "<rootPc>|<j>", "all|<j>", j = the note's place in
+// the cell; "level". → a rating (get(key)).
 export function cellGrid(events, id) {
-  const grid = new Map();
-  const push = (k, a) => {
-    const list = grid.get(k) || [];
-    list.push(a);
-    if (list.length > RECENT) list.shift();
-    grid.set(k, list);
-  };
+  const rating = createRating();
   for (const e of events) {
     if (e.game !== 'cells' || e.cellId !== id || !e.expected) continue;
     // Each played note back to its place in the cell: learn's a b c d c b
@@ -158,12 +152,11 @@ export function cellGrid(events, id) {
     const cyc = isCycle(notes) || (e.v >= 3 && e.cellBeats === 6 && notes.length === CELL_NOTES);
     const place = i => (cyc ? CYCLE[i % 6] : i % notes.length);
     e.expected.forEach(([root, , , , status, off], i) => {
-      const a = { hit: status === 'hit', off, score: status === 'hit' ? 1 - 0.4 * Math.min(Math.abs(off || 0), 150) / 150 : 0 };
-      push(`${root}|${place(i)}`, a);
-      push(`all|${place(i)}`, a);
+      const hit = status === 'hit';
+      for (const k of [`${root}|${place(i)}`, `all|${place(i)}`, 'level']) rating.add(k, e.t, timedScore(hit, off), hit ? off : null);
     });
   }
-  return grid;
+  return rating;
 }
 
 // --- Progress, from runs ---

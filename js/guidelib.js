@@ -22,6 +22,7 @@
 // exercises. The library syncs as its own file, guides.json.
 
 import { DEG_SEMI, QUALITY_TEXT, degreeLabel } from './music.js';
+import { createRating, timedScore } from './rating.js';
 
 // Chord roots as degrees of the key (semitones above the tonic), shown as
 // Roman numerals — lower case on minor and half-diminished chords.
@@ -168,19 +169,19 @@ export function deleteGuide(id) {
 }
 
 // --- Stats: key × each target slot of an exercise ---
-// For one exercise (by id): the last RECENT times each of its target
-// slots came up in each key and pooled; hit = true.
-const RECENT = 10;
+// For one exercise (by id), rated as every game rates (rating.js): each
+// time a target slot came up, in each key, pooled ("all") and for the
+// whole exercise ("level") — landed on the beat 1, sliding to 0.6 at the
+// window's edge (held over the beat: 1), else 0. → a rating (get(key)).
 export const slotKey = (chord, at) => `${chord}@${at}`;
 export function guideGrid(events, id) {
-  const grid = new Map();
-  const push = (k, hit) => { const l = grid.get(k) || []; l.push(hit); if (l.length > RECENT) l.shift(); grid.set(k, l); };
+  const rating = createRating();
   for (const e of events) {
     if (e.game !== 'guides' || e.guideId !== id || !e.targets) continue;
-    for (const [key, chordIdx, , at, , status] of e.targets) {
-      push(`${key}|${slotKey(chordIdx, at)}`, status === 'hit');
-      push(`all|${slotKey(chordIdx, at)}`, status === 'hit');
+    for (const [key, chordIdx, , at, , status, off] of e.targets) {
+      const hit = status === 'hit';
+      for (const k of [`${key}|${slotKey(chordIdx, at)}`, `all|${slotKey(chordIdx, at)}`, 'level']) rating.add(k, e.t, timedScore(hit, off), hit ? off : null);
     }
   }
-  return grid;
+  return rating;
 }

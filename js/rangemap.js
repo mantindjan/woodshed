@@ -2,64 +2,33 @@
 // only that level's runs), how clean each note is, per key. Two views:
 // 'range' = key (12 rows, plus all keys pooled) × written pitch (low B♭ 58
 // → high F♯ 90); 'degrees' = key × scale degree, all octaves pooled (boss,
-// 2026-09-25: "which degree is wrong"). Each cell covers the last RECENT
-// times that note came up in a run of that key: coloured by the mean per-note
-// score (hit on the beat 1, sliding to 0.6 at the edge of the hit window;
-// wrong or missed 0), so "clean low, falls apart above the break" shows as
-// a colour change along the row. Built from the raw `expected` arrays of
-// scales events (docs/data.md).
+// 2026-09-25: "which degree is wrong"). Each square is rated the way every
+// game rates (rating.js): each time its note came up scored (hit on the
+// beat 1, sliding to 0.6 at the edge of the hit window; wrong or missed 0),
+// a score per day, NOW weighted by recency (colour), BEST the best day
+// (corner mark) — so "clean low, falls apart above the break" shows as a
+// colour change along the row. Built from the raw `expected` arrays of the
+// lane games' events (docs/data.md).
 
 import { SCALES, SAX_RANGE, NOTES, pc, noteName, inMiddle } from './music.js';
+import { createRating, timedScore, squareStyle, ratingText } from './rating.js';
 
-// Occurrences per cell. A degree comes up in every octave of a run, so its
-// cell fills about twice as fast; it keeps twice as many to stay as recent.
-const RECENT = { range: 10, degrees: 20 };
-const WINDOW_MS = 150;     // the widest hit window (scales.js MAX_WINDOW_MS)
-const LATE_FLOOR = 0.6;    // a hit at the window's edge still scores this
-
-// One expected note's score: [written, ms, degree, status, offset].
-export function noteScore([, , , status, off]) {
-  if (status !== 'hit') return 0;
-  return 1 - (1 - LATE_FLOOR) * Math.min(Math.abs(off || 0), WINDOW_MS) / WINDOW_MS;
-}
-
-// key → [{hit, off, score}] newest last, capped. Keys: "<keyPc>|<column>"
-// and "all|<column>", the column being the written pitch ('range') or the
-// degree ('degrees'). Notes never reached in a stopped run stay 'pending'
-// and are not evidence either way.
-function recentNotes(events, view) {
-  const byKey = new Map();
-  const push = (k, a) => {
-    const list = byKey.get(k) || [];
-    list.push(a);
-    if (list.length > RECENT[view]) list.shift();
-    byKey.set(k, list);
-  };
+// Every square's rating. Keys: "<keyPc>|<column>" and "all|<column>", the
+// column being the written pitch ('range') or the degree ('degrees'). Notes
+// never reached in a stopped run stay 'pending' and are not evidence
+// either way. Expected rows: [written, ms, degree, status, offset].
+function rate(events, view) {
+  const rating = createRating();
   for (const e of events) {
     if (!e.expected || e.falseStart) continue;       // the caller passes one level's runs
     for (const x of e.expected) {
       if (x[3] === 'pending') continue;
-      const a = { hit: x[3] === 'hit', off: x[4], score: noteScore(x) };
+      const hit = x[3] === 'hit';
       const col = view === 'range' ? x[0] : x[2];
-      push(`${e.keyWritten}|${col}`, a);
-      push(`all|${col}`, a);
+      for (const k of [`${e.keyWritten}|${col}`, `all|${col}`]) rating.add(k, e.t, timedScore(hit, x[4]), hit ? x[4] : null);
     }
   }
-  return byKey;
-}
-
-export function figures(list) {
-  if (!list || !list.length) return null;
-  const hits = list.filter(a => a.hit);
-  const off = hits.length ? Math.round(hits.reduce((s, a) => s + a.off, 0) / hits.length) : null;
-  return { n: list.length, hits: hits.length, off,
-           score: list.reduce((s, a) => s + a.score, 0) / list.length };
-}
-
-// Same ramp as the degree heatmap: ≤ 0.4 red … 1 green.
-export function colour(score) {
-  const hue = Math.round(120 * Math.max(0, Math.min(1, (score - 0.4) / 0.6)));
-  return `hsl(${hue} 55% 38%)`;
+  return rating;
 }
 
 const PITCHES = [];
@@ -72,7 +41,7 @@ for (let w = SAX_RANGE.low; w <= SAX_RANGE.high; w++) PITCHES.push(w);
 // `rowNote(rowKey)` (optional): text for a last column per row — the key's
 // auto tempo, from the caller.
 export function renderRangeMap(el, events, scale, view = 'range', selected = null, rowNote = null) {
-  const recent = recentNotes(events, view);
+  const rating = rate(events, view);
   const steps = SCALES[scale].steps;
   const cols = view === 'range' ? PITCHES : SCALES[scale].degrees;
   const note = rowNote ? ' 30px' : '';
@@ -91,26 +60,21 @@ export function renderRangeMap(el, events, scale, view = 'range', selected = nul
       // Range view: in a key's row only its scale notes get a cell; the pooled row takes all.
       if (view === 'range' && rk !== 'all' && !steps.includes(pc(c - Number(rk)))) { h += `<div class="rm-cell na${edge(c)}"></div>`; continue; }
       const key = `${rk}|${c}`;
-      const fig = figures(recent.get(key));
-      const cls = `rm-cell${fig ? '' : ' empty'}${edge(c)}${key === selected ? ' selected' : ''}`;
-      const style = fig ? ` style="background:${colour(fig.score)}"` : '';
-      h += `<div class="${cls}" data-cell="${key}"${style}></div>`;
+      const sq = squareStyle(rating.get(key));
+      h += `<div class="rm-cell${sq.cls}${edge(c)}${key === selected ? ' selected' : ''}" data-cell="${key}"${sq.style}></div>`;
     }
     if (rowNote) h += `<div class="rm-bpm${rk === 'all' ? ' all' : ''}">${rowNote(rk)}</div>`;
   }
   h += '</div>';
   // Caption: the selected cell in words, or how to use the map.
-  let cap = view === 'range' ? 'Tap a cell: which note, how often hit, early or late. Shaded: the horn’s extremes — below low C, above high D.'
-    : 'Tap a cell: which note, how often hit, early or late.';
+  let cap = view === 'range' ? 'Tap a square: now (colour), best day (corner), timing. Shaded: the horn’s extremes — below low C, above high D.'
+    : 'Tap a square: now (colour), best day (corner), timing.';
   if (selected) {
     const [rk, c] = selected.split('|');
-    const fig = figures(recent.get(selected));
     const note = view === 'range' ? noteName(Number(c)) : `the ${c}`;
     const where = `${rk === 'all' ? 'All keys' : `${NOTES[Number(rk)]} ${SCALES[scale].name.toLowerCase()}`} · ${note}`;
     const extreme = view === 'range' && !inMiddle(Number(c)) ? ' (an extreme: not counted toward tempo)' : '';
-    cap = !fig ? `${where}${extreme} — not played yet.`
-      : `${where}${extreme} — ${fig.hits} of ${fig.n} hit` +
-        (fig.off === null ? '' : fig.off > 15 ? ` · ${fig.off} ms late` : fig.off < -15 ? ` · ${-fig.off} ms early` : ' · on the beat');
+    cap = `${where}${extreme} — ${ratingText(rating.get(selected))}`;
   }
   el.innerHTML = h + `<div class="rm-cap">${cap}</div>`;
 }

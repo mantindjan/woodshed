@@ -76,7 +76,7 @@ export async function putEvents(events) {
   return done(tx);
 }
 
-// Delete events with from ≤ t < to (the 90-day window prune, A8).
+// Delete events with from ≤ t < to (the 180-day window prune, A8).
 export async function deleteEvents(from, to) {
   const tx = (await openDb()).transaction(STORE, 'readwrite');
   const index = tx.objectStore(STORE).index('t');

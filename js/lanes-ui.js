@@ -13,6 +13,7 @@ import { allEvents } from './events.js';
 import { getSummary } from './summary.js';
 import { SCALE_LEVELS, GAME_SCALES, LANE_GAMES, levelsOf, PATTERNS, PATTERN_ORDER, scaleExercise as resolveScaleExercise, matchScaleLevel, createKeyModel, runPattern } from './scalelevels.js';
 import { renderRangeMap } from './rangemap.js';
+import { createRating, timedScore, paneFigures } from './rating.js';
 import { createTempoModel, tempoKey, pipText, pips, runOutcome } from './scaletempo.js';
 
 const SCALE_EX_KEY = 'woodshed.scaleExercise';   // scale level id or 'custom'
@@ -227,15 +228,18 @@ function drawRangeMap() {
     return b ? String(b) : w === null ? '' : `(${w})`;
   };
   renderRangeMap($('#rangemap'), runs, l.scale, mapView, rangeSelected, rowTempo);
-  // Pane figures: the level's last 20 runs.
+  // Pane figures: the whole level now and its best day (rating.js); its
+  // clean runs among the last 20.
   const dayStart = new Date().setHours(0, 0, 0, 0);
   const last = runs.slice(-20);
-  const notes = last.flatMap(e => e.expected.filter(x => x[3] !== 'pending'));
-  const hit = notes.filter(x => x[3] === 'hit').length;
+  const level = createRating();
+  for (const e of runs) for (const x of e.expected) if (x[3] !== 'pending') level.add('level', e.t, timedScore(x[3] === 'hit', x[4]));
+  const fig = paneFigures(level.get('level'));
   const clean = last.filter(e => runOutcome(e) === 'clean').length;   // as the tempo judges it: the horn's middle
   $('#sstatRuns').textContent = runs.length;
   $('#sstatToday').textContent = runs.filter(e => e.t >= dayStart).length;
-  $('#sstatHit').textContent = notes.length ? `${Math.round(100 * hit / notes.length)}%` : '–';
+  $('#sstatNow').textContent = fig.now;
+  $('#sstatBestDay').textContent = fig.best;
   $('#sstatClean').textContent = last.length ? `${clean} / ${last.length}` : '–';
   const working = tempoModel.levelWorking(l.scale, l.pattern), best = tempoModel.levelBest(l.scale, l.pattern);
   $('#sstatWorking').textContent = working === null ? '–' : `${working} bpm`;

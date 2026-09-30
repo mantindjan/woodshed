@@ -18,7 +18,7 @@ import { NOTES, QUALITY_TEXT, degreeLabel } from './music.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
 import { initAudio, loadTrio } from './audio.js';
-import { colour } from './rangemap.js';
+import { squareStyle, ratingText, paneFigures } from './rating.js';
 import { esc } from './cells.js';
 import { EXERCISES, PRACTICE_EXERCISES } from './celllib.js';
 import { startGuides, stopGuides, guideNote, guidesRunning, guidesPaused, pauseGuides, resumeGuides, restartGuides } from './guides.js';
@@ -247,7 +247,7 @@ async function showStats() {
 let statGuides = new Map();
 function drawStats() {
   const ex = statGuides.get($('#guideStatSel').value) || currentGuide();
-  const grid = guideGrid(statEvents, ex.id);
+  const rating = guideGrid(statEvents, ex.id);
   const cols = [...ex.targets].sort((a, b) => a.chord - b.chord || (a.at === LATE) - (b.at === LATE) || a.at - b.at)
     .map(t => ({ k: slotKey(t.chord, t.at), head: `${numeral(ex.chords[t.chord])} ${tonesText(t.degs)}${t.at === LATE ? '↗' : t.at ? `·${t.at % BAR + 1}` : ''}`, t }));
   let h = `<div class="rm-grid" style="grid-template-columns: 28px repeat(${Math.max(1, cols.length)}, 1fr)"><div></div>` +
@@ -256,29 +256,29 @@ function drawStats() {
     h += `<div class="rm-row${rk === 'all' ? ' all' : ''}">${label}</div>`;
     for (const c of cols) {
       const key = `${rk}|${c.k}`;
-      const list = grid.get(key);
-      const score = list?.length ? list.filter(Boolean).length / list.length : null;
-      h += `<div class="rm-cell${score === null ? ' empty' : ''}${key === statSelected ? ' selected' : ''}" data-cell="${key}"` +
-           `${score === null ? '' : ` style="background:${colour(0.4 + 0.6 * score)}"`}></div>`;
+      const sq = squareStyle(rating.get(key));
+      h += `<div class="rm-cell${sq.cls}${key === statSelected ? ' selected' : ''}" data-cell="${key}"${sq.style}></div>`;
     }
   }
   h += '</div>';
-  let cap = 'Tap a square: which key, which target, how often landed.';
+  let cap = 'Tap a square: now (colour), best day (corner), timing.';
   if (statSelected) {
     const [rk, k] = statSelected.split('|');
     const c = cols.find(x => x.k === k);
-    const list = grid.get(statSelected);
     const where = `${rk === 'all' ? 'All keys' : `In ${NOTES[Number(rk)]}`} · ${c ? `${tonesText(c.t.degs)} of ${numeral(ex.chords[c.t.chord])}, ${slotName(ex.chords[c.t.chord], c.t.at)}` : ''}`;
-    cap = list?.length ? `${where} — ${list.filter(Boolean).length} of ${list.length} landed` : `${where} — not played yet.`;
+    cap = `${where} — ${ratingText(rating.get(statSelected))}`;
   }
   $('#guideGrid').innerHTML = h + `<div class="rm-cap">${cap}</div>`;
-  // Pane figures: this exercise's rounds, the last 20.
+  // Pane figures: the whole exercise now and its best day; counts; its
+  // last 20 rounds for "off the line".
   const rounds = statEvents.filter(e => e.guideId === ex.id);
   const last = rounds.slice(-20).flatMap(e => e.targets);
+  const fig = paneFigures(rating.get('level'));
   const dayStart = new Date().setHours(0, 0, 0, 0);
   $('#gstRounds').textContent = rounds.length;
   $('#gstToday').textContent = rounds.filter(e => e.t >= dayStart).length;
-  $('#gstHit').textContent = last.length ? `${Math.round(100 * last.filter(x => x[5] === 'hit').length / last.length)}%` : '–';
+  $('#gstNow').textContent = fig.now;
+  $('#gstBestDay').textContent = fig.best;
   $('#gstOff').textContent = last.length ? String(last.filter(x => x[5] === 'wrong').length) : '–';
 }
 $('#guideGrid').addEventListener('click', e => {

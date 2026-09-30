@@ -8,7 +8,7 @@
 // version is out of date (a formula changed), or events arrived from
 // elsewhere (backup load, sync). Stars are kept as the max of the rebuild
 // and what was cached, so stars earned on days the phone has since pruned
-// (older than the 90-day window) aren't lost.
+// (older than the 180-day window) aren't lost.
 
 import { allEvents } from './events.js';
 import { createModel } from './weakspots.js';

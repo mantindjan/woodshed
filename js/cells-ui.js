@@ -7,7 +7,7 @@ import { QUALITY_TEXT, NOTES, degreeLabel } from './music.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
 import { initAudio, loadTrio, playChord, playLine } from './audio.js';
-import { colour } from './rangemap.js';
+import { squareStyle, ratingText, paneFigures } from './rating.js';
 import { startCells, stopCells, cellNote, cellsRunning, cellHTML, esc,
          pauseCells, resumeCells, restartCells, cellsPaused } from './cells.js';
 import { loadLibrary, saveCell, deleteCell, cellProgress, nearestOct, autoName, degreesText,
@@ -210,44 +210,37 @@ function drawCellStats() {
   const lib = loadLibrary();
   const p = lib.find(x => x.id === id) || cellStatEvents.find(e => e.cellId === id)?.cell;
   if (!p) { $('#cellGrid').innerHTML = '<div class="small-note">No cell yet.</div>'; return; }
-  const grid = cellGrid(cellStatEvents, id);
+  const rating = cellGrid(cellStatEvents, id);
   const n = p.notes.length;
-  const fig = list => {
-    if (!list?.length) return null;
-    const hits = list.filter(a => a.hit);
-    const off = hits.length ? Math.round(hits.reduce((a, b) => a + (b.off || 0), 0) / hits.length) : null;
-    return { n: list.length, hits: hits.length, off, score: list.reduce((a, b) => a + b.score, 0) / list.length };
-  };
   let h = `<div class="rm-grid" style="grid-template-columns: 28px repeat(${n}, 1fr)"><div></div>` +
     p.notes.map(x => `<div class="rm-head">${degreeLabel(x.deg)}</div>`).join('');
   for (const [rk, label] of [['all', 'All'], ...NOTES.map((nm, k) => [String(k), nm])]) {
     h += `<div class="rm-row${rk === 'all' ? ' all' : ''}">${label}</div>`;
     for (let j = 0; j < n; j++) {
       const key = `${rk}|${j}`;
-      const f = fig(grid.get(key));
-      h += `<div class="rm-cell${f ? '' : ' empty'}${key === cellStatSelected ? ' selected' : ''}" data-cell="${key}"` +
-           `${f ? ` style="background:${colour(f.score)}"` : ''}></div>`;
+      const sq = squareStyle(rating.get(key));
+      h += `<div class="rm-cell${sq.cls}${key === cellStatSelected ? ' selected' : ''}" data-cell="${key}"${sq.style}></div>`;
     }
   }
   h += '</div>';
-  let cap = 'Tap a square: which chord, which note of the cell, how often right.';
+  let cap = 'Tap a square: now (colour), best day (corner), timing.';
   if (cellStatSelected) {
     const [rk, j] = cellStatSelected.split('|');
-    const f = fig(grid.get(cellStatSelected));
     const where = `${rk === 'all' ? 'All chords' : `${NOTES[Number(rk)]}${QUALITY_TEXT[p.quality]}`} · note ${Number(j) + 1} (the ${degreeLabel(p.notes[j].deg)})`;
-    cap = !f ? `${where} — not played yet.` : `${where} — ${f.hits} of ${f.n} right` +
-      (f.off === null ? '' : f.off > 15 ? ` · ${f.off} ms late` : f.off < -15 ? ` · ${-f.off} ms early` : ' · on the beat');
+    cap = `${where} — ${ratingText(rating.get(cellStatSelected))}`;
   }
   $('#cellGrid').innerHTML = h + `<div class="rm-cap">${cap}</div>`;
-  // Pane figures: this cell's last 20 runs, and where it stands.
+  // Pane figures: the whole cell now and its best day; its last 20 runs;
+  // where it stands.
   const runs = cellStatEvents.filter(e => e.cellId === id);
   const last = runs.slice(-20);
-  const notes = last.flatMap(e => e.expected);
+  const fig = paneFigures(rating.get('level'));
   const dayStart = new Date().setHours(0, 0, 0, 0);
   const prog = cellProgress(cellStatEvents, id);
   $('#cstRuns').textContent = runs.length;
   $('#cstToday').textContent = runs.filter(e => e.t >= dayStart).length;
-  $('#cstHit').textContent = notes.length ? `${Math.round(100 * notes.filter(x => x[4] === 'hit').length / notes.length)}%` : '–';
+  $('#cstNow').textContent = fig.now;
+  $('#cstBestDay').textContent = fig.best;
   $('#cstSolid').textContent = last.length ? `${last.filter(e => runRate(e) >= SOLID).length} / ${last.length}` : '–';
   $('#cstLearn').textContent = prog.learnt ? 'learnt ✓' : prog.solid.size ? STAGES.filter((_, i) => prog.solid.has(i)).map(n => `×${n} ✓`).join(' ') : '–';
   $('#cstPractice').textContent = `${prog.done.size} / ${PRACTICE_EXERCISES.length}`;

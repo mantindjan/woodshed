@@ -5,13 +5,13 @@
 // A sync:
 //  1. lists the repo (one request);
 //  2. PULLS files that changed on GitHub since this device last saw them,
-//     within the 90-day window, merging add-only (same event = same t +
+//     within the 180-day window, merging add-only (same event = same t +
 //     round, as for the backup file);
 //  3. PUSHES files where this device has events GitHub hasn't (today's,
 //     usually), retrying once after a merge if GitHub says the file changed
 //     underneath (another device);
 //  4. syncs settings.json (never the token); a fresh install restores it;
-//  5. PRUNES local days older than 90 days that are confirmed on GitHub (A8).
+//  5. PRUNES local days older than 180 days that are confirmed on GitHub (A8).
 //
 // Days are UTC dates so a change of time zone never re-files or splits a
 // day. The repo address and token live only in this phone's localStorage
@@ -39,7 +39,9 @@ const LIBRARIES = [
   { key: 'woodshed.cells', path: 'cells.json', old: 'patterns.json', state: 'library', what: 'cell library' },
   { key: 'woodshed.guideLib', path: 'guides.json', state: 'guideLib', what: 'guide-tone exercises' },
 ];
-export const WINDOW_DAYS = 90;
+// The phone keeps six months (boss, 2026-09-30 — the ratings' best day
+// looks back that far); older days live on GitHub only.
+export const WINDOW_DAYS = 180;
 const DAY_MS = 86400000;
 
 // --- Days (UTC) and paths ---

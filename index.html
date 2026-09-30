@@ -445,6 +445,14 @@
   .rm-cell.empty { background: #1c1c1c; }
   .rm-cell.na { background: #121212; cursor: default; }
   .rm-cell.selected { outline: 2px solid #ffe2a8; outline-offset: 1px; }
+  /* Ratings (rating.js), every grid: colour = now; the best day as a corner
+     mark in its own colour; faint while there's little evidence. */
+  .rm-cell.rated, .hm-cell.rated { position: relative; }
+  .rm-cell.rated::before, .hm-cell.rated::before { content: ''; position: absolute; top: 0; right: 0; pointer-events: none;
+    border-style: solid; border-width: 0 8px 8px 0; border-color: transparent var(--best) transparent transparent;
+    filter: brightness(1.45); border-top-right-radius: inherit; }
+  .hm-cell.rated::before { border-width: 0 12px 12px 0; }
+  .rm-cell.thin, .hm-cell.thin { opacity: .45; }
   /* The horn's extremes (below low C, above high D): hatched over their
      colour — shown in full, but not counted toward progress. */
   .rm-cell.edge { position: relative; }
@@ -742,7 +750,8 @@
     <div class="pane" data-pane="stats" data-for="scales arpeggios" hidden>
       <div class="stat">Runs <b id="sstatRuns">0</b></div>
       <div class="stat">Today <b id="sstatToday">0</b></div>
-      <div class="stat">Notes hit <b id="sstatHit">–</b></div>
+      <div class="stat">Now <b id="sstatNow">–</b></div>
+      <div class="stat">Best day <b id="sstatBestDay">–</b></div>
       <div class="stat">Clean runs <b id="sstatClean">–</b></div>
       <div class="stat">Working tempo <b id="sstatWorking">–</b></div>
       <div class="stat">Clean best <b id="sstatBest">–</b></div>
@@ -750,9 +759,7 @@
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">For the level picked under the map. Each cell: the last 10 times that note
-        (20 for a degree) came up in that key — hit on the beat is green, late or early fades it, wrong or
-        missed is red. "All" pools every key.</div>
+      <div class="small-note">For the level picked under the map. Each square: a note in a key, hit on the beat scoring most. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
     </div>
     <div class="pane" data-pane="levels" data-for="cells" hidden>
       <div class="label">Cell</div>
@@ -774,20 +781,20 @@
     <div class="pane" data-pane="stats" data-for="guides" hidden>
       <div class="stat">Rounds <b id="gstRounds">0</b></div>
       <div class="stat">Today <b id="gstToday">0</b></div>
-      <div class="stat">Targets landed <b id="gstHit">–</b></div>
+      <div class="stat">Now <b id="gstNow">–</b></div>
+      <div class="stat">Best day <b id="gstBestDay">–</b></div>
       <div class="stat">Off the line <b id="gstOff">–</b></div>
       <div>
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">For the cadence picked under the grid. Each square: the last 10 times that
-        chord's 3 or 7 was a target in that key — landed is green, missed red. "Off the line": the right
-        note an octave away from the step it should have been. Figures: the last 20 rounds.</div>
+      <div class="small-note">For the exercise picked under the grid. Each square: a target in a key, landed on the beat scoring most. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence. Off the line: the right note an octave from its step (last 20 rounds).</div>
     </div>
     <div class="pane" data-pane="stats" data-for="cells" hidden>
       <div class="stat">Runs <b id="cstRuns">0</b></div>
       <div class="stat">Today <b id="cstToday">0</b></div>
-      <div class="stat">Notes right <b id="cstHit">–</b></div>
+      <div class="stat">Now <b id="cstNow">–</b></div>
+      <div class="stat">Best day <b id="cstBestDay">–</b></div>
       <div class="stat">Solid runs <b id="cstSolid">–</b></div>
       <div class="stat">Learn <b id="cstLearn">–</b></div>
       <div class="stat">Practice <b id="cstPractice">–</b></div>
@@ -795,21 +802,19 @@
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">For the cell picked under the grid. Each square: the last 10 times that note of
-        the cell came up on that chord (learn's c b count as c and b) — right on the beat is green, late or early fades it, wrong or
-        missed is red. Figures: the last 20 runs.</div>
+      <div class="small-note">For the cell picked under the grid. Each square: a note of the cell on a chord (learn's c b count as c and b), on the beat scoring most. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
     </div>
     <div class="pane" data-pane="stats" data-for="degrees" hidden>
       <div class="stat">Answers <b id="statAnswers">0</b></div>
       <div class="stat">Today <b id="statToday">0</b></div>
-      <div class="stat">Right first time <b id="statAcc">–</b></div>
+      <div class="stat">Now <b id="statNow">–</b></div>
+      <div class="stat">Best day <b id="statBestDay">–</b></div>
       <div class="stat">Median right answer <b id="statMedian">–</b></div>
       <div>
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">Each cell: last 20 answers — % right first time and median time.
-        Colour mixes accuracy and speed, like the weak-spot picker.</div>
+      <div class="small-note">Each square: a degree on a quality, right and fast scoring most; the time is the median of its last 20 right answers. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
     </div>
 
     <div class="pane" data-pane="horn" hidden>

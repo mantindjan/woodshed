@@ -9,6 +9,8 @@ import { allEvents } from './events.js';
 import { LEVELS, UNIT_TITLES, exercise as resolveExercise, customCells, matchLevel, setsOf } from './levels.js';
 import { getSummary } from './summary.js';
 import { renderHeatmap } from './heatmap.js';
+import { eventScore } from './weakspots.js';
+import { createRating, paneFigures } from './rating.js';
 
 const LENGTH_KEY = 'woodshed.length';
 const EXERCISE_KEY = 'woodshed.exercise';
@@ -161,12 +163,16 @@ async function showStats() {
   heatEvents = events;
   drawHeatmap();
   const dayStart = new Date().setHours(0, 0, 0, 0);
-  const last = events.slice(-100);
-  const ok = last.filter(e => e.ok);
-  const times = ok.map(e => e.notes[0][1]).sort((a, b) => a - b);
+  // Now and best day over every answer (rating.js); the median of the
+  // last 100 right answers.
+  const level = createRating();
+  for (const e of events) if (e.notes?.length) level.add('level', e.t, eventScore(e) ?? 0);
+  const fig = paneFigures(level.get('level'));
+  const times = events.slice(-100).filter(e => e.ok).map(e => e.notes[0][1]).sort((a, b) => a - b);
   $('#statAnswers').textContent = events.length;
   $('#statToday').textContent = events.filter(e => e.t >= dayStart).length;
-  $('#statAcc').textContent = last.length ? `${Math.round(100 * ok.length / last.length)}%` : '–';
+  $('#statNow').textContent = fig.now;
+  $('#statBestDay').textContent = fig.best;
   $('#statMedian').textContent = times.length ? `${(times[times.length >> 1] / 1000).toFixed(2)} s` : '–';
 }
 
