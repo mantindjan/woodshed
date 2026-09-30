@@ -8,7 +8,7 @@ import { startRound, stopRound, drillNote, isRunning } from './drill.js';
 import { allEvents } from './events.js';
 import { LEVELS, UNIT_TITLES, exercise as resolveExercise, customCells, matchLevel, setsOf } from './levels.js';
 import { getSummary } from './summary.js';
-import { renderHeatmap } from './heatmap.js';
+import { renderHeatmap, isMixed } from './heatmap.js';
 import { eventScore } from './weakspots.js';
 import { createRating, paneFigures } from './rating.js';
 
@@ -52,7 +52,7 @@ $$('[data-length]').forEach(b => b.addEventListener('click', () => {
 $('#exerciseBtn').addEventListener('click', () => hooks.showTab('levels'));
 
 function start() {
-  startRound(st.mode, st.calib, onRoundEnd, { length, pick: st.pick, exercise: currentExercise() });
+  startRound(st.calib, onRoundEnd, { length, pick: st.pick, exercise: currentExercise() });
 }
 
 function onRoundEnd(result) {
@@ -62,20 +62,18 @@ function onRoundEnd(result) {
   $('#chord').textContent = '';
   $('#degree').textContent = '';
   $('#progress').textContent = '';
-  $('#degree').classList.remove('reveal', 'pulse', 'miss', 'long');
+  $('#degree').classList.remove('pulse', 'miss', 'long');
   $('#feedback').className = '';
   if (!result) {
     $('#feedback').textContent = '';
     return;
   }
-  const { mode: m, total, firstTry, median, bestStreak } = result;
-  const line = m === 'practice'
-    ? `${firstTry} / ${total} right first time`
-    : `${total} done · ${total - firstTry} needed another go`;
+  const { total, firstTry, median, bestStreak } = result;
+  const line = `${firstTry} / ${total} right first time`;
   $('#feedback').textContent = median === null
     ? line : `${line} · median ${(median / 1000).toFixed(2)} s`;
   // The final score stays up (drill.js); the combo line shows the best streak.
-  if (m === 'practice') $('#combo').textContent = bestStreak ? `best combo ${bestStreak}` : '';
+  $('#combo').textContent = bestStreak ? `best combo ${bestStreak}` : '';
 }
 
 // --- Levels (D6): the ladder on the stage, custom builder in the pane ---
@@ -149,7 +147,19 @@ $('#playLevel').addEventListener('click', () => hooks.showTab('play'));
 // tapping it again, or anywhere else on the matrix, clears it.
 let heatSelected = null;
 let heatEvents = [];
-function drawHeatmap() { renderHeatmap($('#heatmap'), heatEvents, heatSelected); }
+// Mixed (asked among several degrees — the real skill) or Alone; the
+// pane's Now and Best day follow it.
+let heatView = 'mixed';
+function drawHeatmap() {
+  renderHeatmap($('#heatmap'), heatEvents, heatSelected, heatView);
+  $$('[data-hm]').forEach(b => b.classList.toggle('active', b.dataset.hm === heatView));
+  const level = createRating();
+  for (const e of heatEvents) if (e.notes?.length && isMixed(e) === (heatView === 'mixed')) level.add('level', e.t, eventScore(e) ?? 0);
+  const fig = paneFigures(level.get('level'));
+  $('#statNow').textContent = fig.now;
+  $('#statBestDay').textContent = fig.best;
+}
+$$('[data-hm]').forEach(b => b.addEventListener('click', () => { heatView = b.dataset.hm; heatSelected = null; drawHeatmap(); }));
 $('#heatmap').addEventListener('click', e => {
   if (!e.target.closest('.hm-grid')) return;          // root row: no effect
   const cell = e.target.closest('[data-cell]');
@@ -163,16 +173,10 @@ async function showStats() {
   heatEvents = events;
   drawHeatmap();
   const dayStart = new Date().setHours(0, 0, 0, 0);
-  // Now and best day over every answer (rating.js); the median of the
-  // last 100 right answers.
-  const level = createRating();
-  for (const e of events) if (e.notes?.length) level.add('level', e.t, eventScore(e) ?? 0);
-  const fig = paneFigures(level.get('level'));
+  // The median of the last 100 right answers (Now and Best day: drawHeatmap).
   const times = events.slice(-100).filter(e => e.ok).map(e => e.notes[0][1]).sort((a, b) => a - b);
   $('#statAnswers').textContent = events.length;
   $('#statToday').textContent = events.filter(e => e.t >= dayStart).length;
-  $('#statNow').textContent = fig.now;
-  $('#statBestDay').textContent = fig.best;
   $('#statMedian').textContent = times.length ? `${(times[times.length >> 1] / 1000).toFixed(2)} s` : '–';
 }
 

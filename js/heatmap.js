@@ -5,15 +5,27 @@
 // weighted by recency (colour and the big figure), BEST = the best day
 // (the corner mark). The small figure is the median time of its last
 // right answers. Built from the raw event log.
+//
+// Two views (boss, 2026-09-30: "3, 5 and 7 separately I do really well …
+// together it's harder, you need to switch"): MIXED rates only the answers
+// asked among several degrees (the real skill, switching), ALONE only those
+// asked in a one-degree level. An answer's context: its `mixed` flag (v3),
+// else its level's degrees (levels.js); an older custom pick can't be told
+// and counts as mixed — the stricter reading.
 
 import { QUALITY_ORDER, QUALITY_TEXT, DEGREES, VALID_DEGREES, NOTES, degreeLabel } from './music.js';
 import { eventScore } from './weakspots.js';
 import { createRating, squareStyle, ratingText } from './rating.js';
+import { LEVELS } from './levels.js';
+
+// Was this answer asked among several degrees?
+const mixedByLevel = new Map(LEVELS.map(l => [l.id, new Set(l.cells.map(c => c.degree)).size > 1]));
+export const isMixed = e => e.mixed ?? mixedByLevel.get(e.exercise) ?? true;
 
 const RECENT_TIMES = 20;   // right answers per square for the median time
 
 // Per square: its rating, and the times of its last right answers.
-function gather(events) {
+function gather(events, view) {
   const rating = createRating();
   const times = new Map();
   const add = (key, e, score) => {
@@ -25,7 +37,7 @@ function gather(events) {
     times.set(key, l);
   };
   for (const e of events) {
-    if (e.game !== 'degrees' || !e.notes || !e.notes.length) continue;
+    if (e.game !== 'degrees' || !e.notes || !e.notes.length || isMixed(e) !== (view === 'mixed')) continue;
     const score = eventScore(e) ?? 0;
     add(`${e.quality}|${e.degrees[0]}`, e, score);
     add(`root|${e.rootWritten}`, e, score);
@@ -46,8 +58,8 @@ function cellHTML(r, med, attrs = '', label = '') {
 // Render into `el` from all events. `selected` is a cell key ("m7|3") or
 // null: when set, that cell is outlined and the root row shows only that
 // quality × degree, so you can see which chords the degree is missed on.
-export function renderHeatmap(el, events, selected = null) {
-  const g = gather(events);
+export function renderHeatmap(el, events, selected = null, view = 'mixed') {
+  const g = gather(events, view);
 
   let h = '<div class="hm-grid"><div class="hm-corner"></div>';
   h += DEGREES.map(d => `<div class="hm-head">${degreeLabel(d)}</div>`).join('');
@@ -69,6 +81,6 @@ export function renderHeatmap(el, events, selected = null) {
   }
   // The selected square in words.
   const cap = selected ? `${QUALITY_TEXT[sq]} ${degreeLabel(sd)} — ${ratingText(g.get(selected), { timing: false })}`
-    : 'Tap a square: now (colour), best day (corner), how much.';
+    : `${view === 'mixed' ? 'Mixed: asked among several degrees' : 'Alone: asked one degree at a time'} — tap a square: now, best day, how much.`;
   el.innerHTML = h + `</div><div class="rm-cap">${cap}</div>`;
 }

@@ -137,20 +137,20 @@ export function exerciseKeys(id, prevLast = null, rnd = Math.random) {
 export const STAGES = [4, 2, 1];          // learn: times on each chord
 
 // --- Stats: key × note of the cell ---
-// For one cell, rated as every game rates (rating.js): each time a note of
-// the cell came up on each key (and on all keys pooled, and "level" for the
-// whole cell) — 1 hit on the beat, sliding to 0.6 at the window's edge, 0
-// wrong or missed. Keys "<rootPc>|<j>", "all|<j>", j = the note's place in
-// the cell; "level". → a rating (get(key)).
+// For one cell, rated as every game rates (rating.js), from PRACTICE runs
+// only — learn repeats the cell on each chord, the easier version (boss,
+// 2026-09-30): each time a note of the cell came up on each key (and on all
+// keys pooled, and "level" for the whole cell) — 1 hit on the beat,
+// sliding to 0.6 at the window's edge, 0 wrong or missed. Keys
+// "<rootPc>|<j>", "all|<j>", j = the note's place in the cell; "level".
+// → a rating (get(key)).
 export function cellGrid(events, id) {
   const rating = createRating();
   for (const e of events) {
-    if (e.game !== 'cells' || e.cellId !== id || !e.expected) continue;
-    // Each played note back to its place in the cell: learn's a b c d c b
-    // (v3, `cellBeats` 6) and a hand-typed 6-note cycle fold onto a b c d.
+    if (e.game !== 'cells' || e.cellId !== id || !e.expected || e.mode !== 'practice') continue;
+    // A hand-typed 6-note a b c d c b (before cells were 4 notes) folds onto a b c d.
     const notes = e.cell.notes;
-    const cyc = isCycle(notes) || (e.v >= 3 && e.cellBeats === 6 && notes.length === CELL_NOTES);
-    const place = i => (cyc ? CYCLE[i % 6] : i % notes.length);
+    const place = i => (isCycle(notes) ? CYCLE[i % 6] : i % notes.length);
     e.expected.forEach(([root, , , , status, off], i) => {
       const hit = status === 'hit';
       for (const k of [`${root}|${place(i)}`, `all|${place(i)}`, 'level']) rating.add(k, e.t, timedScore(hit, off), hit ? off : null);

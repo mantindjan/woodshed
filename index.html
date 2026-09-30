@@ -77,12 +77,9 @@
             font: 700 58px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
   #degree.long { font-size: 42px; letter-spacing: -.02em; }   /* ♯11 */
   #degree:empty { visibility: hidden; }   /* idle: keep the space, hide the disc */
-  /* Learn miss: the disc turns red and flips to show the right note for a
-     moment. (Practice miss floats the right note away instead.) */
-  #degree.reveal { background: #d65a5a; font-size: 40px; animation: flip .35s ease-out; }
+  /* A miss floats the right note away (drill.js); the disc flashes red. */
   #degree.miss { animation: miss-flash .5s ease-out; }
   @keyframes miss-flash { 25% { background: #d65a5a; transform: scale(1.08); } }
-  @keyframes flip { from { transform: rotateY(90deg); } to { transform: rotateY(0); } }
 
   /* --- Feedback effects (drill.js) --- */
   /* Radial glow behind the question. */
@@ -137,7 +134,7 @@
   #feedback.fb-bad { color: #ff9b9b; animation: shake .34s; }
   @keyframes label-pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   @media (prefers-reduced-motion: reduce) {
-    .burst, .burst::after, .question.shake, #degree.reveal, #degree.pulse, #degree.miss,
+    .burst, .burst::after, .question.shake, #degree.pulse, #degree.miss,
     #feedback.fb-good, #feedback.fb-bad { animation-duration: .01s; }
   }
   #feedback { font-size: 20px; min-height: 2.8em; padding-top: 4px; }
@@ -708,10 +705,8 @@
       </div>
       <div class="g-degrees">
         <button id="exerciseBtn" class="excard"><span class="ex"><b id="exerciseLabel"></b><b id="exerciseDegrees" class="degs"></b></span><span class="chg">change ›</span></button>
-        <div class="row2">
-          <div class="seg"><button data-mode="learn">Learn</button><button data-mode="practice">Practice</button></div>
-          <div class="seg"><button data-pick="weak">Weak spots</button><button data-pick="random">Random</button></div>
-        </div>
+        <!-- One mode (2026-09-30): what's learning is the level — a degree alone, or mixed. -->
+        <div class="seg"><button data-pick="weak">Weak spots</button><button data-pick="random">Random</button></div>
         <div class="chips" id="lengths">
           <button data-length="10">10</button><button data-length="20">20</button>
           <button data-length="50">50</button><button data-length="100">100</button>
@@ -759,7 +754,7 @@
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">For the level picked under the map. Each square: a note in a key, hit on the beat scoring most. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
+      <div class="small-note">For the level picked under the map, from practice runs (learn is the easier version). Each square: a note in a key, hit on the beat scoring most. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
     </div>
     <div class="pane" data-pane="levels" data-for="cells" hidden>
       <div class="label">Cell</div>
@@ -802,9 +797,10 @@
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">For the cell picked under the grid. Each square: a note of the cell on a chord (learn's c b count as c and b), on the beat scoring most. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
+      <div class="small-note">For the cell picked under the grid, from practice runs (learn repeats the cell — the easier version). Each square: a note of the cell on a chord, on the beat scoring most. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
     </div>
     <div class="pane" data-pane="stats" data-for="degrees" hidden>
+      <div class="seg" id="hmView"><button data-hm="mixed">Mixed</button><button data-hm="alone">Alone</button></div>
       <div class="stat">Answers <b id="statAnswers">0</b></div>
       <div class="stat">Today <b id="statToday">0</b></div>
       <div class="stat">Now <b id="statNow">–</b></div>
@@ -814,7 +810,7 @@
         <div class="legend"></div>
         <div class="legend-labels"><span>weak</span><span>strong</span></div>
       </div>
-      <div class="small-note">Each square: a degree on a quality, right and fast scoring most; the time is the median of its last 20 right answers. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
+      <div class="small-note"><b>Mixed</b>: answers asked among several degrees (switching — the real skill); <b>Alone</b>: one degree at a time. Each square: a degree on a quality, right and fast scoring most; the time is the median of its last 20 right answers. <b>Colour</b>: now — your days on it, the latest counting most (half-life 10 days). <b>Corner</b>: your best day in six months (5+ tries that day). <b>Faint</b>: little or only old evidence.</div>
     </div>
 
     <div class="pane" data-pane="horn" hidden>

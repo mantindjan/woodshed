@@ -1,10 +1,12 @@
 // Degree drill: a chord symbol and a degree appear (silently), the player
 // blows the note on the horn; a right answer sounds the chord and the note.
 //
-// Learn mode: a wrong note shows the answer on the disc for a moment, then
-// waits for it to be played. Practice mode: the first note decides — a miss
-// floats the right note away in red — then it moves on.
-// Either way only the first attempt counts as "right first time".
+// One mode (boss, 2026-09-30 — its learn mode only differed after a miss,
+// and the question is the same test): the first note decides; a miss
+// floats the right note away in red, then it moves on. What's learning
+// and what's practice is the level: one degree alone, or several MIXED —
+// switching between degrees is the harder skill (interleaved practice), so
+// a mixed level never asks the same degree twice in a row.
 //
 // Every question is saved as a raw event (events.js, docs/data.md) the
 // moment it's answered, so quitting mid-round loses nothing.
@@ -23,24 +25,31 @@ import { points, comboMult } from './scoring.js';
 // reward with the right answer instead.
 const CHORD_SECONDS = 0.9;     // reward chord length
 const PAUSE_RIGHT_MS = 1000;   // after a right answer, before the next question (boss: 1 s)
-const PAUSE_WRONG_MS = 1200;   // practice miss: the right note floats away, then next
-const LEARN_REVEAL_MS = 1000;  // learn miss: the disc shows the right note this long
+const PAUSE_WRONG_MS = 1200;   // a miss: the right note floats away, then next
 const FLOAT_GAP_PX = 6;        // floating note starts this far above the disc
-const SCHEMA_VERSION = 2;       // v2 adds `exercise` (docs/data.md)
+// v2 adds `exercise`; v3 `mixed` (the level asks more than one degree —
+// docs/data.md) and every event is 'practice' (no learn mode).
+const SCHEMA_VERSION = 3;
 
 const $ = sel => document.querySelector(sel);
 const rand = arr => arr[Math.floor(Math.random() * arr.length)];
 
+// Does an exercise mix degrees? (The one degree across several qualities
+// is still "alone": the degree hunted doesn't change.)
+export const mixesDegrees = cells => new Set(cells.map(c => c.degree)).size > 1;
+
 // Next question from the exercise's cells ({quality, degree}; any root):
 // weighted toward weak spots when a model is given (D3), otherwise uniformly
-// random. Never the exact same question twice in a row. All pitch values
-// WRITTEN.
+// random. Never the exact same question twice in a row; in a mixed level,
+// never the same degree twice in a row — a random draw could serve 3, 3, 3
+// and quietly turn it back into a blocked one. All pitch values WRITTEN.
 function pickQuestion(prev, model, cells) {
+  const pool = prev && mixesDegrees(cells) ? cells.filter(c => c.degree !== prev.degree) : cells;
   let q;
   do {
     q = model
-      ? pickWeighted(model, cells)
-      : { ...rand(cells), root: Math.floor(Math.random() * 12) };
+      ? pickWeighted(model, pool)
+      : { ...rand(pool), root: Math.floor(Math.random() * 12) };
   } while (prev && q.root === prev.root && q.quality === prev.quality && q.degree === prev.degree);
   q.target = pc(q.root + DEG_SEMI[q.quality][q.degree]);
   return q;
@@ -68,24 +77,24 @@ function medianMs(values) {
   return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
 }
 
-// mode: 'learn' | 'practice'. calib: MIDI pitch class of a written C.
+// calib: MIDI pitch class of a written C.
 // exercise: {id, name, cells} from levels.js — what gets asked.
 // length: questions per round, 0 = endless (until Stop).
 // pick: 'weak' (weighted toward weak spots, D3) | 'random'.
-// onEnd(result | null): result = {mode, total, firstTry, median, score,
+// onEnd(result | null): result = {total, firstTry, median, score,
 // bestStreak} when the round ends or is stopped with at least one answer
 // (median: ms from chord to correct note, or null); null if stopped before
 // any answer.
-export async function startRound(mode, calib, onEnd, { length = 20, pick = 'weak', exercise } = {}) {
+export async function startRound(calib, onEnd, { length = 20, pick = 'weak', exercise } = {}) {
   initAudio();            // inside the Start tap, so Chrome allows sound
   requestPersistence();
   lockScreen();
   const round = {
-    mode, calib, onEnd, length,
+    calib, onEnd, length,
     round: Date.now().toString(36),   // groups this round's events
     exercise,
     index: 0, answered: 0, firstTry: 0, q: null,
-    score: 0, streak: 0, bestStreak: 0,   // D5: practice only
+    score: 0, streak: 0, bestStreak: 0,   // D5
     times: [],        // ms from chord to correct note, per answered question
     model: null,      // weak-spot model, from the cached summary (A8)
     useWeak: pick === 'weak',   // Random still updates the model, just doesn't pick by it
@@ -100,16 +109,14 @@ export async function startRound(mode, calib, onEnd, { length = 20, pick = 'weak
   ask();
 }
 
-// Score and combo, top right of the stage (practice only).
+// Score and combo, top right of the stage.
 function showScore() {
-  const practice = s.mode === 'practice';
-  $('#score').textContent = practice ? s.score.toLocaleString('en') : '';
+  $('#score').textContent = s.score.toLocaleString('en');
   const mult = comboMult(s.streak);
-  $('#combo').textContent = practice && mult > 1 ? `×${mult} · ${s.streak} in a row` : '';
+  $('#combo').textContent = mult > 1 ? `×${mult} · ${s.streak} in a row` : '';
 }
 
 function ask() {
-  clearTimeout(s.revealTimer);
   s.q = pickQuestion(s.q, s.useWeak ? s.model : null, s.exercise.cells);
   s.index++;
   const { root, quality, degree } = s.q;
@@ -118,13 +125,12 @@ function ask() {
   const label = degreeLabel(degree);
   $('#degree').textContent = label;
   $('#degree').classList.toggle('long', label.length > 2);   // ♯11 needs a smaller size
-  $('#degree').classList.remove('reveal', 'pulse', 'miss');
+  $('#degree').classList.remove('pulse', 'miss');
   $('#feedback').textContent = '';
   $('#feedback').className = '';
   s.shownAt = performance.now();   // for note timings
   s.shownT = Date.now();           // wall clock, stored in the event
   s.notes = [];
-  s.missed = false;
   s.accepting = true;
 }
 
@@ -142,49 +148,25 @@ export function drillNote(midi) {
     floatNote(NOTES[s.q.target]);
     playChord(concertPc(s.q.root, s.calib), s.q.quality, CHORD_SECONDS);
     playPing(concertPc(s.q.target, s.calib));
-    // D5: points only for right-first-time in practice; the streak grows.
-    let gained = 0;
-    if (s.mode === 'practice' && !s.missed) {
-      s.streak++;
-      s.bestStreak = Math.max(s.bestStreak, s.streak);
-      gained = points(ms, s.streak);
-      s.score += gained;
-      showScore();
-    }
-    const sub = [speedLabel(ms), gained ? `+${gained}` : ''].filter(Boolean).join(' · ');
-    label(`${(ms / 1000).toFixed(2)} s`, sub, false);
-    finish(!s.missed, PAUSE_RIGHT_MS);
+    // D5: points for a right answer; the streak grows.
+    s.streak++;
+    s.bestStreak = Math.max(s.bestStreak, s.streak);
+    const gained = points(ms, s.streak);
+    s.score += gained;
+    showScore();
+    label(`${(ms / 1000).toFixed(2)} s`, `${speedLabel(ms)} · +${gained}`, false);
+    finish(true, PAUSE_RIGHT_MS);
   } else {
     // Wrong: red shaking burst and the chord shakes. The wrong note itself
     // isn't shown — only what the right one was.
-    s.missed = true;
     s.streak = 0;          // a miss breaks the combo
     showScore();
     flash('bad');
     burst(true);
     shake();
-    if (s.mode === 'practice') {
-      // Practice moves on: the right note floats up out of the disc, in red.
-      floatNote(NOTES[s.q.target], true);
-      finish(false, PAUSE_WRONG_MS);
-    } else {
-      // Learn: the disc turns red showing the right note for a moment, then
-      // flips back to the degree and waits for it to be played.
-      const disc = $('#degree');
-      disc.textContent = NOTES[s.q.target];
-      disc.classList.remove('long');
-      disc.classList.add('reveal');
-      label('', 'try again', true);
-      clearTimeout(s.revealTimer);
-      const q = s.q;
-      s.revealTimer = setTimeout(() => {
-        if (!s || s.q !== q || !s.accepting) return;
-        const d = degreeLabel(q.degree);
-        disc.textContent = d;
-        disc.classList.remove('reveal');
-        disc.classList.toggle('long', d.length > 2);
-      }, LEARN_REVEAL_MS);
-    }
+    // It moves on: the right note floats up out of the disc, in red.
+    floatNote(NOTES[s.q.target], true);
+    finish(false, PAUSE_WRONG_MS);
   }
 }
 
@@ -292,8 +274,9 @@ function finish(ok, pauseMs) {
     t: s.shownT,
     round: s.round,
     game: 'degrees',
-    mode: s.mode,
+    mode: 'practice',
     exercise: s.exercise.id,
+    mixed: mixesDegrees(s.exercise.cells),   // v3: asked among several degrees (else alone)
     rootWritten: s.q.root,
     quality: s.q.quality,
     degrees: [s.q.degree],
@@ -312,9 +295,9 @@ function finish(ok, pauseMs) {
   s.timer = setTimeout(s.length && s.index >= s.length ? endRound : ask, pauseMs);
 }
 
-// A practice round of MIN_ROUND+ answers earns stars for its exercise.
+// A round of MIN_ROUND+ answers earns stars for its exercise.
 function recordStars() {
-  if (s.mode === 'practice') saveStars(s.exercise.id, roundStars(s.answered, s.firstTry, s.times));
+  saveStars(s.exercise.id, roundStars(s.answered, s.firstTry, s.times));
 }
 
 function endRound() {
@@ -337,13 +320,12 @@ export function stopRound() {
 }
 
 function summary() {
-  return { mode: s.mode, total: s.answered, firstTry: s.firstTry, median: medianMs(s.times),
+  return { total: s.answered, firstTry: s.firstTry, median: medianMs(s.times),
            score: s.score, bestStreak: s.bestStreak };
 }
 
 function cleanup() {
   clearTimeout(s.timer);
-  clearTimeout(s.revealTimer);
   stopAll();
   unlockScreen();
   s = null;

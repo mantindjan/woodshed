@@ -85,8 +85,8 @@ function showHornWarn() {
 function showSettings() {
   document.body.dataset.game = st.game;
   $$('button[data-game]').forEach(b => b.classList.toggle('active', b.dataset.game === st.game));
-  // Learn/Practice and Weak/Random are one setting shared by every game.
-  $$('[data-mode], [data-smode], [data-cell-mode]').forEach(b => b.classList.toggle('active', (b.dataset.mode || b.dataset.smode || b.dataset.cellMode) === st.mode));
+  // Learn/Practice (lane games, Cells) and Weak/Random (degrees, lane games) are shared settings.
+  $$('[data-smode], [data-cell-mode]').forEach(b => b.classList.toggle('active', (b.dataset.smode || b.dataset.cellMode) === st.mode));
   $$('[data-pick], [data-spick]').forEach(b => b.classList.toggle('active', (b.dataset.pick || b.dataset.spick) === st.pick));
   degreesUI.render();
   lanesUI.render();
@@ -203,8 +203,8 @@ $$('button[data-game]').forEach(b => b.addEventListener('click', () => {
   ui().onEnter?.();
   showTab(currentTab === 'horn' ? 'play' : currentTab);
 }));
-$$('[data-mode], [data-smode], [data-cell-mode]').forEach(b => b.addEventListener('click', () => {
-  st.mode = b.dataset.mode || b.dataset.smode || b.dataset.cellMode; save(MODE_KEY, st.mode); lanesUI.clearRecap(); showSettings();
+$$('[data-smode], [data-cell-mode]').forEach(b => b.addEventListener('click', () => {
+  st.mode = b.dataset.smode || b.dataset.cellMode; save(MODE_KEY, st.mode); lanesUI.clearRecap(); showSettings();
 }));
 $$('[data-pick], [data-spick]').forEach(b => b.addEventListener('click', () => {
   st.pick = b.dataset.pick || b.dataset.spick; save(PICK_KEY, st.pick); lanesUI.clearRecap(); showSettings();

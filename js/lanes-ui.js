@@ -227,13 +227,17 @@ function drawRangeMap() {
     const b = tempoModel.best(k), w = tempoModel.working(k);
     return b ? String(b) : w === null ? '' : `(${w})`;
   };
-  renderRangeMap($('#rangemap'), runs, l.scale, mapView, rangeSelected, rowTempo);
+  // Ratings from practice runs only: learn lays the whole run out with its
+  // names and never stops — the easier version (boss, 2026-09-30). Counts
+  // and the tempo marks still take every run.
+  const rated = runs.filter(e => e.mode === 'practice');
+  renderRangeMap($('#rangemap'), rated, l.scale, mapView, rangeSelected, rowTempo);
   // Pane figures: the whole level now and its best day (rating.js); its
   // clean runs among the last 20.
   const dayStart = new Date().setHours(0, 0, 0, 0);
   const last = runs.slice(-20);
   const level = createRating();
-  for (const e of runs) for (const x of e.expected) if (x[3] !== 'pending') level.add('level', e.t, timedScore(x[3] === 'hit', x[4]));
+  for (const e of rated) for (const x of e.expected) if (x[3] !== 'pending') level.add('level', e.t, timedScore(x[3] === 'hit', x[4]));
   const fig = paneFigures(level.get('level'));
   const clean = last.filter(e => runOutcome(e) === 'clean').length;   // as the tempo judges it: the horn's middle
   $('#sstatRuns').textContent = runs.length;
