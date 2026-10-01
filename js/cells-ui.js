@@ -9,7 +9,7 @@ import { allEvents } from './events.js';
 import { initAudio, loadTrio, playChord, playLine } from './audio.js';
 import { squareStyle, ratingText, paneFigures } from './rating.js';
 import { startCells, stopCells, cellNote, cellsRunning, cellHTML, esc,
-         pauseCells, resumeCells, restartCells, cellsPaused } from './cells.js';
+         pauseCells, resumeCells, restartCells, cellsPaused, setCellsBpm } from './cells.js';
 import { loadLibrary, saveCell, deleteCell, cellProgress, nearestOct, autoName, degreesText,
          CELL_DEGREES, EXERCISES, PRACTICE_EXERCISES, STAGES, CELL_NOTES, playedNotes, cellGrid, runRate, SOLID, noteSemis } from './celllib.js';
 
@@ -27,7 +27,7 @@ let backing = ['band', 'root', 'click'].includes(load(CELL_BACK_KEY)) ? load(CEL
 let progressById = new Map();                  // cell id → cellProgress()
 const currentCell = () => { const lib = loadLibrary(); return lib.find(p => p.id === cellId) || lib[0] || null; };
 const cellTempo = mountTempo($('#cellTempo'), { min: 60, value: Math.max(60, Number(load(CELL_BPM_KEY)) || 60),
-                                          note: 'a note a beat', onChange: v => save(CELL_BPM_KEY, String(v)) });
+                                          note: 'a note a beat', onChange: v => { save(CELL_BPM_KEY, String(v)); setCellsBpm(v); } });
 
 async function loadCellProgress() {
   const evs = (await allEvents()).filter(e => e.game === 'cells');
@@ -95,9 +95,11 @@ function showCellLevels() {
   $('#cellLib').innerHTML = lib.length ? lib.map(p => `<div class="cellcard${sel && p.id === sel.id ? ' active' : ''}" data-cell-sel="${p.id}">` +
       `<button class="cellplay" data-cell-hear="${p.id}" aria-label="Hear ${esc(p.name)}">▶</button><span class="cellname">${esc(p.name)}</span>${cellHTML(p)}` +
       `<span class="cellprog">${stageText(progressById.get(p.id))}</span>` +
-      `<span class="cellact"><button data-cell-edit="${p.id}">edit</button><button data-cell-del="${p.id}">✕</button></span></div>`).join('')
+      `<span class="cellact"><button data-cell-del="${p.id}">✕</button></span></div>`).join('')
     : '<div class="small-note">No cells yet — build one on the right (an example is loaded), then Save.</div>';
-  if (!draft) editDraft(null);
+  // The editor holds the selected cell (boss, 2026-10-01: no edit button —
+  // the card picked is the one open on the right), or the example at first.
+  if (!draft) editDraft(sel);
   showEditor();
 }
 
@@ -166,7 +168,6 @@ $('#cellSave').addEventListener('click', async () => {
   hooks.runSync();                    // the library goes to its own file in the data repo
 });
 $('#cellLib').addEventListener('click', e => {
-  const edit = e.target.closest('[data-cell-edit]');
   const del = e.target.closest('[data-cell-del]');
   const card = e.target.closest('[data-cell-sel]');
   const play = e.target.closest('[data-cell-hear]');
@@ -181,17 +182,18 @@ $('#cellLib').addEventListener('click', e => {
     if (p && confirm(`Delete "${p.name}"? Its runs stay in your history.`)) {
       deleteCell(p.id);
       if (cellId === p.id) cellId = null;
+      if (draft?.id === p.id) draft = null;      // the editor moves to the next selected cell
       showCellLevels();
       hooks.showSettings();
       hooks.runSync();
     }
     return;
   }
-  if (edit) { editDraft(lib.find(x => x.id === edit.dataset.cellEdit)); showEditor(); }
   if (card) {
     cellId = card.dataset.cellSel;
     save(CELL_SEL_KEY, cellId);
-      showCellLevels();
+    editDraft(lib.find(x => x.id === cellId));   // selected = open in the editor
+    showCellLevels();
     hooks.showSettings();
   }
 });
@@ -281,4 +283,5 @@ export const cellsUI = {
   showLevels: showCellLevels, showStats: showCellStats,
   running: cellsRunning, note: cellNote, stop: stopCells,
   paused: cellsPaused, pause: pauseCells, resume: resumeCells, restart: restartCells,
+  tempoLive: on => cellTempo.setEnabled(on),
 };

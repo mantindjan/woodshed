@@ -161,7 +161,7 @@ const rung = (bpm, dir) => (dir > 0 ? rungUp(bpm) : rungDown(bpm));
 export function nudgeTempo(dir) {
   if (!s?.tempoAuto || !s.run) return;
   const key = tempoKey(s.scale, s.pattern, s.run.key);
-  if (s.run.phase === 'waiting' || s.run.phase === 'announce') {
+  if (s.paused || s.run.phase === 'waiting' || s.run.phase === 'announce') {   // paused: ▶/↻ restart at it
     s.bpm = rung(s.bpm, dir);
     s.tempo.set(key, s.bpm, s.session);
     saveTempo(s.tempo);
@@ -170,6 +170,15 @@ export function nudgeTempo(dir) {
   } else {
     s.override = rung(s.override ?? s.bpm, dir);
   }
+  topBar();
+}
+
+// Fixed tempo changed while paused (boss, 2026-10-01: pause, change the
+// tempo, ↻ — the run again at the new tempo). ▶ and ↻ both go again from
+// the count-in, which reads s.bpm; mid-run the tempo can't change.
+export function setScalesBpm(v) {
+  if (!s?.paused || s.tempoAuto) return;
+  s.bpm = v;
   topBar();
 }
 

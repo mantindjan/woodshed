@@ -162,6 +162,9 @@ function showRunning(running) {
   $$('.pane[data-pane="play"] button, button[data-tab], button[data-game]').forEach(b => {
     if (b !== stopBtn && !b.closest('#scaleCtl')) b.disabled = running;
   });
+  // The tempo control (drag strip included) is locked while a run plays;
+  // paused it opens again — showPlayPause (boss, 2026-10-01).
+  ui().tempoLive?.(!running);
 }
 
 startBtn.addEventListener('click', () => {
@@ -185,8 +188,10 @@ function showPlayPause() {
   const paused = ui().paused();
   $('#scalePlay').innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
   $('#scalePlay').setAttribute('aria-label', paused ? 'Resume' : 'Pause');
+  // Paused, the tempo can change: ▶ or ↻ goes again at it.
+  if (ui().running()) ui().tempoLive?.(paused);
 }
-// The stage can pause and carry on too (a tap on the lane, scales.js).
+// The stage can pause too (touching a disc in learn, scales.js).
 document.addEventListener('woodshed:pause', () => { if (ui().running()) showPlayPause(); });
 $('#scalePlay').addEventListener('click', () => {
   if (ui().paused()) ui().resume(); else ui().pause();

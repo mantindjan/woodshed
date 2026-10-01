@@ -69,6 +69,13 @@ export function pauseGuides() {
   s.run.phase = 'paused';
   message('<b>Paused</b> — ▶ to go again from the count-in');
 }
+// The tempo changed while paused (boss, 2026-10-01): ▶ and ↻ both start
+// the round again from the count-in, at s.bpm.
+export function setGuidesBpm(v) {
+  if (!s?.paused) return;
+  s.bpm = v;
+  $('#guideInfo').textContent = `${v} bpm`;
+}
 export function resumeGuides() {
   if (!s?.paused) return;
   s.paused = false;

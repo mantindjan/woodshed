@@ -29,7 +29,9 @@ export function mountTempo(el, { min = 30, max = 300, value = 80, note = '', onC
   }
 
   let startX = 0, startBpm = 0, dragging = false;
+  let enabled = true;                 // setEnabled: the strip isn't a button, so it's gated here
   strip.addEventListener('pointerdown', e => {
+    if (!enabled) return;
     dragging = true;
     startX = e.clientX;
     startBpm = cur;
@@ -56,5 +58,10 @@ export function mountTempo(el, { min = 30, max = 300, value = 80, note = '', onC
   });
 
   set(value, false);
-  return { get: () => cur, set, setEnabled: on => el.querySelectorAll('button').forEach(b => { b.disabled = !on; }) };
+  function setEnabled(on) {
+    enabled = on;
+    el.classList.toggle('off', !on);
+    el.querySelectorAll('button').forEach(b => { b.disabled = !on; });
+  }
+  return { get: () => cur, set, setEnabled };
 }

@@ -85,6 +85,16 @@ export function initAudio() {
     comp.attack.value = 0.001; comp.release.value = 0.05;
     clickBus.connect(comp);
     comp.connect(ctx.destination);
+    // Keep the output device awake. After a few seconds of silence Chrome
+    // swaps Web Audio's output for a fake sink and back on the next sound;
+    // on the phone that switch is the crackle at the start of a sound after
+    // a quiet spell (the cell card's ▶, 2026-10-01 — its offline render is
+    // clean: no clipping, no jumps). A DC of 1e-4 (−80 dBFS) is never
+    // "silent" to it and can't be heard. Not in `voices`: stopAll leaves it.
+    const awake = ctx.createConstantSource();
+    awake.offset.value = 1e-4;
+    awake.connect(ctx.destination);
+    awake.start();
     noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.2), ctx.sampleRate);
     const d = noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;

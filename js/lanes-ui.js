@@ -7,7 +7,7 @@
 import { $, $$, load, save, loadJSON, st, hooks } from './app.js';
 import { QUALITY_TEXT, NOTES, SCALES } from './music.js';
 import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, toggleHint, ownStart,
-         pauseScales, resumeScales, restartScales, scalesPaused } from './scales.js';
+         pauseScales, resumeScales, restartScales, scalesPaused, setScalesBpm } from './scales.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
 import { getSummary } from './summary.js';
@@ -110,7 +110,7 @@ $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Nu
 let fixedBpm = Math.max(60, Number(load(BPM_KEY)) || 80);
 // Min 60, as auto tempo's floor (boss: "the minimal tempo should be 60").
 const tempo = mountTempo($('#tempo'), { min: 60, value: fixedBpm,
-                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); if (isLane(st.game)) showScaleIdle(); } });
+                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); setScalesBpm(v); if (isLane(st.game)) showScaleIdle(); } });
 // Auto | Fixed: one small toggle under the bpm (a full-width row pushed the
 // exercise card off the pane at 390 px). Notes are always eighths.
 $('#tempo .bpm').insertAdjacentHTML('beforeend', '<button id="tempoMode" class="tmode"></button>');
@@ -276,10 +276,12 @@ function render() {
   // key has its own) and can't be dragged; on Fixed it's the remembered tempo.
   if (tempoAuto) tempo.set(autoStartTempo(), false);
   else tempo.set(fixedBpm, false);
-  tempo.setEnabled(!tempoAuto);      // every button in the block — the toggle is set after
+  // Fixed: open between runs and while paused (tempoLive); the toggle is
+  // set after, as setEnabled locks every button in the block.
+  tempo.setEnabled(!tempoAuto && (!scalesRunning() || scalesPaused()));
   $('#tempoMode').textContent = tempoAuto ? 'auto' : 'fixed';
   $('#tempoMode').classList.toggle('active', tempoAuto);
-  $('#tempoMode').disabled = false;   // setEnabled above just locked it with the rest
+  $('#tempoMode').disabled = scalesRunning();
   if (isLane(st.game)) showScaleIdle();
 }
 const canStart = () => currentScaleExercise().keys.length > 0;
@@ -314,4 +316,7 @@ export const lanesUI = {
   showLevels: showScaleLevels, showStats: showScaleStats,
   running: scalesRunning, note: scaleNote, stop: stopScales,
   paused: scalesPaused, pause: pauseScales, resume: resumeScales, restart: restartScales,
+  // The tempo control: idle or paused, on Fixed (Auto has the stage's ‹ ›);
+  // the Auto | Fixed toggle only between sessions.
+  tempoLive: on => { tempo.setEnabled(on && !tempoAuto); $('#tempoMode').disabled = !on || scalesRunning(); },
 };

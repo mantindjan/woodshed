@@ -21,7 +21,7 @@ import { initAudio, loadTrio } from './audio.js';
 import { squareStyle, ratingText, paneFigures } from './rating.js';
 import { esc } from './cells.js';
 import { EXERCISES, PRACTICE_EXERCISES } from './celllib.js';
-import { startGuides, stopGuides, guideNote, guidesRunning, guidesPaused, pauseGuides, resumeGuides, restartGuides } from './guides.js';
+import { startGuides, stopGuides, guideNote, guidesRunning, guidesPaused, pauseGuides, resumeGuides, restartGuides, setGuidesBpm } from './guides.js';
 import { NUMERALS, QUALITIES, BARS, TONES, ALTS, BAR, LATE, MAX_CHORDS, FILLS, FILL_ORDER, PRESETS, numeral, cadenceText, slotName,
          fill, isPreset, allGuides, findGuide, selectedId, select, currentGuide, saveGuide, deleteGuide, defaultName,
          guideGrid, slotKey } from './guidelib.js';
@@ -36,7 +36,7 @@ let path = PATHS.includes(load(PATH_KEY)) ? load(PATH_KEY) : 'cycle4';
 let backing = ['band', 'root', 'click'].includes(load(BACK_KEY)) ? load(BACK_KEY) : 'band';
 let names = load(NAMES_KEY) !== 'off';
 const tempo = mountTempo($('#guideTempo'), { min: 40, value: Math.max(40, Number(load(BPM_KEY)) || 100),
-                                             onChange: v => save(BPM_KEY, String(v)) });
+                                             onChange: v => { save(BPM_KEY, String(v)); setGuidesBpm(v); } });
 
 // A target's tones as shown: "3/♭9".
 const tonesText = degs => degs.map(degreeLabel).join('/');
@@ -297,4 +297,5 @@ export const guidesUI = {
   render, canStart, start, showLevels, showStats, onSync,
   running: guidesRunning, note: guideNote, stop: stopGuides,
   paused: guidesPaused, pause: pauseGuides, resume: resumeGuides, restart: restartGuides,
+  tempoLive: on => tempo.setEnabled(on),
 };

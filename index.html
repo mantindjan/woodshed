@@ -61,21 +61,17 @@
   /* The question. Fixed heights so nothing jumps between questions. */
   .drill { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center;
            align-items: center; text-align: center; min-width: 0; }
-  /* Read as said — "3 of C△" (boss, 2026-09-27): the disc, "of", the chord.
-     "of" keeps a "7" disc from reading as part of the chord (a wide gap
-     did that job when the disc sat after it). */
-  .question { display: flex; align-items: center; justify-content: center; gap: 26px;
-              min-height: 160px; }
-  .question .of { font: italic 400 34px/1 Georgia, serif; color: var(--dim); }
-  #degree:empty + .of { visibility: hidden; }   /* idle: no question, no "of" */
-  /* The chord is the big thing; the degree is a smaller, plainly lettered
-     token beside it, so the two never read as one symbol. */
+  /* The chord on top, the degree disc under it (boss, 2026-10-01; before:
+     disc, "of", chord in a row — still confusing). Stacked, a "7" disc
+     can't read as part of the chord; the disc is ~75 % of the chord's
+     height (a 72 px disc under ~100 px capitals), so the chord leads. */
+  .question { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
   #chord { font: 140px/1.1 'RealBook', Georgia, serif; min-height: 1.1em; }   /* idle: empty, keeps its space */
-  #degree { width: 96px; height: 96px; flex: none; border-radius: 50%;
+  #degree { width: 72px; height: 72px; flex: none; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             background: var(--brass); color: var(--bg);
-            font: 700 58px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
-  #degree.long { font-size: 42px; letter-spacing: -.02em; }   /* ♯11 */
+            font: 700 44px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  #degree.long { font-size: 32px; letter-spacing: -.02em; }   /* ♯11 */
   #degree:empty { visibility: hidden; }   /* idle: keep the space, hide the disc */
   /* A miss floats the right note away (drill.js); the disc flashes red. */
   #degree.miss { animation: miss-flash .5s ease-out; }
@@ -322,6 +318,7 @@
   .scrub::after { content: ''; position: absolute; left: 50%; top: 5px; bottom: 5px; width: 2px;
                   transform: translateX(-50%); background: var(--brass); opacity: .75; border-radius: 2px; }
   .scrubticks { position: absolute; inset: 0; background-image: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 14px); }
+  .tempo.off .scrub { opacity: .4; }
   .scrub.dragging { border-color: var(--brass); background: rgba(217,164,65,.08); }
   .nudge { display: flex; gap: 4px; }
   .nudge button { flex: 1; padding: 3px 0; font-size: 12px; color: var(--brass); font-variant-numeric: tabular-nums; }
@@ -546,9 +543,8 @@
           <div class="idle-go">Press Start — blow the degree; the chord sounds when you’re right.</div>
         </div>
         <div class="question">
-          <div id="degree"></div>
-          <div class="of">of</div>
           <div id="chord"></div>
+          <div id="degree"></div>
         </div>
         <div id="feedback"></div>
       </div>
