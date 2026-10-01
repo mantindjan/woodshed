@@ -282,6 +282,7 @@
   .cellcard .cellname { font-size: 13px; font-weight: 600; min-width: 90px; }
   .cellcard .cellprog { margin-left: auto; font-size: 11px; color: var(--dim); text-align: right; line-height: 1.4; }
   .cellcard .cellprog b { color: var(--brass); font-weight: 600; }
+  .cellcard .cellplay { padding: 4px 9px; font-size: 13px; color: var(--brass); }
   .cellcard .cellact { display: flex; gap: 4px; }
   .cellcard .cellact button { padding: 2px 7px; font-size: 11px; color: var(--dim); }
   #cellEdit { min-height: 64px; display: flex; align-items: center; justify-content: center; background: #151515;
@@ -773,7 +774,7 @@
       <div class="chips keys" id="cellKeys"></div>
       <div class="cellrow"><button id="cellDown" aria-label="Octave down">↓ lower</button><button id="cellUp" aria-label="Octave up">↑ higher</button><button id="cellDel" aria-label="Delete note">⌫</button></div>
       <input id="cellName" placeholder="name (optional)" autocomplete="off" spellcheck="false">
-      <div class="cellrow"><button id="cellHear">▶ Hear</button><button id="cellSave">Save</button><button id="cellNew">New</button></div>
+      <div class="cellrow"><button id="cellSave">Save</button><button id="cellNew">New</button></div>
       <div id="cellHint" class="small-note"></div>
     </div>
     <div class="pane" data-pane="levels" data-for="guides" hidden>

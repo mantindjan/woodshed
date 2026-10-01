@@ -93,7 +93,7 @@ function showCellLevels() {
   const lib = loadLibrary();
   const sel = currentCell();
   $('#cellLib').innerHTML = lib.length ? lib.map(p => `<div class="cellcard${sel && p.id === sel.id ? ' active' : ''}" data-cell-sel="${p.id}">` +
-      `<span class="cellname">${esc(p.name)}</span>${cellHTML(p)}` +
+      `<button class="cellplay" data-cell-hear="${p.id}" aria-label="Hear ${esc(p.name)}">▶</button><span class="cellname">${esc(p.name)}</span>${cellHTML(p)}` +
       `<span class="cellprog">${stageText(progressById.get(p.id))}</span>` +
       `<span class="cellact"><button data-cell-edit="${p.id}">edit</button><button data-cell-del="${p.id}">✕</button></span></div>`).join('')
     : '<div class="small-note">No cells yet — build one on the right (an example is loaded), then Save.</div>';
@@ -111,7 +111,6 @@ function showEditor() {
   $('#cellHint').textContent = n < CELL_NOTES ? `A cell is ${CELL_NOTES} notes (${n} so far). Each new note goes to the nearest octave; ↑ ↓ move the selected one.`
     : `${draft.id ? 'Editing' : 'New'} · learn plays it there and back: ${degreesText({ notes: playedNotes(draft, 'learn') })}.`;
   $('#cellSave').disabled = n !== CELL_NOTES;
-  $('#cellHear').disabled = !n;
 }
 
 $('#cellKeys').addEventListener('click', e => {
@@ -142,18 +141,19 @@ $('#cellDel').addEventListener('click', () => {
 $$('[data-cell-q]').forEach(b => b.addEventListener('click', () => { draft.quality = b.dataset.cellQ; showEditor(); }));
 $('#cellName').addEventListener('input', e => { draft.name = e.target.value; });
 $('#cellNew').addEventListener('click', () => { editDraft(null); draft.notes = []; draft.sel = -1; showEditor(); });
-// Hear the draft (boss, 2026-09-27: "key doesn't matter, just to hear how
-// it sounds"): over a C chord of its quality, the line a note a beat at
-// 150 bpm, its root at C5 (concert), so the octaves are as drawn.
+// Hear a cell from its card (boss, 2026-10-01: a ▶ on the row, so it plays
+// without opening the editor; it replaced the editor's ▶ Hear). The key
+// doesn't matter (2026-09-27): over a C chord of its quality, the line a
+// note a beat at 150 bpm, its root at C5 (concert), so the octaves are as
+// drawn.
 const HEAR_BEAT = 0.4;
-$('#cellHear').addEventListener('click', () => {
-  if (!draft.notes.length) return;
+function hear(cell) {
   initAudio();
   // The chord soft underneath, the cell on the clear bell an octave above
   // it (its root at C5), so the two never blur.
-  playChord(0, draft.quality, draft.notes.length * HEAR_BEAT + 0.4, 0.55);
-  playLine(draft.notes.map(n => 72 + noteSemis(draft.quality, n)), HEAR_BEAT);
-});
+  playChord(0, cell.quality, cell.notes.length * HEAR_BEAT + 0.4, 0.55);
+  playLine(cell.notes.map(n => 72 + noteSemis(cell.quality, n)), HEAR_BEAT);
+}
 $('#cellSave').addEventListener('click', async () => {
   // Changing the notes of a cell that has runs makes a new cell.
   const played = !!draft.id && (await allEvents()).some(e => e.game === 'cells' && e.cellId === draft.id);
@@ -169,7 +169,13 @@ $('#cellLib').addEventListener('click', e => {
   const edit = e.target.closest('[data-cell-edit]');
   const del = e.target.closest('[data-cell-del]');
   const card = e.target.closest('[data-cell-sel]');
+  const play = e.target.closest('[data-cell-hear]');
   const lib = loadLibrary();
+  if (play) {                         // hear only: the selection stays as it is
+    const p = lib.find(x => x.id === play.dataset.cellHear);
+    if (p) hear(p);
+    return;
+  }
   if (del) {
     const p = lib.find(x => x.id === del.dataset.cellDel);
     if (p && confirm(`Delete "${p.name}"? Its runs stay in your history.`)) {
