@@ -6,7 +6,7 @@ import { $, $$, load, save, st, hooks } from './app.js';
 import { QUALITY_TEXT, NOTES, degreeLabel } from './music.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
-import { initAudio, loadTrio, playChord, playLine } from './audio.js';
+import { initAudio, loadTrio, playPreview } from './audio.js';
 import { squareStyle, ratingText, paneFigures } from './rating.js';
 import { startCells, stopCells, cellNote, cellsRunning, cellHTML, esc,
          pauseCells, resumeCells, restartCells, cellsPaused, setCellsBpm } from './cells.js';
@@ -152,9 +152,8 @@ const HEAR_BEAT = 0.4;
 function hear(cell) {
   initAudio();
   // The chord soft underneath, the cell on the clear bell an octave above
-  // it (its root at C5), so the two never blur.
-  playChord(0, cell.quality, cell.notes.length * HEAR_BEAT + 0.4, 0.55);
-  playLine(cell.notes.map(n => 72 + noteSemis(cell.quality, n)), HEAR_BEAT);
+  // it (its root at C5), so the two never blur. Pre-rendered (audio.js).
+  playPreview(0, cell.quality, cell.notes.map(n => 72 + noteSemis(cell.quality, n)), HEAR_BEAT);
 }
 $('#cellSave').addEventListener('click', async () => {
   // Changing the notes of a cell that has runs makes a new cell.

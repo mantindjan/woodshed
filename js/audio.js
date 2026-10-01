@@ -56,26 +56,7 @@ export function initAudio() {
     // 2026-09-26). Bigger buffers add output latency: ⚙ latency must be
     // measured again after this change.
     ctx = new AudioContext({ latencyHint: 'balanced' });
-    // The output: 0.85 of headroom, then a hard limiter. Without it the
-    // trio's buses (bass with its drive, kit, comping, room) summed straight
-    // into the speaker and a loud Rhodes hit on top clipped — it crackled on
-    // the phone (boss, 2026-09-26).
-    out = ctx.createGain();
-    out.gain.value = 0.85;
-    const lim = ctx.createDynamicsCompressor();
-    lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20;
-    lim.attack.value = 0.005; lim.release.value = 0.12;   // 5 ms: 2 ms bit into note fronts
-    out.connect(lim);
-    lim.connect(ctx.destination);
-    master = ctx.createGain();
-    master.gain.value = 0.8;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 5200;
-    lp.Q.value = 0.4;
-    master.connect(lp);
-    lp.connect(out);
-    buildRoom();
+    buildGraph();
     // Clicks go straight out with their own compressor (SOLVED.md): routed
     // through the master lowpass they were too quiet against the chords.
     clickBus = ctx.createGain();
@@ -85,21 +66,36 @@ export function initAudio() {
     comp.attack.value = 0.001; comp.release.value = 0.05;
     clickBus.connect(comp);
     comp.connect(ctx.destination);
-    // Keep the output device awake. After a few seconds of silence Chrome
-    // swaps Web Audio's output for a fake sink and back on the next sound;
-    // on the phone that switch is the crackle at the start of a sound after
-    // a quiet spell (the cell card's ▶, 2026-10-01 — its offline render is
-    // clean: no clipping, no jumps). A DC of 1e-4 (−80 dBFS) is never
-    // "silent" to it and can't be heard. Not in `voices`: stopAll leaves it.
-    const awake = ctx.createConstantSource();
-    awake.offset.value = 1e-4;
-    awake.connect(ctx.destination);
-    awake.start();
     noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.2), ctx.sampleRate);
     const d = noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   if (ctx.state === 'suspended') ctx.resume();
+}
+
+// The mix every sound goes through, built into `ctx` — the live context,
+// or an offline one for a pre-rendered preview (playPreview).
+function buildGraph() {
+  // The output: 0.85 of headroom, then a hard limiter. Without it the
+  // trio's buses (bass with its drive, kit, comping, room) summed straight
+  // into the speaker and a loud Rhodes hit on top clipped — it crackled on
+  // the phone (boss, 2026-09-26).
+  out = ctx.createGain();
+  out.gain.value = 0.85;
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20;
+  lim.attack.value = 0.005; lim.release.value = 0.12;   // 5 ms: 2 ms bit into note fronts
+  out.connect(lim);
+  lim.connect(ctx.destination);
+  master = ctx.createGain();
+  master.gain.value = 0.8;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 5200;
+  lp.Q.value = 0.4;
+  master.connect(lp);
+  lp.connect(out);
+  buildRoom();
 }
 
 function buildRoom() {
@@ -254,15 +250,42 @@ export function playChord(rootConcertPc, quality, dur, vel = 1) {
   rhodesChord(rootConcertPc, quality, ctx.currentTime + 0.02, dur, vel);
 }
 
-// A melodic line over a chord, one note every `beat` seconds from now —
-// the cell editor's Hear (MIDI numbers, concert). On the ping's bell, not
-// the Rhodes: a Rhodes line in the chord's register, at full strength,
-// summed with it into the room's saturation — crackly and blurred (boss,
-// 2026-09-28: "make it clear, like in degrees").
-export function playLine(midis, beat) {
+// A cell heard from its card (cells-ui): the chord soft underneath (vel
+// 0.55), the line on the clear bell, one note every `beat` seconds (MIDI
+// numbers, concert). PRE-RENDERED: built in an OfflineAudioContext with
+// the same graph, then played as one buffer. Built live it crackled at
+// random points on the phone (2026-10-01) while the same sound rendered
+// to WAV played clean there — the audio thread missing its deadline (FM
+// voices, the 4× oversampled saturation, the convolver, all at once), not
+// the sound. A buffer costs the live thread next to nothing; the render
+// takes a few tens of ms before it starts. (On the bell, not the Rhodes: a
+// Rhodes line in the chord's register was blurred — boss, 2026-09-28.)
+let previewId = 0;
+export async function playPreview(rootConcertPc, quality, midis, beat) {
   if (!ctx) return;
-  const t = ctx.currentTime + 0.05;
-  midis.forEach((m, i) => bell(m, t + i * beat, beat * 0.92));
+  const id = ++previewId;
+  const seconds = midis.length * beat + 0.4;
+  const live = { ctx, out, master, room, verb, bassBus, kitBus, compBus, voices };
+  const off = new OfflineAudioContext(2, Math.ceil((seconds + 1.6) * live.ctx.sampleRate), live.ctx.sampleRate);
+  try {
+    ctx = off;                        // the voice functions build into the module's ctx/room/master
+    voices = new Set();
+    buildGraph();
+    rhodesChord(rootConcertPc, quality, 0.02, seconds, 0.55);
+    midis.forEach((m, i) => bell(m, 0.05 + i * beat, beat * 0.92));
+  } finally {
+    ({ ctx, out, master, room, verb, bassBus, kitBus, compBus, voices } = live);
+  }
+  const buf = await off.startRendering();
+  if (id !== previewId) return;       // tapped again meanwhile: the newer one plays
+  stopAll();
+  const src = ctx.createBufferSource();
+  const g = ctx.createGain();
+  src.buffer = buf;
+  src.connect(g);
+  g.connect(ctx.destination);         // already through the mix and its limiter
+  src.start(ctx.currentTime + 0.01);
+  track(src, g);
 }
 
 // One held bell note: the ping's sine and quiet octave, 5 ms in, settling
