@@ -8,6 +8,8 @@ import { $, $$, load, save, loadJSON, st, hooks } from './app.js';
 import { QUALITY_TEXT, NOTES, SCALES } from './music.js';
 import { startScales, stopScales, scaleNote, scalesRunning, nextKey, nudgeTempo, toggleHint, ownStart,
          pauseScales, resumeScales, restartScales, scalesPaused, setScalesBpm } from './scales.js';
+import { startFree, stopFree, freeNote, freeRunning, freePaused, pauseFree, resumeFree, restartFree,
+         setFreeBpm, freeNextKey } from './free.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
 import { getSummary } from './summary.js';
@@ -67,11 +69,19 @@ async function loadTempo() {
 // pips gained — until the player changes something or starts again.
 function showScaleIdle() {
   const el = $('#scaleIdle');
-  if (scalesRunning()) { el.hidden = true; return; }
+  if (running()) { el.hidden = true; return; }
   el.hidden = false;
   const ex = currentScaleExercise();
   const exName = `${ex.num ? `${ex.num} · ` : ''}${ex.title} · ${ex.name}`;
-  if (scaleRecap) { el.innerHTML = recapHTML(scaleRecap, ex, exName); return; }
+  if (scaleRecap) { el.innerHTML = scaleRecap.free ? freeRecapHTML(scaleRecap) : recapHTML(scaleRecap, ex, exName); return; }
+  if (st.mode === 'free') {
+    el.innerHTML = `<div class="label">Free · next up</div><div class="big">${exName}</div>` +
+      `<div class="what">${ex.keys.length > 1 ? (st.pick === 'weak' ? 'A key drawn toward your weak ones' : 'A key at random') : `${NOTES[ex.keys[0]]} only`} · ${fixedBpm} bpm</div>` +
+      '<div class="how">The click runs; play it any way — up, down, a fragment. Its notes are on the left. ' +
+      '<b class="free-step">Gold</b> = the pattern\'s next step, <b class="free-jump">amber</b> = a jump, <b class="free-wrong">red</b> = not in it. Nothing stops, nothing is rated.</div>' +
+      '<div class="go">Press Start: the click starts at once. Next key › for another key; Stop for the read.</div>';
+    return;
+  }
   // Both modes draw keys the same way, each run (toward the weak ones —
   // today's runs included — or evenly).
   const next = `${ex.keys.length > 1 ? (st.pick === 'weak' ? 'Keys drawn toward your weak ones, today\'s runs included' : 'Keys at random') : `${NOTES[ex.keys[0]]} only`}` +
@@ -85,6 +95,27 @@ function showScaleIdle() {
     `<div class="big">${exName}</div><div class="what">${next}</div><div class="how">${how}</div>` +
     `<div class="go">Press Start: it names the start note and counts you in — tap My note to start where you like.` +
     `${PATTERNS[ex.pattern].rootOnly && st.mode === 'learn' ? ' Stuck? Tap Hint to see the chord spelled out.' : ''}</div>`;
+}
+
+// Free's read, per key played: the figures, then the slips worth knowing.
+function freeRecapHTML(r) {
+  const what = k => (SCALES[r.scale].chord ? `${NOTES[k]}${QUALITY_TEXT[SCALES[r.scale].chord]}` : NOTES[k]);
+  const fig = (label, v) => (v === null ? '' : `<span class="k">${label} <b>${v}%</b></span>`);
+  // The last four keys fit the stage; more are counted.
+  const more = r.takes.length - 4;
+  const takes = r.takes.slice(-4).map(t => {
+    const lines = [
+      ...t.lean,
+      ...t.wrongs.map(w => (w.meant === null ? `${NOTES[w.played]} — not in ${what(t.key)} ×${w.n}`
+        : `${NOTES[w.played]} instead of ${NOTES[w.meant]} — the ${w.deg} of ${what(t.key)} ×${w.n}`)),
+      ...(t.breaks.length ? [`the pattern breaks at ${t.breaks.map(b => `${b.move}${b.n > 1 ? ` ×${b.n}` : ''}`).join(' · ')}`] : []),
+    ];
+    return `<div class="free-take"><div class="keys"><span class="k"><b>${what(t.key)}</b> ${t.notes} notes</span>` +
+      fig('in key', t.inKey) + fig('on the pattern', t.onPattern) + fig('in time', t.inTime) + '</div>' +
+      (lines.length ? `<div class="how">${lines.join('<br>')}</div>` : '') + '</div>';
+  }).join('');
+  return `<div class="label">Free · ${r.bpm} bpm${more > 0 ? ` · the last 4 of ${r.takes.length} keys` : ''}</div>${takes}` +
+    '<div class="go">Nothing here is rated. Learn or Practice when it sits.</div>';
 }
 
 function recapHTML(r, ex, exName) {
@@ -110,7 +141,7 @@ $$('[data-misses]').forEach(b => b.addEventListener('click', () => { misses = Nu
 let fixedBpm = Math.max(60, Number(load(BPM_KEY)) || 80);
 // Min 60, as auto tempo's floor (boss: "the minimal tempo should be 60").
 const tempo = mountTempo($('#tempo'), { min: 60, value: fixedBpm,
-                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); setScalesBpm(v); if (isLane(st.game)) showScaleIdle(); } });
+                                        onChange: v => { fixedBpm = v; save(BPM_KEY, String(v)); setScalesBpm(v); setFreeBpm(v); if (isLane(st.game)) showScaleIdle(); } });
 // Auto | Fixed: one small toggle under the bpm (a full-width row pushed the
 // exercise card off the pane at 390 px). Notes are always eighths.
 $('#tempo .bpm').insertAdjacentHTML('beforeend', '<button id="tempoMode" class="tmode"></button>');
@@ -118,7 +149,7 @@ $('#tempoMode').addEventListener('click', () => {
   tempoAuto = !tempoAuto; save(TEMPO_AUTO_KEY, tempoAuto ? 'auto' : 'fixed'); scaleRecap = null; hooks.showSettings();
 });
 
-$('#scaleNext').addEventListener('click', nextKey);
+$('#scaleNext').addEventListener('click', () => (freeRunning() ? freeNextKey() : nextKey()));
 $('#scaleOwn').addEventListener('click', ownStart);
 $('#scaleHint').addEventListener('click', toggleHint);
 $$('#scaleNudge [data-sn]').forEach(b => b.addEventListener('click', () => nudgeTempo(Number(b.dataset.sn))));
@@ -268,20 +299,22 @@ async function showScaleStats() {
 // adds its keys to the label (levels are always all 12).
 function render() {
   // The miss limit only applies in practice: learn never restarts a run.
-  $$('[data-misses]').forEach(b => { b.classList.toggle('active', Number(b.dataset.misses) === misses); b.disabled = st.mode === 'learn'; });
+  $$('[data-misses]').forEach(b => { b.classList.toggle('active', Number(b.dataset.misses) === misses); b.disabled = st.mode !== 'practice'; });
   const sx = currentScaleExercise();
   $('#scaleExLabel').textContent = sx.num ? `${sx.num} · ${sx.title}` : `Custom · ${sx.title} · ${sx.keysLabel}`;
   $('#scaleExKeys').textContent = PATTERNS[sx.pattern].chip;
   // Tempo: on Auto the strip shows roughly where the session starts (each
   // key has its own) and can't be dragged; on Fixed it's the remembered tempo.
-  if (tempoAuto) tempo.set(autoStartTempo(), false);
-  else tempo.set(fixedBpm, false);
+  // Free always plays the fixed tempo (auto is the other modes' staircase).
+  const fixed = !tempoAuto || st.mode === 'free';
+  if (fixed) tempo.set(fixedBpm, false);
+  else tempo.set(autoStartTempo(), false);
   // Fixed: open between runs and while paused (tempoLive); the toggle is
   // set after, as setEnabled locks every button in the block.
-  tempo.setEnabled(!tempoAuto && (!scalesRunning() || scalesPaused()));
-  $('#tempoMode').textContent = tempoAuto ? 'auto' : 'fixed';
-  $('#tempoMode').classList.toggle('active', tempoAuto);
-  $('#tempoMode').disabled = scalesRunning();
+  tempo.setEnabled(fixed && (!running() || paused()));
+  $('#tempoMode').textContent = st.mode === 'free' ? 'fixed' : tempoAuto ? 'auto' : 'fixed';
+  $('#tempoMode').classList.toggle('active', tempoAuto && st.mode !== 'free');
+  $('#tempoMode').disabled = running() || st.mode === 'free';
   if (isLane(st.game)) showScaleIdle();
 }
 const canStart = () => currentScaleExercise().keys.length > 0;
@@ -291,9 +324,15 @@ async function start() {
   const model = createKeyModel((await getSummary()).keys || []);
   scaleRecap = null;
   $('#scaleIdle').hidden = true;
+  const onEnd = recap => { scaleRecap = recap; hooks.showRunning(false); loadTempo(); hooks.runSync(); };
+  if (st.mode === 'free') {
+    startFree({ game: st.game, exercise: currentScaleExercise(), pick: st.pick, model, bpm: fixedBpm,
+                calib: st.calib, calibOffset: st.calibOffset, latency: st.latency }, onEnd);
+    return;
+  }
   startScales({ game: st.game, exercise: currentScaleExercise(), mode: st.mode, pick: st.pick, model, latency: st.latency,
                 tempoAuto, tempo: tempoModel, bpm: tempo.get(), misses, calib: st.calib, calibOffset: st.calibOffset },
-              recap => { scaleRecap = recap; hooks.showRunning(false); loadTempo(); hooks.runSync(); });
+              onEnd);
 }
 
 // A setting changed (mode, pick): the last session's recap gives way to
@@ -311,12 +350,21 @@ function onSync(res) {
   if (!$('#view-scale-stats').hidden) showScaleStats();
 }
 
+// Two runners behind one panel: Free (free.js) or Learn/Practice (scales.js).
+const running = () => scalesRunning() || freeRunning();
+const paused = () => (freeRunning() ? freePaused() : scalesPaused());
+const either = (free, scales) => (...a) => (freeRunning() ? free(...a) : scales(...a));
+
 export const lanesUI = {
   render, canStart, start, onEnter, onSync, clearRecap,
   showLevels: showScaleLevels, showStats: showScaleStats,
-  running: scalesRunning, note: scaleNote, stop: stopScales,
-  paused: scalesPaused, pause: pauseScales, resume: resumeScales, restart: restartScales,
-  // The tempo control: idle or paused, on Fixed (Auto has the stage's ‹ ›);
-  // the Auto | Fixed toggle only between sessions.
-  tempoLive: on => { tempo.setEnabled(on && !tempoAuto); $('#tempoMode').disabled = !on || scalesRunning(); },
+  running, paused,
+  note: either(freeNote, scaleNote), stop: either(stopFree, stopScales),
+  pause: either(pauseFree, pauseScales), resume: either(resumeFree, resumeScales), restart: either(restartFree, restartScales),
+  // The tempo control: idle or paused, on Fixed or in Free (Auto has the
+  // stage's ‹ ›); the Auto | Fixed toggle only between sessions, never in Free.
+  tempoLive: on => {
+    tempo.setEnabled(on && (!tempoAuto || st.mode === 'free'));
+    $('#tempoMode').disabled = !on || running() || st.mode === 'free';
+  },
 };

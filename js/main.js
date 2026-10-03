@@ -9,7 +9,7 @@
 // horn sends for a fingered written C; that one number converts both ways
 // between written (display, judging) and concert (the Rhodes).
 
-import { $, $$, save, load, st, hooks, CALIB_KEY, OFFSET_KEY, GAME_KEY, MODE_KEY, PICK_KEY, LATENCY_KEY } from './app.js';
+import { $, $$, save, load, st, hooks, cellMode, CALIB_KEY, OFFSET_KEY, GAME_KEY, MODE_KEY, PICK_KEY, LATENCY_KEY } from './app.js';
 import { connectMidi } from './midi.js';
 import { WRITTEN_MIDDLE_C, writtenPc } from './music.js';
 import { noteHTML } from './notation.js';
@@ -86,7 +86,8 @@ function showSettings() {
   document.body.dataset.game = st.game;
   $$('button[data-game]').forEach(b => b.classList.toggle('active', b.dataset.game === st.game));
   // Learn/Practice (lane games, Cells) and Weak/Random (degrees, lane games) are shared settings.
-  $$('[data-smode], [data-cell-mode]').forEach(b => b.classList.toggle('active', (b.dataset.smode || b.dataset.cellMode) === st.mode));
+  $$('[data-smode]').forEach(b => b.classList.toggle('active', b.dataset.smode === st.mode));
+  $$('[data-cell-mode]').forEach(b => b.classList.toggle('active', b.dataset.cellMode === cellMode()));
   $$('[data-pick], [data-spick]').forEach(b => b.classList.toggle('active', (b.dataset.pick || b.dataset.spick) === st.pick));
   degreesUI.render();
   lanesUI.render();

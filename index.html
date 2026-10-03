@@ -348,6 +348,12 @@
   #scaleIdle .up { color: #7fd17f; }
   #scaleIdle .down { color: #e08a7a; }
   #scaleIdle .star { color: var(--brass); }
+  /* Free (free.js): the colours of the stage, named in the idle card; the read per key. */
+  #scaleIdle .free-step { color: #ffe2a8; }
+  #scaleIdle .free-jump { color: #e8933a; }
+  #scaleIdle .free-wrong { color: #d65a5a; }
+  #scaleIdle .free-take { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  #scaleIdle .free-take .how { font-size: 12px; color: var(--dim); }
   #scaleMsg b { color: #ffe2a8; }
   .scale-info { text-align: right; font-variant-numeric: tabular-nums; }
   /* The run's key, big and always there; the pattern beside it. */
@@ -683,7 +689,7 @@
         <div class="row2">
           <!-- data-smode / data-spick, not data-mode / data-pick: the degree
                buttons carry those, and a hidden twin steals every selector. -->
-          <div class="seg"><button data-smode="learn">Learn</button><button data-smode="practice">Practice</button></div>
+          <div class="seg"><button data-smode="free">Free</button><button data-smode="learn">Learn</button><button data-smode="practice">Practice</button></div>
           <div class="seg"><button data-spick="weak">Weak keys</button><button data-spick="random">Random</button></div>
         </div>
         <div id="tempo"></div>

@@ -2,7 +2,7 @@
 // or practice path, backing, tempo), the library and 4-note editor on
 // Levels, and the key × note stats. The runner itself is cells.js.
 
-import { $, $$, load, save, st, hooks } from './app.js';
+import { $, $$, load, save, st, hooks, cellMode } from './app.js';
 import { QUALITY_TEXT, NOTES, degreeLabel } from './music.js';
 import { mountTempo } from './tempo.js';
 import { allEvents } from './events.js';
@@ -41,8 +41,8 @@ function showCellSettings() {
   const prog = p && progressById.get(p.id);
   $('#cellCardName').textContent = p ? p.name : 'No cell yet';
   $('#cellCardDeg').textContent = p ? degreesText(p) : 'build one ›';
-  $('#cellStages').hidden = st.mode !== 'learn';
-  $('#cellExercises').hidden = st.mode === 'learn';
+  $('#cellStages').hidden = cellMode() !== 'learn';
+  $('#cellExercises').hidden = cellMode() === 'learn';
   const stage = cellStage;
   $$('[data-cell-stage]').forEach(b => b.classList.toggle('active', Number(b.dataset.cellStage) === stage));
   $$('[data-cell-back]').forEach(b => b.classList.toggle('active', b.dataset.cellBack === backing));
@@ -51,11 +51,11 @@ function showCellSettings() {
   if (cellsRunning()) return;
   // Idle stage: what will be played on top (learn: a b c d c b), what
   // Start will do underneath.
-  $('#cellShow').innerHTML = p ? `<b>${esc(p.name)}</b>${cellHTML({ ...p, notes: playedNotes(p, st.mode) }, -1, p.notes.length)}` : '<b>Build a cell in Levels</b>';
-  $('#cellTitle').textContent = !p ? '' : st.mode === 'learn' ? `Cycle of 4ths · ×${STAGES[stage]}` : EXERCISES[cellExercise].name;
+  $('#cellShow').innerHTML = p ? `<b>${esc(p.name)}</b>${cellHTML({ ...p, notes: playedNotes(p, cellMode()) }, -1, p.notes.length)}` : '<b>Build a cell in Levels</b>';
+  $('#cellTitle').textContent = !p ? '' : cellMode() === 'learn' ? `Cycle of 4ths · ×${STAGES[stage]}` : EXERCISES[cellExercise].name;
   const msg = $('#cellMsg');
   msg.hidden = !p;
-  msg.innerHTML = !p ? '' : st.mode === 'learn'
+  msg.innerHTML = !p ? '' : cellMode() === 'learn'
     ? `<b>Learn</b> — the cell there and back (a b c d c b), ${STAGES[stage]}× on each chord round the cycle of 4ths. Nothing is shown ahead: ` +
       'play it from the top on each chord. A solid round (95 %) ticks the stage; pick fewer times per chord when you\'re ready.<br><small>Start goes straight into a one-bar count-in.</small>'
     : `<b>Practice</b> — the 4 notes once on each chord, ${EXERCISES[cellExercise].name.toLowerCase()}.<br><small>Start goes straight into a one-bar count-in.</small>`;
@@ -267,7 +267,7 @@ async function start() {
   // If they can't load, the run goes on with the count-in and no band.
   initAudio();
   await loadTrio().catch(() => {});
-  startCells({ cell: p, mode: st.mode, exercise: st.mode === 'learn' ? 'cycle4' : cellExercise, stage: cellStage,
+  startCells({ cell: p, mode: cellMode(), exercise: cellMode() === 'learn' ? 'cycle4' : cellExercise, stage: cellStage,
                bpm: cellTempo.get(), backing: backing, calib: st.calib, calibOffset: st.calibOffset, latency: st.latency },
              () => { hooks.showRunning(false); hooks.showSettings(); loadCellProgress(); hooks.runSync(); });
 }

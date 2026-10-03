@@ -29,7 +29,7 @@ export function loadJSON(key, fallback) {
 export const CALIB_KEY = 'woodshed.calib';
 export const OFFSET_KEY = 'woodshed.calibOffset';   // horn MIDI − written, from middle C
 export const GAME_KEY = 'woodshed.game';
-export const MODE_KEY = 'woodshed.mode';            // learn | practice, one setting for every game
+export const MODE_KEY = 'woodshed.mode';            // free | learn | practice, one setting for every game (free: lane games only)
 export const PICK_KEY = 'woodshed.pick';            // weak | random: degrees' questions, lanes' keys
 export const LATENCY_KEY = 'woodshed.inputLatency'; // ms, measured in ⚙ (latency.js); absent = 0
 
@@ -39,9 +39,13 @@ export const GAMES = ['degrees', 'scales', 'cells', 'arpeggios', 'guides'];
 // class the horn sends for a fingered written C (converts both ways between
 // written and concert); `calibOffset` adds the octave (from middle C), which
 // the lane games need.
+// Cells has Learn and Practice only: the lane games' Free counts as Learn
+// there (the easier side) — st.mode is one setting for every game.
+export const cellMode = () => (st.mode === 'practice' ? 'practice' : 'learn');
+
 export const st = {
   game: GAMES.includes(load(GAME_KEY)) ? load(GAME_KEY) : 'degrees',
-  mode: load(MODE_KEY) === 'learn' ? 'learn' : 'practice',
+  mode: ['free', 'learn'].includes(load(MODE_KEY)) ? load(MODE_KEY) : 'practice',
   pick: load(PICK_KEY) === 'random' ? 'random' : 'weak',
   calib: load(CALIB_KEY) === null ? null : Number(load(CALIB_KEY)),
   calibOffset: load(OFFSET_KEY) === null ? null : Number(load(OFFSET_KEY)),
