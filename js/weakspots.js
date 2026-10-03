@@ -10,7 +10,8 @@
 //
 // Questions are a weighted random draw, never "always the weakest": tickets
 // = 0.6 + 4 × (1 − recent), +0.8 while a cell has fewer than 6 answers; a
-// never-tried cell gets 2.2. On top, the SESSION: each miss in this round
+// never-tried cell gets 2.2 — but never-tried cells, and never-tried roots
+// inside a cell, are drawn FIRST, before any tickets count (pickWeighted). On top, the SESSION: each miss in this round
 // adds SESSION_MISS tickets to its cell and cell+root, each right answer
 // there since takes half a miss back — so a degree fumbled 5–7 times in a
 // session keeps coming back now, not next week (boss, 2026-09-30: "make
@@ -91,6 +92,8 @@ export function createModel(initial = []) {
       tally(cellKey(e.quality, e.degrees[0]), e.ok);
       tally(rootKey(e.quality, e.degrees[0], e.rootWritten), e.ok);
     },
+    cellPlayed: (quality, degree) => stats.has(cellKey(quality, degree)),
+    rootPlayed: (quality, degree, root) => stats.has(rootKey(quality, degree, root)),
     cellTickets: (quality, degree) => tickets(stats.get(cellKey(quality, degree))) + sessionTickets(session.get(cellKey(quality, degree))),
     rootTickets: (quality, degree, root) => tickets(stats.get(rootKey(quality, degree, root))) + sessionTickets(session.get(rootKey(quality, degree, root))),
   };
@@ -107,10 +110,21 @@ function weighted(items, weights, rand) {
 }
 
 // Draw {quality, degree, root}: a cell (from the exercise's cells, each
-// {quality, degree}) by its tickets, then a root inside it.
+// {quality, degree}) by its tickets, then a root inside it. Never-played
+// cells come first, drawn evenly among themselves, and inside a cell its
+// never-played roots — as 2.2 tickets they lost to weak spots and could go
+// unasked for a whole round (boss, 2026-10-03: "maximum priority to start
+// with", seen on the scales map). Drawn once per question, from the model
+// as it stands after the last answer.
 export function pickWeighted(model, cells, rand = Math.random) {
-  const cell = weighted(cells, cells.map(c => model.cellTickets(c.quality, c.degree)), rand);
-  const roots = [...Array(12).keys()];
-  const root = weighted(roots, roots.map(r => model.rootTickets(cell.quality, cell.degree, r)), rand);
+  const newCells = cells.filter(c => !model.cellPlayed(c.quality, c.degree));
+  const cell = newCells.length
+    ? weighted(newCells, newCells.map(() => 1), rand)
+    : weighted(cells, cells.map(c => model.cellTickets(c.quality, c.degree)), rand);
+  const all = [...Array(12).keys()];
+  const newRoots = all.filter(r => !model.rootPlayed(cell.quality, cell.degree, r));
+  const root = newRoots.length
+    ? weighted(newRoots, newRoots.map(() => 1), rand)
+    : weighted(all, all.map(r => model.rootTickets(cell.quality, cell.degree, r)), rand);
   return { ...cell, root };
 }

@@ -139,7 +139,8 @@ export const countedNotes = rows => (rows.some(x => inMiddle(x[0])) ? rows.filte
 // unplayed notes as not hit, so restarts weigh in naturally. `recent` is an exponential moving average per key, α = 0.3:
 // runs are far fewer than degree answers, so each one moves the needle
 // more. Tickets follow weakspots.js: never zero, so clean keys still come
-// round; +0.8 for a key with under 3 runs; untried = 2.2.
+// round; +0.8 for a key with under 3 runs; untried = 2.2 (but an untried
+// key is drawn before any tickets count — pickScaleKey).
 const ALPHA = 0.3;
 const FEW_RUNS = 3;
 const UNTRIED = 2.2;
@@ -182,6 +183,7 @@ export function createKeyModel(initial = []) {
       t[score >= SESSION_GOOD ? 'right' : 'miss']++;
       session.set(k, t);
     },
+    played: (scale, pattern, key) => stats.has(statKey(scale, pattern, key)),
     tickets(scale, pattern, key) {
       const k = statKey(scale, pattern, key);
       const st = stats.get(k);
@@ -193,8 +195,16 @@ export function createKeyModel(initial = []) {
 
 // Draw the next key from `keys`: by tickets when `pick` is 'weak', evenly
 // otherwise; never the same key twice in a row when there's a choice.
+// Weak: keys never played on this level come FIRST, drawn evenly among
+// themselves — as tickets (2.2) they lost to weak keys, and 15 runs of A3
+// left C♯ D E unplayed (boss, 2026-10-03: "maximum priority to start
+// with"). Called once per run, so each draw sees every run before it.
 export function pickScaleKey(model, { scale, pattern, keys, pick, prev }, rand = Math.random) {
-  const pool = keys.length > 1 ? keys.filter(k => k !== prev) : keys;
+  let pool = keys.length > 1 ? keys.filter(k => k !== prev) : keys;
+  if (pick === 'weak') {
+    const unplayed = pool.filter(k => !model.played(scale, pattern, k));
+    if (unplayed.length) pool = unplayed;
+  }
   const weights = pool.map(k => (pick === 'weak' ? model.tickets(scale, pattern, k) : 1));
   let r = rand() * weights.reduce((a, b) => a + b, 0);
   for (let i = 0; i < pool.length; i++) {
